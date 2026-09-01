@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Quantify Terminal">
+  <rect width="64" height="64" fill="#030404"/>
+  <path d="M14 15h36v8H36v26h-8V23H14z" fill="#f0a028"/>
+  <path d="M14 41h10v8H14zM40 41h10v8H40z" fill="#f7f4ed"/>
+</svg>
