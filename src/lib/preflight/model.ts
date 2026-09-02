@@ -83,6 +83,20 @@ export type PortalAuthLifecycleEvidence = {
   resetRequiresVerifiedSession: boolean;
   resetConsumesAuthorizationBeforeUpdate: boolean;
   turnstileResetsAfterSubmission: boolean;
+  securityReauthenticatesBeforeMutation: boolean;
+  loginRequiresSatisfiedAssurance: boolean;
+  accountGuardEnforcesAssurance: boolean;
+  /**
+   * Every security action consults the assurance gate before it verifies a password
+   * or touches the account. Route guards cannot cover this: a Server Action is an
+   * endpoint of its own, so an action without this call is reachable at AAL1 no matter
+   * how well the page that hosts it is guarded.
+   */
+  securityActionsRequireAssurance: boolean;
+  /** The same requirement on the profile and preferences mutations. */
+  accountActionsRequireAssurance: boolean;
+  /** Enrollment confirmation challenges only a provider-reported pending factor. */
+  enrollmentBindsProviderIssuedFactor: boolean;
 };
 
 export type PortalSecurityEvidence = {

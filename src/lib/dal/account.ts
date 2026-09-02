@@ -14,6 +14,7 @@ import {
   type ProfileDataClient,
 } from "@/lib/dal/profile-query";
 
+import { requireSatisfiedAssurance } from "@/lib/dal/assurance-guard";
 import type { AccountOverviewDto } from "@/lib/dto/account";
 import type { AccountProfileDto } from "@/lib/dto/profile";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -39,6 +40,8 @@ export const getCurrentAccount = cache(async (): Promise<AccountOverviewDto | nu
 export async function requireCurrentAccount(): Promise<AccountOverviewDto> {
   const account = await getCurrentAccount();
   if (account === null) redirect("/login");
+  // A verified factor must be satisfied before any protected route renders.
+  await requireSatisfiedAssurance();
   return account;
 }
 
@@ -62,5 +65,7 @@ export const getCurrentProfile = cache(async (): Promise<AccountProfileDto | nul
 export async function requireCurrentProfile(): Promise<AccountProfileDto> {
   const profile = await getCurrentProfile();
   if (profile === null) redirect("/login");
+  // Defense in depth: the page guard repeats the layout's assurance requirement.
+  await requireSatisfiedAssurance();
   return profile;
 }

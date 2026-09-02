@@ -25,13 +25,35 @@ const loginSchema = z.object({
 });
 
 export type LoginActionState = {
-  status: "idle" | "error";
+  /**
+   * `mfa-required` means the password was accepted but the session is still AAL1
+   * while a verified factor exists, so the visitor must satisfy a TOTP challenge
+   * before any protected route will serve them.
+   */
+  status: "idle" | "error" | "mfa-required";
   message: string | null;
   fieldErrors: {
     email: string[];
     password: string[];
     challenge: string[];
   };
+};
+
+export type LoginChallengeActionState = {
+  status: "idle" | "error";
+  message: string | null;
+  fieldErrors: { code: string[] };
+};
+
+export type LoginChallengeAction = (
+  previousState: LoginChallengeActionState,
+  formData: FormData,
+) => Promise<LoginChallengeActionState>;
+
+export const INITIAL_LOGIN_CHALLENGE_STATE: LoginChallengeActionState = {
+  status: "idle",
+  message: null,
+  fieldErrors: { code: [] },
 };
 
 export type LoginAction = (
@@ -61,19 +83,9 @@ export function sanitizeNextPath(value: unknown): string {
   }
 }
 
-const CREDENTIAL_REJECTION_CODES = new Set([
-  "email_not_confirmed",
-  "invalid_credentials",
-  "invalid_grant",
-  "user_banned",
-  "user_not_found",
-]);
-
-export function isCredentialRejection(error: unknown): boolean {
-  if (!error || typeof error !== "object" || !("code" in error)) return false;
-  const code = (error as { code?: unknown }).code;
-  return typeof code === "string" && CREDENTIAL_REJECTION_CODES.has(code);
-}
+// Re-exported so the sign-in surface keeps one import while the classification
+// itself lives in a single shared module with the reauthentication path.
+export { isCredentialRejection } from "@/lib/auth/credential-errors";
 
 export type ParsedLoginForm =
   | {

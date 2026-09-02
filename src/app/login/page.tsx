@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { login } from "@/app/login/actions";
+import { login, verifyLoginChallenge } from "@/app/login/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { sanitizeNextPath } from "@/lib/auth/login";
@@ -27,6 +27,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const providerLogoutIncomplete = notice === "logout-incomplete";
   const invalidAuthLink = notice === "invalid-auth-link";
   const passwordUpdated = notice === "password-updated";
+  const mfaRequired = notice === "mfa-required";
   const { turnstileSiteKey } = getSupabasePublicConfiguration();
 
   return (
@@ -53,7 +54,19 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         </div>
       )}
 
-      <LoginForm action={login} nextPath={nextPath} turnstileSiteKey={turnstileSiteKey} />
+      {mfaRequired && (
+        <div className="auth-alert" role="status">
+          This account requires an authenticator code. Sign in with your password to continue to the
+          code step.
+        </div>
+      )}
+
+      <LoginForm
+        action={login}
+        challengeAction={verifyLoginChallenge}
+        nextPath={nextPath}
+        turnstileSiteKey={turnstileSiteKey}
+      />
 
       <p className="auth-card__footer">
         Need a Quantify Terminal account? <Link href="/signup">Create an account</Link>

@@ -47,6 +47,10 @@ function installClient(options?: {
   rpcVersion?: number;
   ownerId?: string;
   committedVersion?: number;
+  factors?: Array<Record<string, unknown>>;
+  currentLevel?: string | null;
+  nextLevel?: string | null;
+  levelError?: unknown;
 }) {
   const events: string[] = [];
   const authenticated = options?.authenticated ?? true;
@@ -79,7 +83,21 @@ function installClient(options?: {
   const eq = vi.fn(() => ({ maybeSingle }));
   const select = vi.fn(() => ({ eq }));
   const from = vi.fn(() => ({ select }));
-  mocks.createServerSupabaseClient.mockResolvedValue({ auth: { getUser }, rpc, from });
+  // Both mutations consult the assurance gate before touching the profile, so the
+  // fixture has to answer the same MFA surface the real client exposes.
+  const listFactors = vi.fn(async () => ({ data: { all: options?.factors ?? [] }, error: null }));
+  const getAuthenticatorAssuranceLevel = vi.fn(async () => ({
+    data: {
+      currentLevel: options?.currentLevel ?? "aal1",
+      nextLevel: options?.nextLevel ?? "aal1",
+    },
+    error: options?.levelError ?? null,
+  }));
+  mocks.createServerSupabaseClient.mockResolvedValue({
+    auth: { getUser, mfa: { listFactors, getAuthenticatorAssuranceLevel } },
+    rpc,
+    from,
+  });
   return { events, getUser, rpc, from };
 }
 
@@ -313,5 +331,72 @@ describe("profile Server Actions", () => {
       expect(result.message).toContain("temporarily unavailable");
       expect(mocks.revalidatePath).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("assurance enforcement on profile mutations", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const verifiedFactor = { id: "factor-verified", factor_type: "totp", status: "verified" };
+
+  it.each([
+    ["updateProfile", () => updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm())],
+    [
+      "updatePreferences",
+      () => updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm()),
+    ],
+  ])("%s refuses a session that still owes its second factor", async (_label, run) => {
+    // The hosting page redirects such a session to the challenge, but the action is
+    // reachable on its own, so it has to make the same decision itself.
+    const { rpc } = installClient({
+      factors: [verifiedFactor],
+      currentLevel: "aal1",
+      nextLevel: "aal2",
+    });
+
+    const result = await run();
+
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("authenticator code");
+    expect(rpc).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["updateProfile", () => updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm())],
+    [
+      "updatePreferences",
+      () => updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm()),
+    ],
+  ])("%s fails closed when the assurance level cannot be read", async (_label, run) => {
+    const { rpc } = installClient({ levelError: { message: "session unreadable" } });
+
+    const result = await run();
+
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("temporarily unavailable");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("still saves for a session that satisfied the factor", async () => {
+    const { rpc } = installClient({
+      factors: [verifiedFactor],
+      currentLevel: "aal2",
+      nextLevel: "aal2",
+    });
+
+    const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
+
+    expect(result.status).toBe("success");
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("still saves for an account with no enrolled factor", async () => {
+    const { rpc } = installClient();
+
+    const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
+
+    expect(result.status).toBe("success");
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 });

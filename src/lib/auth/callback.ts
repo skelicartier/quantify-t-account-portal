@@ -1,5 +1,6 @@
-export type AuthCallbackFlow = "signup" | "recovery";
-export type AuthCallbackDestination = "/account" | "/reset-password";
+export type AuthCallbackFlow = "signup" | "recovery" | "email-change";
+export type AuthCallbackDestination =
+  "/account" | "/reset-password" | "/account/security?notice=email-change-confirmed";
 
 const MAX_CALLBACK_CODE_LENGTH = 4_096;
 
@@ -14,7 +15,7 @@ export type ParsedAuthCallback =
   | { success: false };
 
 function isAuthCallbackFlow(value: string): value is AuthCallbackFlow {
-  return value === "signup" || value === "recovery";
+  return value === "signup" || value === "recovery" || value === "email-change";
 }
 
 export function parseAuthCallback(parameters: URLSearchParams): ParsedAuthCallback {
@@ -42,16 +43,42 @@ export function parseAuthCallback(parameters: URLSearchParams): ParsedAuthCallba
   };
 }
 
+/**
+ * The trust boundary for callback destinations.
+ *
+ * `redirectType` is produced by the exchange, never by the query string, and each
+ * flow accepts exactly one provider value. Anything else returns null so the caller
+ * fails closed to the generic invalid-link notice.
+ *
+ * In the pinned `@supabase/auth-js` this value is two-valued. It is read back from
+ * the stored PKCE verifier, and the only writer that appends a type is the password
+ * recovery path (`getCodeChallengeAndMethod(..., isPasswordRecovery = true)`, called
+ * solely by `resetPasswordForEmail`). An `updateUser({ email })` link therefore
+ * exchanges to `redirectType: null`, exactly like a signup confirmation: there is no
+ * `"email_change"` value to match, so requiring one would reject every real
+ * confirmation. Both non-recovery flows are bound to `null` instead.
+ *
+ * Binding two flows to the same value costs nothing that matters here. `null` cannot
+ * reach `/reset-password`, which is the only destination that authorizes a password
+ * change without the current password, and `"recovery"` cannot reach the account or
+ * security destinations. A signup link presented as `flow=email-change` lands on the
+ * security page behind the same account guard and shows a notice the visitor can
+ * verify against the address on that page; it grants nothing extra.
+ */
 export function resolveTrustedAuthDestination(
   expectedFlow: AuthCallbackFlow,
   redirectType: unknown,
 ): AuthCallbackDestination | null {
-  if (expectedFlow === "recovery" && redirectType === "recovery") {
-    return "/reset-password";
+  if (expectedFlow === "recovery") {
+    return redirectType === "recovery" ? "/reset-password" : null;
   }
-  if (expectedFlow === "signup" && redirectType === null) {
-    return "/account";
+  // Refuse a recovery exchange on any other flow: a recovery link must never be
+  // spent on a destination that leaves the recovery marker unissued.
+  if (redirectType !== null) return null;
+  if (expectedFlow === "email-change") {
+    return "/account/security?notice=email-change-confirmed";
   }
+  if (expectedFlow === "signup") return "/account";
   return null;
 }
 

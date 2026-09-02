@@ -5,6 +5,7 @@ import {
   CHALLENGE_FIELD_NAME,
   MAX_CHALLENGE_TOKEN_LENGTH,
 } from "@/lib/auth/challenge";
+import { newPasswordSchema, PASSWORD_MISMATCH_MESSAGE } from "@/lib/auth/password-policy";
 
 const recoveryRequestSchema = z.object({
   email: z
@@ -22,10 +23,7 @@ const recoveryRequestSchema = z.object({
 
 const resetPasswordSchema = z
   .object({
-    password: z
-      .string({ error: "Enter a new password." })
-      .min(12, "Use at least 12 characters.")
-      .max(128, "Password must be 128 characters or fewer."),
+    password: newPasswordSchema(),
     passwordConfirmation: z.string({ error: "Confirm your new password." }),
   })
   .superRefine(({ password, passwordConfirmation }, context) => {
@@ -33,7 +31,7 @@ const resetPasswordSchema = z
       context.addIssue({
         code: "custom",
         path: ["passwordConfirmation"],
-        message: "Passwords do not match.",
+        message: PASSWORD_MISMATCH_MESSAGE,
       });
     }
   });

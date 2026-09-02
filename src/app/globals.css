@@ -1172,3 +1172,44 @@ textarea {
     flex: 1;
   }
 }
+
+.account-factor-list,
+.account-guidance-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-guidance-list {
+  gap: 0.6rem;
+}
+
+.account-guidance-list li {
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  padding-left: 0.85rem;
+}
+
+.account-factor-list li {
+  align-items: baseline;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  justify-content: space-between;
+  padding: 0.75rem 0.9rem;
+}
+
+.account-totp-qr {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  height: auto;
+  max-width: 200px;
+  padding: 0.5rem;
+  width: 100%;
+}

@@ -28,10 +28,24 @@ async function readKnownFile(path: string): Promise<string | null> {
 }
 
 async function collectSnapshot(): Promise<RepositorySnapshot> {
-  const [confirmRoute, resetAction, turnstileField] = await Promise.all([
+  const [
+    confirmRoute,
+    resetAction,
+    turnstileField,
+    securityActions,
+    loginActions,
+    accountGuard,
+    profileAction,
+    preferencesAction,
+  ] = await Promise.all([
     readKnownFile(resolve(portalRoot, "src/app/auth/confirm/route.ts")),
     readKnownFile(resolve(portalRoot, "src/app/reset-password/actions.ts")),
     readKnownFile(resolve(portalRoot, "src/components/auth/turnstile-field.tsx")),
+    readKnownFile(resolve(portalRoot, "src/app/account/security/actions.ts")),
+    readKnownFile(resolve(portalRoot, "src/app/login/actions.ts")),
+    readKnownFile(resolve(portalRoot, "src/lib/dal/assurance-guard.ts")),
+    readKnownFile(resolve(portalRoot, "src/app/account/profile/actions.ts")),
+    readKnownFile(resolve(portalRoot, "src/app/account/preferences/actions.ts")),
   ]);
   const headerRules = await nextConfig.headers?.();
   const desktopSupabase = await collectDesktopSupabaseEvidence(desktopRoot);
@@ -43,6 +57,11 @@ async function collectSnapshot(): Promise<RepositorySnapshot> {
       confirmRoute,
       resetAction,
       turnstileField,
+      securityActions,
+      loginActions,
+      accountGuard,
+      profileAction,
+      preferencesAction,
     }),
     portalSecurityEvidence: analyzePortalSecurityHeaders(headerRules ?? null),
     desktopEnvironmentExample: await readKnownFile(resolve(desktopRoot, ".env.example")),

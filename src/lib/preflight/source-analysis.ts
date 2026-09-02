@@ -17,10 +17,29 @@ type HeaderRule = {
   headers: Array<{ key: string; value: string }>;
 };
 
+/**
+ * Everything a security action must not reach before the assurance decision is made:
+ * the provider mutations themselves, plus the password verification, which would
+ * otherwise turn a refused action into a credential oracle.
+ */
+const MUTATION_CALLS = [
+  "verifyCurrentPassword",
+  "updateUser",
+  "enroll",
+  "unenroll",
+  "challenge",
+  "verify",
+] as const satisfies readonly string[];
+
 type LifecycleSources = {
   confirmRoute: string | null;
   resetAction: string | null;
   turnstileField: string | null;
+  securityActions: string | null;
+  loginActions: string | null;
+  accountGuard: string | null;
+  profileAction: string | null;
+  preferencesAction: string | null;
 };
 
 function sourceFile(source: string): ts.SourceFile {
@@ -112,6 +131,62 @@ function hasRedirectTypeNarrowing(body: ts.Block): boolean {
   return narrowed;
 }
 
+/**
+ * A named call must appear, and must appear before every listed call that follows it.
+ * Each listed call must appear too: a relationship that passes because one side is
+ * absent would report "ordered" for an action that simply does not do the work.
+ */
+function callPrecedesAll(calls: ts.CallExpression[], first: string, followers: string[]): boolean {
+  const firstIndex = callIndex(calls, first);
+  if (firstIndex < 0) return false;
+  return followers.every((name) => {
+    const index = callIndex(calls, name);
+    return index >= 0 && firstIndex < index;
+  });
+}
+
+/**
+ * The assurance decision must be compared and returned on, before anything is touched,
+ * and the refusal must cover the unreadable case as well as the owed-factor case.
+ *
+ * Call ordering alone cannot tell "asked and refused" from "asked and ignored", and a
+ * refusal placed after the mutation is not a gate. The `unavailable` half matters just
+ * as much as `challenge-required`: an action that refuses only an owed factor and
+ * proceeds on an unreadable factor inventory is treating "I could not tell" as "no
+ * factors are enrolled", which is the exact substitution this evidence exists to deny.
+ */
+function refusesUnsatisfiedDecision(body: ts.Block, mutations: string[]): boolean {
+  const mutationPositions = callsWithin(body)
+    .filter((call) => {
+      const name = callName(call);
+      return name !== null && mutations.includes(name);
+    })
+    .map((call) => call.getStart())
+    .sort((left, right) => left - right);
+  if (mutationPositions.length === 0) return false;
+  const firstMutation = Math.min(...mutationPositions);
+
+  let coversUnreadable = false;
+  function visit(node: ts.Node): void {
+    if (ts.isIfStatement(node) && node.getStart() < firstMutation) {
+      const condition = node.expression.getText().replaceAll(" ", "");
+      const returnsEarly =
+        ts.isReturnStatement(node.thenStatement) ||
+        (ts.isBlock(node.thenStatement) &&
+          node.thenStatement.statements.some((statement) => ts.isReturnStatement(statement)));
+      // `!== "satisfied"` and `=== "unavailable"` both refuse an unreadable decision;
+      // a lone `=== "challenge-required"` does not.
+      const refusesUnreadable =
+        condition.includes('decision!=="satisfied"') ||
+        condition.includes('decision==="unavailable"');
+      if (returnsEarly && refusesUnreadable) coversUnreadable = true;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(body);
+  return coversUnreadable;
+}
+
 function hasAuthorizationRejectionBeforeUpdate(body: ts.Block): boolean {
   let authorizedDeclaration = -1;
   let authorizationRejection = -1;
@@ -148,8 +223,15 @@ export function analyzePortalAuthLifecycle({
   confirmRoute,
   resetAction,
   turnstileField,
+  securityActions,
+  loginActions,
+  accountGuard,
+  profileAction,
+  preferencesAction,
 }: LifecycleSources): PortalAuthLifecycleEvidence | null {
   if (!confirmRoute || !resetAction || !turnstileField) return null;
+  if (!securityActions || !loginActions || !accountGuard) return null;
+  if (!profileAction || !preferencesAction) return null;
 
   const confirmFile = sourceFile(confirmRoute);
   const confirmBody = functionBody(confirmFile, "GET");
@@ -157,6 +239,22 @@ export function analyzePortalAuthLifecycle({
   const resetBody = functionBody(sourceFile(resetAction), "resetPassword");
   const turnstileBody = functionBody(sourceFile(turnstileField), "TurnstileField");
   if (!confirmBody || !cleanupBody || !resetBody || !turnstileBody) return null;
+
+  const securityFile = sourceFile(securityActions);
+  const changePasswordBody = functionBody(securityFile, "changePassword");
+  const changeEmailBody = functionBody(securityFile, "changeEmail");
+  const removeFactorBody = functionBody(securityFile, "removeTotpFactor");
+  const startEnrollmentBody = functionBody(securityFile, "startTotpEnrollment");
+  const confirmEnrollmentBody = functionBody(securityFile, "confirmTotpEnrollment");
+  const loginBody = functionBody(sourceFile(loginActions), "login");
+  const guardBody = functionBody(sourceFile(accountGuard), "requireSatisfiedAssurance");
+  const mutationGuardBody = functionBody(sourceFile(accountGuard), "requireMutationAssurance");
+  const updateProfileBody = functionBody(sourceFile(profileAction), "updateProfile");
+  const updatePreferencesBody = functionBody(sourceFile(preferencesAction), "updatePreferences");
+  if (!changePasswordBody || !changeEmailBody || !removeFactorBody) return null;
+  if (!startEnrollmentBody || !confirmEnrollmentBody) return null;
+  if (!loginBody || !guardBody || !mutationGuardBody) return null;
+  if (!updateProfileBody || !updatePreferencesBody) return null;
 
   const confirmCalls = callsWithin(confirmBody);
   const cleanupCalls = callsWithin(cleanupBody);
@@ -170,6 +268,35 @@ export function analyzePortalAuthLifecycle({
   const getUserIndex = callIndex(resetCalls, "getUser");
   const consumeIndex = callIndex(resetCalls, "consumeRecoveryAuthorization");
   const updateIndex = callIndex(resetCalls, "updateUser");
+
+  const passwordCalls = callsWithin(changePasswordBody);
+  const emailCalls = callsWithin(changeEmailBody);
+  const removalCalls = callsWithin(removeFactorBody);
+  const startEnrollmentCalls = callsWithin(startEnrollmentBody);
+  const confirmEnrollmentCalls = callsWithin(confirmEnrollmentBody);
+  const loginCalls = callsWithin(loginBody);
+  const guardCalls = callsWithin(guardBody);
+  const mutationGuardCalls = callsWithin(mutationGuardBody);
+  const updateProfileCalls = callsWithin(updateProfileBody);
+  const updatePreferencesCalls = callsWithin(updatePreferencesBody);
+
+  const passwordVerifyIndex = callIndex(passwordCalls, "verifyCurrentPassword");
+  const passwordUpdateIndex = callIndex(passwordCalls, "updateUser");
+  const emailVerifyIndex = callIndex(emailCalls, "verifyCurrentPassword");
+  const emailUpdateIndex = callIndex(emailCalls, "updateUser");
+  const removalVerifyIndex = callIndex(removalCalls, "verifyCurrentPassword");
+  const removalUnenrollIndex = callIndex(removalCalls, "unenroll");
+  const enrollmentVerifyIndex = callIndex(startEnrollmentCalls, "verifyCurrentPassword");
+  const enrollmentEnrollIndex = callIndex(startEnrollmentCalls, "enroll");
+  const loginSignInIndex = callIndex(loginCalls, "signInWithPassword");
+  const loginAssuranceIndex = callIndex(loginCalls, "resolveAssuranceState");
+  const loginRedirectIndex = callIndex(loginCalls, "redirect");
+  const confirmOwnershipIndex = confirmEnrollmentCalls.findIndex(
+    (call) =>
+      callName(call) === "includes" &&
+      call.expression.getText().includes("unverifiedTotpFactorIds"),
+  );
+  const confirmChallengeIndex = callIndex(confirmEnrollmentCalls, "challenge");
 
   return {
     callbackUsesTrustedRedirectType:
@@ -201,6 +328,75 @@ export function analyzePortalAuthLifecycle({
     turnstileResetsAfterSubmission:
       turnstileBody.getText().includes("wasDisabled.current && !disabled") &&
       callIndex(turnstileCalls, "reset") >= 0,
+    // Every change to the account's credentials or factors reauthenticates before it
+    // mutates anything, enrollment included: adding a factor raises the required level
+    // for every session of the account, so it is not a self-authorizing operation.
+    securityReauthenticatesBeforeMutation:
+      passwordVerifyIndex >= 0 &&
+      passwordVerifyIndex < passwordUpdateIndex &&
+      emailVerifyIndex >= 0 &&
+      emailVerifyIndex < emailUpdateIndex &&
+      removalVerifyIndex >= 0 &&
+      removalVerifyIndex < removalUnenrollIndex &&
+      enrollmentVerifyIndex >= 0 &&
+      enrollmentVerifyIndex < enrollmentEnrollIndex,
+    // A password alone must not complete a sign-in that still owes a second factor.
+    loginRequiresSatisfiedAssurance:
+      loginSignInIndex >= 0 &&
+      loginSignInIndex < loginAssuranceIndex &&
+      (loginRedirectIndex < 0 || loginAssuranceIndex < loginRedirectIndex) &&
+      loginBody.getText().includes("assurance.challengeRequired"),
+    // Protected routes refuse an unsatisfied session instead of rendering it.
+    accountGuardEnforcesAssurance:
+      callIndex(guardCalls, "getCurrentAssurance") >= 0 &&
+      callIndex(guardCalls, "redirect") >= 0 &&
+      guardBody.getText().includes("assurance.challengeRequired") &&
+      // The action-side counterpart returns the decision instead of redirecting.
+      callIndex(mutationGuardCalls, "getCurrentAssurance") >= 0 &&
+      callIndex(mutationGuardCalls, "assuranceForMutation") >= 0,
+    // Each security action is its own endpoint, so each one asks for the assurance
+    // decision before it checks a password or touches the account — and acts on the
+    // answer. Ordering alone would pass for an action that discards the decision.
+    securityActionsRequireAssurance:
+      refusesUnsatisfiedDecision(changePasswordBody, [...MUTATION_CALLS]) &&
+      refusesUnsatisfiedDecision(changeEmailBody, [...MUTATION_CALLS]) &&
+      refusesUnsatisfiedDecision(startEnrollmentBody, [...MUTATION_CALLS]) &&
+      refusesUnsatisfiedDecision(confirmEnrollmentBody, [...MUTATION_CALLS]) &&
+      refusesUnsatisfiedDecision(removeFactorBody, [...MUTATION_CALLS]) &&
+      callPrecedesAll(passwordCalls, "requireMutationAssurance", [
+        "verifyCurrentPassword",
+        "updateUser",
+      ]) &&
+      callPrecedesAll(emailCalls, "requireMutationAssurance", [
+        "verifyCurrentPassword",
+        "updateUser",
+      ]) &&
+      callPrecedesAll(startEnrollmentCalls, "requireMutationAssurance", [
+        "verifyCurrentPassword",
+        "enroll",
+      ]) &&
+      callPrecedesAll(confirmEnrollmentCalls, "requireMutationAssurance", [
+        "challenge",
+        "verify",
+      ]) &&
+      callPrecedesAll(removalCalls, "requireMutationAssurance", [
+        "verifyCurrentPassword",
+        "unenroll",
+      ]),
+    // The same requirement on the two profile mutations behind the account pages.
+    accountActionsRequireAssurance:
+      refusesUnsatisfiedDecision(updateProfileBody, ["rpc"]) &&
+      refusesUnsatisfiedDecision(updatePreferencesBody, ["rpc"]) &&
+      callPrecedesAll(updateProfileCalls, "requireMutationAssurance", ["getUser", "rpc"]) &&
+      callPrecedesAll(updatePreferencesCalls, "requireMutationAssurance", ["getUser", "rpc"]),
+    // A submitted factor id is only ever challenged after the provider confirms it is
+    // this caller's own pending enrollment.
+    // The call list is ordered by source position, so an earlier index is an earlier
+    // statement.
+    enrollmentBindsProviderIssuedFactor:
+      confirmOwnershipIndex >= 0 &&
+      confirmChallengeIndex >= 0 &&
+      confirmOwnershipIndex < confirmChallengeIndex,
   };
 }
 

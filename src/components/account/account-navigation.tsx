@@ -7,6 +7,7 @@ const ACCOUNT_LINKS = [
   { href: "/account", label: "Overview" },
   { href: "/account/profile", label: "Profile" },
   { href: "/account/preferences", label: "Preferences" },
+  { href: "/account/security", label: "Security" },
 ] as const;
 
 export function AccountNavigation() {

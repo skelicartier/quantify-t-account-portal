@@ -13,12 +13,19 @@ import {
   readCommittedProfileVersion,
   type ProfileVersionReader,
 } from "@/lib/account/profile-mutation";
+import { requireMutationAssurance } from "@/lib/dal/assurance-guard";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const AUTH_ERROR: PreferencesActionState = {
   ...INITIAL_PREFERENCES_ACTION_STATE,
   status: "error",
   message: "Your session could not be verified. Sign in again and retry.",
+};
+
+const CHALLENGE_ERROR: PreferencesActionState = {
+  ...INITIAL_PREFERENCES_ACTION_STATE,
+  status: "error",
+  message: "Finish signing in with your authenticator code before saving changes.",
 };
 
 const SERVICE_ERROR: PreferencesActionState = {
@@ -41,6 +48,13 @@ export async function updatePreferences(
   if (!parsed.success) return parsed.state;
 
   try {
+    // The page that hosts this form is unreachable until the second factor is
+    // satisfied, but the action behind it is reachable on its own, so it repeats the
+    // route guard's requirement as a value instead of a redirect.
+    const { decision } = await requireMutationAssurance();
+    if (decision === "challenge-required") return CHALLENGE_ERROR;
+    if (decision !== "satisfied") return SERVICE_ERROR;
+
     const supabase = await createServerSupabaseClient();
     const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) return AUTH_ERROR;

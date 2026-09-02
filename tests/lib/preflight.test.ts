@@ -185,6 +185,109 @@ const PROFILE_V2_TYPE_SIGNATURE_SQL = `
   boolean, boolean, boolean, text, text, boolean
 `;
 
+const TASK7_CONFIRM_ROUTE = `
+  async function clearRejectedExchange() {
+    await clearPortalSupabaseAuthCookies();
+    await clearRecoveryAuthorization();
+  }
+  async function GET() {
+    const result = await supabase.auth.exchangeCodeForSession(parsed.data.code);
+    const redirectType = "redirectType" in result.data ? result.data.redirectType : undefined;
+    const destination = resolveTrustedAuthDestination(parsed.data.flow, redirectType);
+    await issueRecoveryAuthorization({ userId: result.data.user.id, accessToken: result.data.session.access_token, secure: cookieOptions.secure === true });
+    await clearRejectedExchange();
+    return destination;
+  }
+`;
+
+const TASK7_RESET_ACTION = `async function resetPassword() { await getSession(); await getUser(session.access_token); const authorized = await consumeRecoveryAuthorization(); if (!authorized) return; await updateUser(); }`;
+
+const TASK7_TURNSTILE_FIELD = `function TurnstileField() { const completed = wasDisabled.current && !disabled; if (completed) window.turnstile.reset(widgetId); }`;
+
+const TASK7_SECURITY_ACTIONS = `
+  export async function changePassword() {
+    const { decision } = await requireMutationAssurance();
+    if (decision !== "satisfied") return PASSWORD_SERVICE_ERROR;
+    const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);
+    await supabase.auth.updateUser({ password: parsed.data.password });
+  }
+  export async function changeEmail() {
+    const { decision } = await requireMutationAssurance();
+    if (decision !== "satisfied") return EMAIL_SERVICE_ERROR;
+    const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);
+    await supabase.auth.updateUser({ email: parsed.data.email });
+  }
+  export async function startTotpEnrollment() {
+    const { decision, assurance } = await requireMutationAssurance();
+    if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
+    const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
+    await supabase.auth.mfa.enroll({ factorType: "totp" });
+  }
+  export async function confirmTotpEnrollment() {
+    const { decision, assurance } = await requireMutationAssurance();
+    if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
+    if (!assurance.unverifiedTotpFactorIds.includes(submitted.data.factorId)) return;
+    const challenge = await supabase.auth.mfa.challenge({ factorId: submitted.data.factorId });
+    await supabase.auth.mfa.verify({ factorId: submitted.data.factorId });
+  }
+  export async function removeTotpFactor() {
+    const { decision, assurance } = await requireMutationAssurance();
+    if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
+    const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
+    await supabase.auth.mfa.unenroll({ factorId: submitted.data.factorId });
+  }
+`;
+
+const TASK7_PROFILE_ACTION = `
+  export async function updateProfile() {
+    const { decision } = await requireMutationAssurance();
+    if (decision !== "satisfied") return SERVICE_ERROR;
+    const { data: authData } = await supabase.auth.getUser();
+    const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});
+  }
+`;
+
+const TASK7_PREFERENCES_ACTION = `
+  export async function updatePreferences() {
+    const { decision } = await requireMutationAssurance();
+    if (decision !== "satisfied") return SERVICE_ERROR;
+    const { data: authData } = await supabase.auth.getUser();
+    const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});
+  }
+`;
+
+const TASK7_LOGIN_ACTIONS = `
+  export async function login() {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const assurance = await resolveAssuranceState(supabase);
+    if (assurance.challengeRequired) return MFA_REQUIRED;
+    redirect(parsed.data.nextPath);
+  }
+`;
+
+const TASK7_ACCOUNT_GUARD = `
+  export async function requireSatisfiedAssurance() {
+    const assurance = await getCurrentAssurance();
+    if (assurance.challengeRequired) redirect(MFA_CHALLENGE_NOTICE);
+    return assurance;
+  }
+  export async function requireMutationAssurance() {
+    const assurance = await getCurrentAssurance();
+    return { decision: assuranceForMutation(assurance), assurance };
+  }
+`;
+
+const TASK7_LIFECYCLE_SOURCES = {
+  confirmRoute: TASK7_CONFIRM_ROUTE,
+  resetAction: TASK7_RESET_ACTION,
+  turnstileField: TASK7_TURNSTILE_FIELD,
+  securityActions: TASK7_SECURITY_ACTIONS,
+  loginActions: TASK7_LOGIN_ACTIONS,
+  accountGuard: TASK7_ACCOUNT_GUARD,
+  profileAction: TASK7_PROFILE_ACTION,
+  preferencesAction: TASK7_PREFERENCES_ACTION,
+};
+
 function exactMigrationArtifacts(): MigrationArtifact[] {
   return DESKTOP_SUPABASE_MIGRATION_ARTIFACTS.map((artifact) => ({ ...artifact }));
 }
@@ -207,6 +310,12 @@ const completeSnapshot: RepositorySnapshot = {
     resetRequiresVerifiedSession: true,
     resetConsumesAuthorizationBeforeUpdate: true,
     turnstileResetsAfterSubmission: true,
+    securityReauthenticatesBeforeMutation: true,
+    loginRequiresSatisfiedAssurance: true,
+    accountGuardEnforcesAssurance: true,
+    securityActionsRequireAssurance: true,
+    accountActionsRequireAssurance: true,
+    enrollmentBindsProviderIssuedFactor: true,
   },
   portalSecurityEvidence: {
     enforcedChallengeCompatibleCsp: true,
@@ -511,6 +620,11 @@ describe("preflight audit", () => {
       `,
       resetAction: `async function resetPassword() { await getSession(); await getUser(session.access_token); const authorized = await consumeRecoveryAuthorization(); if (!authorized) return; await updateUser(); }`,
       turnstileField: `function TurnstileField() { const completed = wasDisabled.current && !disabled; if (completed) window.turnstile.reset(widgetId); }`,
+      securityActions: TASK7_SECURITY_ACTIONS,
+      loginActions: TASK7_LOGIN_ACTIONS,
+      accountGuard: TASK7_ACCOUNT_GUARD,
+      profileAction: TASK7_PROFILE_ACTION,
+      preferencesAction: TASK7_PREFERENCES_ACTION,
     });
 
     expect(evidence?.callbackUsesTrustedRedirectType).toBe(false);
@@ -534,10 +648,285 @@ describe("preflight audit", () => {
       `,
       resetAction: `async function resetPassword() { await getSession(); await getUser(session.access_token); await updateUser(); }`,
       turnstileField: `function TurnstileField() { const completed = wasDisabled.current && !disabled; if (completed) window.turnstile.reset(widgetId); }`,
+      securityActions: TASK7_SECURITY_ACTIONS,
+      loginActions: TASK7_LOGIN_ACTIONS,
+      accountGuard: TASK7_ACCOUNT_GUARD,
+      profileAction: TASK7_PROFILE_ACTION,
+      preferencesAction: TASK7_PREFERENCES_ACTION,
     });
 
     expect(evidence?.resetConsumesAuthorizationBeforeUpdate).toBe(false);
   });
+
+  it.each([
+    [
+      "a password change that updates before reauthenticating",
+      {
+        securityActions: TASK7_SECURITY_ACTIONS.replace(
+          `    const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);
+    await supabase.auth.updateUser({ password: parsed.data.password });`,
+          `    await supabase.auth.updateUser({ password: parsed.data.password });
+    const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);`,
+        ),
+      },
+      "securityReauthenticatesBeforeMutation",
+    ],
+    [
+      "a factor removal with no reauthentication at all",
+      {
+        securityActions: TASK7_SECURITY_ACTIONS.replace(
+          "    const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);\n",
+          "",
+        ),
+      },
+      "securityReauthenticatesBeforeMutation",
+    ],
+    [
+      "an enrollment that mints a factor without reauthentication",
+      {
+        securityActions: TASK7_SECURITY_ACTIONS.replace(
+          `    const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
+    await supabase.auth.mfa.enroll({ factorType: "totp" });`,
+          `    await supabase.auth.mfa.enroll({ factorType: "totp" });`,
+        ),
+      },
+      "securityReauthenticatesBeforeMutation",
+    ],
+    [
+      "a password change with no assurance gate",
+      {
+        securityActions: TASK7_SECURITY_ACTIONS.replace(
+          `    const { decision } = await requireMutationAssurance();
+    if (decision !== "satisfied") return PASSWORD_SERVICE_ERROR;\n`,
+          "",
+        ),
+      },
+      "securityActionsRequireAssurance",
+    ],
+    [
+      "a factor removal that gates only after unenrolling",
+      {
+        securityActions: TASK7_SECURITY_ACTIONS.replace(
+          `    const { decision, assurance } = await requireMutationAssurance();
+    if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
+    const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
+    await supabase.auth.mfa.unenroll({ factorId: submitted.data.factorId });`,
+          `    const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
+    await supabase.auth.mfa.unenroll({ factorId: submitted.data.factorId });
+    const { decision, assurance } = await requireMutationAssurance();
+    if (decision !== "satisfied") return TOTP_SERVICE_ERROR;`,
+        ),
+      },
+      "securityActionsRequireAssurance",
+    ],
+    [
+      "a security action whose refusal sits after the mutation",
+      {
+        securityActions: TASK7_SECURITY_ACTIONS.replace(
+          `    const { decision } = await requireMutationAssurance();
+    if (decision !== "satisfied") return PASSWORD_SERVICE_ERROR;
+    const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);
+    await supabase.auth.updateUser({ password: parsed.data.password });`,
+          `    const { decision } = await requireMutationAssurance();
+    const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);
+    await supabase.auth.updateUser({ password: parsed.data.password });
+    if (decision !== "satisfied") return PASSWORD_SERVICE_ERROR;`,
+        ),
+      },
+      "securityActionsRequireAssurance",
+    ],
+    [
+      "a security action that refuses an owed factor but proceeds on an unreadable one",
+      {
+        securityActions: TASK7_SECURITY_ACTIONS.replace(
+          '    if (decision !== "satisfied") return EMAIL_SERVICE_ERROR;',
+          '    if (decision === "challenge-required") return EMAIL_CHALLENGE_ERROR;',
+        ),
+      },
+      "securityActionsRequireAssurance",
+    ],
+    [
+      "a profile mutation whose refusal sits after the write",
+      {
+        profileAction: TASK7_PROFILE_ACTION.replace(
+          `    if (decision !== "satisfied") return SERVICE_ERROR;
+    const { data: authData } = await supabase.auth.getUser();
+    const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});`,
+          `    const { data: authData } = await supabase.auth.getUser();
+    const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});
+    if (decision !== "satisfied") return SERVICE_ERROR;`,
+        ),
+      },
+      "accountActionsRequireAssurance",
+    ],
+    [
+      "a security action that asks for the decision and discards it",
+      {
+        securityActions: TASK7_SECURITY_ACTIONS.replace(
+          '    if (decision !== "satisfied") return EMAIL_SERVICE_ERROR;\n',
+          "",
+        ),
+      },
+      "securityActionsRequireAssurance",
+    ],
+    [
+      "a profile mutation that asks for the decision and discards it",
+      {
+        profileAction: TASK7_PROFILE_ACTION.replace(
+          '    if (decision !== "satisfied") return SERVICE_ERROR;\n',
+          "",
+        ),
+      },
+      "accountActionsRequireAssurance",
+    ],
+    [
+      "a profile mutation with no assurance gate",
+      {
+        profileAction: `
+          export async function updateProfile() {
+            const { data: authData } = await supabase.auth.getUser();
+            const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});
+          }
+        `,
+      },
+      "accountActionsRequireAssurance",
+    ],
+    [
+      "a preferences mutation that gates after the write",
+      {
+        preferencesAction: `
+          export async function updatePreferences() {
+            const { data: authData } = await supabase.auth.getUser();
+            const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});
+            const { decision } = await requireMutationAssurance();
+            if (decision !== "satisfied") return SERVICE_ERROR;
+          }
+        `,
+      },
+      "accountActionsRequireAssurance",
+    ],
+    [
+      "an enrollment confirmation that trusts the submitted factor id",
+      {
+        securityActions: TASK7_SECURITY_ACTIONS.replace(
+          "    if (!assurance.unverifiedTotpFactorIds.includes(submitted.data.factorId)) return;\n",
+          "",
+        ),
+      },
+      "enrollmentBindsProviderIssuedFactor",
+    ],
+    [
+      "a guard whose mutation counterpart never asks for a decision",
+      {
+        accountGuard: `
+          export async function requireSatisfiedAssurance() {
+            const assurance = await getCurrentAssurance();
+            if (assurance.challengeRequired) redirect(MFA_CHALLENGE_NOTICE);
+            return assurance;
+          }
+          export async function requireMutationAssurance() {
+            const assurance = await getCurrentAssurance();
+            return { decision: "satisfied", assurance };
+          }
+        `,
+      },
+      "accountGuardEnforcesAssurance",
+    ],
+    [
+      "a login that redirects before resolving assurance",
+      {
+        loginActions: `
+          export async function login() {
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            redirect(parsed.data.nextPath);
+            const assurance = await resolveAssuranceState(supabase);
+            if (assurance.challengeRequired) return MFA_REQUIRED;
+          }
+        `,
+      },
+      "loginRequiresSatisfiedAssurance",
+    ],
+    [
+      "a login that never checks the challenge requirement",
+      {
+        loginActions: `
+          export async function login() {
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            const assurance = await resolveAssuranceState(supabase);
+            redirect(parsed.data.nextPath);
+          }
+        `,
+      },
+      "loginRequiresSatisfiedAssurance",
+    ],
+    [
+      "a guard that resolves assurance but never refuses",
+      {
+        accountGuard: `
+          export async function requireSatisfiedAssurance() {
+            const assurance = await getCurrentAssurance();
+            return assurance;
+          }
+          export async function requireMutationAssurance() {
+            const assurance = await getCurrentAssurance();
+            return { decision: assuranceForMutation(assurance), assurance };
+          }
+        `,
+      },
+      "accountGuardEnforcesAssurance",
+    ],
+  ])("rejects %s", (_label, overrides, relationship) => {
+    const evidence = analyzePortalAuthLifecycle({
+      ...TASK7_LIFECYCLE_SOURCES,
+      ...(overrides as Record<string, string>),
+    });
+
+    expect(evidence?.[relationship as keyof typeof evidence]).toBe(false);
+  });
+
+  it("accepts the complete Task 7 relationship set", () => {
+    const evidence = analyzePortalAuthLifecycle(TASK7_LIFECYCLE_SOURCES);
+
+    expect(evidence).not.toBeNull();
+    // Every relationship, so a new one cannot be added without a fixture that proves it.
+    expect(Object.values(evidence ?? {}).every(Boolean)).toBe(true);
+    expect(evidence?.securityReauthenticatesBeforeMutation).toBe(true);
+    expect(evidence?.loginRequiresSatisfiedAssurance).toBe(true);
+    expect(evidence?.accountGuardEnforcesAssurance).toBe(true);
+    expect(evidence?.securityActionsRequireAssurance).toBe(true);
+    expect(evidence?.accountActionsRequireAssurance).toBe(true);
+    expect(evidence?.enrollmentBindsProviderIssuedFactor).toBe(true);
+  });
+
+  it.each([
+    "securityActions",
+    "loginActions",
+    "accountGuard",
+    "profileAction",
+    "preferencesAction",
+  ])("reports unavailable lifecycle evidence when %s cannot be read", (missing) => {
+    const evidence = analyzePortalAuthLifecycle({
+      ...TASK7_LIFECYCLE_SOURCES,
+      [missing]: null,
+    });
+
+    expect(evidence).toBeNull();
+  });
+
+  it.each(["startTotpEnrollment", "confirmTotpEnrollment"])(
+    "reports unavailable lifecycle evidence when %s is absent from the security actions",
+    (removed) => {
+      const evidence = analyzePortalAuthLifecycle({
+        ...TASK7_LIFECYCLE_SOURCES,
+        securityActions: TASK7_SECURITY_ACTIONS.replace(
+          `export async function ${removed}()`,
+          `export async function ${removed}Renamed()`,
+        ),
+      });
+
+      expect(evidence).toBeNull();
+    },
+  );
 
   it("blocks evaluated headers when one credential route lacks no-store", () => {
     const sources = [

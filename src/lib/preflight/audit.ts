@@ -587,7 +587,7 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
       "portal",
       lifecycleComplete ? "pass" : "blocked",
       lifecycleComplete
-        ? "Portal callback provenance, recovery authorization, reset ordering, and challenge replay controls are structurally represented per file."
+        ? "Portal callback provenance, recovery authorization, reset ordering, challenge replay, current-password reauthentication, assurance-gated account mutations, and second-factor enforcement are structurally represented per file."
         : "Portal account-lifecycle relationships are missing or structurally incomplete.",
       lifecycleEvidence
         ? Object.entries(lifecycleEvidence)

@@ -12,6 +12,7 @@ const LINKS = [
   { href: "/account", name: "Overview" },
   { href: "/account/profile", name: "Profile" },
   { href: "/account/preferences", name: "Preferences" },
+  { href: "/account/security", name: "Security" },
 ] as const;
 
 describe("AccountNavigation", () => {
@@ -22,6 +23,8 @@ describe("AccountNavigation", () => {
     for (const { href, name } of LINKS) {
       expect(within(accountNavigation).getByRole("link", { name })).toHaveAttribute("href", href);
     }
+    // Exactly these links: a new section must be added deliberately, not silently.
+    expect(within(accountNavigation).getAllByRole("link")).toHaveLength(LINKS.length);
   });
 
   it.each(LINKS)("marks only the exact $name link as current", ({ href, name }) => {
