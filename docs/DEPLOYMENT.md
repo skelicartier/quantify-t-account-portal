@@ -42,7 +42,11 @@ npm run validate
 npm run preflight:strict
 ```
 
-The strict preflight is expected to fail while `productionReady` remains locked, including while any production warning is unresolved. It does not read `.env` files or mutate cloud resources.
+The strict preflight is expected to fail while `productionReady` remains locked, including while any production warning is unresolved. It does not read `.env` files, touch any Storage service, or mutate cloud resources.
+
+`npm run validate` passes end to end in the integrated workspace and reports 20 pass, 9 warning, 0 blocked with `sourceReady` true. A `preflight:json` failure at the migration-integrity check is therefore never expected: it means the desktop migration bytes drifted from the reviewed pins and a human must review the migration change before repinning.
+
+Pin enforcement runs only where the desktop repository is present. `Portal CI` runs `validate:portal`, which stops at `next build` and never reaches preflight, and the focused real-bytes test skips when the sibling desktop checkout is absent. Treat the integrated `npm run validate` run and code review as the enforcement point for migration drift, not CI.
 
 ## Azure backend boundary
 
@@ -57,6 +61,9 @@ No Azure deployment should happen from Vercel, GitHub Actions, or this repositor
 - Never seed Owner/Admin/Support from email, metadata, local SQLite, or desktop flags.
 - Any migration application requires a backup, disposable staging clone, schema diff, pgTAP/RLS evidence, and explicit authorization.
 - Authenticated smoke tests use disposable staging identities only.
+- The portal handles no user images. It never accepts, stores, processes, proxies, or displays a picture, and it performs no Storage access at all, so no deployment step needs bucket configuration, object lifecycle rules, or image-processing capacity.
+- `app_profiles.profile_photo_path` stays exactly as the desktop application and its retained v1 RPC left it. The portal never selects, projects, or writes that column, and no deployment step may add a migration, delete a row, or clear a value.
+- The eleven desktop migration files are pinned by exact SHA-256 digests in the portal preflight. Editing a migration without repinning the reviewed digest blocks the source gate instead of silently shipping.
 
 ## Rollback and production gate
 

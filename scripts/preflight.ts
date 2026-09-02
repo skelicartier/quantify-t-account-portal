@@ -2,11 +2,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { buildPreflightReport, preflightExitCode } from "@/lib/preflight/audit";
-import {
-  DESKTOP_SUPABASE_MIGRATION_FILENAMES,
-  type NetworkProbe,
-  type RepositorySnapshot,
-} from "@/lib/preflight/model";
+import { collectDesktopSupabaseEvidence } from "@/lib/preflight/migration-evidence";
+import { type NetworkProbe, type RepositorySnapshot } from "@/lib/preflight/model";
 import {
   analyzePortalAuthLifecycle,
   analyzePortalSecurityHeaders,
@@ -30,18 +27,6 @@ async function readKnownFile(path: string): Promise<string | null> {
   }
 }
 
-async function readDesktopSupabaseContract(): Promise<string | null> {
-  const knownPaths = [
-    resolve(desktopRoot, "src/database/supabase_schema.sql"),
-    ...DESKTOP_SUPABASE_MIGRATION_FILENAMES.map((filename) =>
-      resolve(desktopRoot, "supabase/migrations", filename),
-    ),
-  ];
-  const sources = await Promise.all(knownPaths.map((path) => readKnownFile(path)));
-  if (sources.some((source) => source === null)) return null;
-  return (sources as string[]).join("\n\n");
-}
-
 async function collectSnapshot(): Promise<RepositorySnapshot> {
   const [confirmRoute, resetAction, turnstileField] = await Promise.all([
     readKnownFile(resolve(portalRoot, "src/app/auth/confirm/route.ts")),
@@ -49,6 +34,7 @@ async function collectSnapshot(): Promise<RepositorySnapshot> {
     readKnownFile(resolve(portalRoot, "src/components/auth/turnstile-field.tsx")),
   ]);
   const headerRules = await nextConfig.headers?.();
+  const desktopSupabase = await collectDesktopSupabaseEvidence(desktopRoot);
 
   return {
     portalPackageJson: await readKnownFile(resolve(portalRoot, "package.json")),
@@ -60,7 +46,8 @@ async function collectSnapshot(): Promise<RepositorySnapshot> {
     }),
     portalSecurityEvidence: analyzePortalSecurityHeaders(headerRules ?? null),
     desktopEnvironmentExample: await readKnownFile(resolve(desktopRoot, ".env.example")),
-    desktopSupabaseSchema: await readDesktopSupabaseContract(),
+    desktopSupabaseSchema: desktopSupabase.schema,
+    desktopSupabaseMigrations: desktopSupabase.migrations,
     desktopAuthService: await readKnownFile(resolve(desktopRoot, "src/services/auth_service.py")),
     desktopAzureFunction: await readKnownFile(
       resolve(desktopRoot, "cloud/azure/update_deploy_function/function_app.py"),

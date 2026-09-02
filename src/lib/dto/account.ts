@@ -24,7 +24,16 @@ export type AccountIdentity = {
   email_confirmed_at?: string | null;
 };
 
+const identitySchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().nullable().optional(),
+  created_at: z.string().nullable().optional(),
+  last_sign_in_at: z.string().nullable().optional(),
+  email_confirmed_at: z.string().nullable().optional(),
+});
+
 const profileSchema = z.object({
+  user_id: z.string().uuid(),
   first_name: z.string().nullable().optional(),
   last_name: z.string().nullable().optional(),
   is_active: z.boolean().nullable().optional(),
@@ -60,14 +69,20 @@ export function mapAccountOverview({
   profile,
   profileState,
 }: MapAccountOverviewInput): AccountOverviewDto {
+  const parsedIdentity = identitySchema.safeParse(identity);
+  if (!parsedIdentity.success) throw new Error("Account identity is invalid.");
+  const safeIdentity = parsedIdentity.data;
   const parsedProfile = profileSchema.safeParse(profile);
-  const safeProfile = parsedProfile.success ? parsedProfile.data : null;
+  const safeProfile =
+    parsedProfile.success && parsedProfile.data.user_id === safeIdentity.id
+      ? parsedProfile.data
+      : null;
   const resolvedProfileState =
     profileState === "ready" && !safeProfile ? "unavailable" : profileState;
   const firstName = cleanText(safeProfile?.first_name);
   const lastName = cleanText(safeProfile?.last_name);
   const displayName = [firstName, lastName].filter(Boolean).join(" ") || "Quantify user";
-  const email = cleanText(identity.email, 254).toLowerCase() || null;
+  const email = cleanText(safeIdentity.email, 254).toLowerCase() || null;
   const tier = cleanText(safeProfile?.subscription_tier, 64).toLowerCase() || "free";
 
   let status: AccountStatus = "unknown";
@@ -75,15 +90,15 @@ export function mapAccountOverview({
   if (resolvedProfileState === "ready" && safeProfile?.is_active === false) status = "inactive";
 
   return {
-    userId: identity.id,
+    userId: safeIdentity.id,
     email,
     displayName,
     initials: accountInitials(firstName, lastName),
     status,
     subscriptionTier: tier,
-    memberSince: safeDate(safeProfile?.created_at) ?? safeDate(identity.created_at),
-    lastSignInAt: safeDate(identity.last_sign_in_at) ?? safeDate(safeProfile?.last_login_at),
-    emailConfirmed: safeDate(identity.email_confirmed_at) !== null,
+    memberSince: safeDate(safeProfile?.created_at) ?? safeDate(safeIdentity.created_at),
+    lastSignInAt: safeDate(safeIdentity.last_sign_in_at) ?? safeDate(safeProfile?.last_login_at),
+    emailConfirmed: safeDate(safeIdentity.email_confirmed_at) !== null,
     profileState: resolvedProfileState,
   };
 }

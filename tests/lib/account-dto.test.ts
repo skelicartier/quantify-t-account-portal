@@ -17,6 +17,7 @@ describe("account overview DTO", () => {
     const overview = mapAccountOverview({
       identity,
       profile: {
+        user_id: "860aac31-73fb-4e10-8f3f-bfcf22a71c11",
         first_name: " Avery ",
         last_name: " Stone ",
         is_active: true,

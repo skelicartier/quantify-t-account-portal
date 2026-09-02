@@ -6,6 +6,7 @@ import {
 } from "@/lib/dto/account";
 
 export const ACCOUNT_PROFILE_COLUMNS = [
+  "user_id",
   "first_name",
   "last_name",
   "is_active",
@@ -24,6 +25,19 @@ type ProfileResult = {
   error: unknown;
 };
 
+export const ACCOUNT_OVERVIEW_UNAVAILABLE_MESSAGE = "Account data is temporarily unavailable.";
+
+/**
+ * Generic availability failure. It deliberately carries no provider detail so a
+ * server error cannot leak query, schema, or transport information to a client.
+ */
+export class AccountOverviewUnavailableError extends Error {
+  constructor() {
+    super(ACCOUNT_OVERVIEW_UNAVAILABLE_MESSAGE);
+    this.name = "AccountOverviewUnavailableError";
+  }
+}
+
 export type AccountDataClient = {
   auth: {
     getUser: () => Promise<AuthUserResult>;
@@ -40,6 +54,16 @@ export type AccountDataClient = {
   };
 };
 
+/**
+ * Resolve the caller's account overview.
+ *
+ * Returns `null` only when Auth reports no verified user, which is the single
+ * condition that may redirect a visitor to the login route. A thrown Auth
+ * transport call and an unusable identity are availability failures, so they
+ * raise {@link AccountOverviewUnavailableError} instead of impersonating an
+ * invalid session. A degraded profile read still yields an overview DTO whose
+ * `profileState` records the degradation.
+ */
 export async function loadAccountOverview(
   client: AccountDataClient,
 ): Promise<AccountOverviewDto | null> {
@@ -47,10 +71,10 @@ export async function loadAccountOverview(
   try {
     authResult = await client.auth.getUser();
   } catch {
-    return null;
+    throw new AccountOverviewUnavailableError();
   }
 
-  const identity = authResult.data.user;
+  const identity = authResult.data?.user ?? null;
   if (authResult.error || !identity?.id) return null;
 
   let profile: unknown = null;
@@ -67,5 +91,11 @@ export async function loadAccountOverview(
     profileState = "unavailable";
   }
 
-  return mapAccountOverview({ identity, profile, profileState });
+  try {
+    return mapAccountOverview({ identity, profile, profileState });
+  } catch {
+    // A verified identity that cannot be mapped is an availability failure, not
+    // an invalid session, so it must not become a login redirect.
+    throw new AccountOverviewUnavailableError();
+  }
 }

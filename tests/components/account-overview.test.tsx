@@ -17,17 +17,22 @@ const account: AccountOverviewDto = {
 };
 
 describe("AccountOverview", () => {
-  it("renders the sanitized account summary and a POST logout action", () => {
-    const logoutAction = vi.fn(async () => undefined);
-
-    render(<AccountOverview account={account} logoutAction={logoutAction} />);
+  it("renders the sanitized account summary and profile navigation", () => {
+    render(<AccountOverview account={account} />);
 
     expect(screen.getByRole("heading", { name: /account overview/i })).toBeVisible();
     expect(screen.getByText("Avery Stone")).toBeVisible();
-    expect(screen.getAllByText("user@example.com")).toHaveLength(2);
+    expect(screen.getByText("user@example.com")).toBeVisible();
     expect(screen.getByText("Professional")).toBeVisible();
     expect(screen.getByText("Active")).toBeVisible();
-    expect(screen.getByRole("button", { name: /sign out/i })).toBeEnabled();
+    expect(screen.getByRole("link", { name: /edit profile/i })).toHaveAttribute(
+      "href",
+      "/account/profile",
+    );
+    expect(screen.getByRole("link", { name: /preferences/i })).toHaveAttribute(
+      "href",
+      "/account/preferences",
+    );
     expect(screen.queryByText(/passcode|pin/i)).not.toBeInTheDocument();
   });
 });
