@@ -7,7 +7,12 @@ import {
   type NetworkProbe,
   type RepositorySnapshot,
 } from "@/lib/preflight/model";
+import {
+  analyzePortalAuthLifecycle,
+  analyzePortalSecurityHeaders,
+} from "@/lib/preflight/source-analysis";
 import { renderPreflightMarkdown } from "@/lib/preflight/report";
+import nextConfig from "../next.config";
 
 const portalRoot = process.cwd();
 const projectsRoot = resolve(portalRoot, "..");
@@ -38,9 +43,22 @@ async function readDesktopSupabaseContract(): Promise<string | null> {
 }
 
 async function collectSnapshot(): Promise<RepositorySnapshot> {
+  const [confirmRoute, resetAction, turnstileField] = await Promise.all([
+    readKnownFile(resolve(portalRoot, "src/app/auth/confirm/route.ts")),
+    readKnownFile(resolve(portalRoot, "src/app/reset-password/actions.ts")),
+    readKnownFile(resolve(portalRoot, "src/components/auth/turnstile-field.tsx")),
+  ]);
+  const headerRules = await nextConfig.headers?.();
+
   return {
     portalPackageJson: await readKnownFile(resolve(portalRoot, "package.json")),
     portalEnvironmentExample: await readKnownFile(resolve(portalRoot, ".env.example")),
+    portalAuthLifecycleEvidence: analyzePortalAuthLifecycle({
+      confirmRoute,
+      resetAction,
+      turnstileField,
+    }),
+    portalSecurityEvidence: analyzePortalSecurityHeaders(headerRules ?? null),
     desktopEnvironmentExample: await readKnownFile(resolve(desktopRoot, ".env.example")),
     desktopSupabaseSchema: await readDesktopSupabaseContract(),
     desktopAuthService: await readKnownFile(resolve(desktopRoot, "src/services/auth_service.py")),

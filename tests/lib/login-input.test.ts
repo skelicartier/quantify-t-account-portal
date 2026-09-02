@@ -5,6 +5,7 @@ describe("login input policy", () => {
     const formData = new FormData();
     formData.set("email", "  User@Example.COM ");
     formData.set("password", "  keep password spacing  ");
+    formData.set("cf-turnstile-response", "turnstile-response");
     formData.set("next", "/account/security?tab=sessions");
 
     const result = parseLoginFormData(formData);
@@ -14,6 +15,7 @@ describe("login input policy", () => {
       data: {
         email: "user@example.com",
         password: "  keep password spacing  ",
+        captchaToken: "turnstile-response",
         nextPath: "/account/security?tab=sessions",
       },
     });

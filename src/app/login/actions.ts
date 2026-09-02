@@ -9,13 +9,13 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 const AUTHENTICATION_ERROR: LoginActionState = {
   status: "error",
   message: "Unable to sign in with those credentials.",
-  fieldErrors: { email: [], password: [] },
+  fieldErrors: { email: [], password: [], challenge: [] },
 };
 
 const SERVICE_ERROR: LoginActionState = {
   status: "error",
   message: "Secure sign-in is temporarily unavailable. Please try again.",
-  fieldErrors: { email: [], password: [] },
+  fieldErrors: { email: [], password: [], challenge: [] },
 };
 
 export async function login(
@@ -30,6 +30,7 @@ export async function login(
     const { error } = await supabase.auth.signInWithPassword({
       email: parsed.data.email,
       password: parsed.data.password,
+      options: { captchaToken: parsed.data.captchaToken },
     });
     if (error) return isCredentialRejection(error) ? AUTHENTICATION_ERROR : SERVICE_ERROR;
   } catch {

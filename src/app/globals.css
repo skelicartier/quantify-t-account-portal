@@ -386,6 +386,55 @@ textarea {
   opacity: 0.68;
 }
 
+.field-assist-link {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.checkbox-field {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 9px 11px;
+  align-items: start;
+}
+
+.checkbox-field input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.checkbox-field label {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.checkbox-field label a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.checkbox-field .field-error {
+  grid-column: 1 / -1;
+}
+
+.turnstile-field {
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+}
+
+.turnstile-field > div {
+  width: 100%;
+  min-height: 65px;
+}
+
 .button {
   min-height: 48px;
   display: inline-flex;
@@ -613,6 +662,12 @@ textarea {
   background: rgb(255 101 101 / 7%);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.auth-alert--success {
+  border-color: rgb(47 209 137 / 38%);
+  color: #9cebc6;
+  background: rgb(47 209 137 / 7%);
 }
 
 .account-shell {

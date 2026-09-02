@@ -4,10 +4,13 @@ import { login } from "@/app/login/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { sanitizeNextPath } from "@/lib/auth/login";
+import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
 
 export const metadata = {
   title: "Sign in",
 };
+
+export const dynamic = "force-dynamic";
 
 type LoginPageProps = {
   searchParams: Promise<{
@@ -22,6 +25,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const notice = Array.isArray(parameters.notice) ? parameters.notice[0] : parameters.notice;
   const nextPath = sanitizeNextPath(requestedPath);
   const providerLogoutIncomplete = notice === "logout-incomplete";
+  const invalidAuthLink = notice === "invalid-auth-link";
+  const passwordUpdated = notice === "password-updated";
+  const { turnstileSiteKey } = getSupabasePublicConfiguration();
 
   return (
     <AuthShell
@@ -35,8 +41,19 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           again only on a trusted device.
         </div>
       )}
+      {invalidAuthLink && (
+        <div className="auth-alert" role="status">
+          This confirmation or recovery link is invalid or has expired. Request a new email and try
+          again.
+        </div>
+      )}
+      {passwordUpdated && (
+        <div className="auth-alert auth-alert--success" role="status">
+          Your password was updated. Sign in with the new password.
+        </div>
+      )}
 
-      <LoginForm action={login} nextPath={nextPath} />
+      <LoginForm action={login} nextPath={nextPath} turnstileSiteKey={turnstileSiteKey} />
 
       <p className="auth-card__footer">
         Need a Quantify Terminal account? <Link href="/signup">Create an account</Link>

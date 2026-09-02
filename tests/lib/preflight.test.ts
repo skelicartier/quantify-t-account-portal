@@ -9,6 +9,10 @@ import {
   type RepositorySnapshot,
 } from "@/lib/preflight/model";
 import { renderPreflightMarkdown } from "@/lib/preflight/report";
+import {
+  analyzePortalAuthLifecycle,
+  analyzePortalSecurityHeaders,
+} from "@/lib/preflight/source-analysis";
 
 const completeSnapshot: RepositorySnapshot = {
   portalPackageJson: JSON.stringify({ dependencies: { next: "16.3.4" } }),
@@ -21,6 +25,27 @@ const completeSnapshot: RepositorySnapshot = {
     "QT_MARKETING_SITE_URL=https://www.example.invalid",
     "QT_DESKTOP_PROJECT_PATH=../Quantify Terminal",
   ].join("\n"),
+  portalAuthLifecycleEvidence: {
+    callbackUsesTrustedRedirectType: true,
+    callbackIssuesRecoveryAuthorization: true,
+    callbackClearsRejectedExchange: true,
+    resetRequiresVerifiedSession: true,
+    resetConsumesAuthorizationBeforeUpdate: true,
+    turnstileResetsAfterSubmission: true,
+  },
+  portalSecurityEvidence: {
+    enforcedChallengeCompatibleCsp: true,
+    exactNoStoreRoutes: true,
+    noStoreRoutes: [
+      "/login",
+      "/signup",
+      "/forgot-password",
+      "/reset-password",
+      "/account/:path*",
+      "/admin/:path*",
+      "/auth/:path*",
+    ],
+  },
   desktopEnvironmentExample: "SUPABASE_URL SUPABASE_ANON_KEY QT_AUTH_API_ENDPOINT",
   desktopSupabaseSchema: `
     create table if not exists public.app_profiles (id uuid);
@@ -104,9 +129,107 @@ describe("preflight audit", () => {
     expect(report.sourceReady).toBe(true);
     expect(report.stagingReady).toBe(false);
     expect(report.productionReady).toBe(false);
+    expect(report.checks.find(({ id }) => id === "portal.auth-lifecycle")?.status).toBe("pass");
+    expect(report.checks.find(({ id }) => id === "portal.credential-security")?.status).toBe(
+      "pass",
+    );
     expect(report.checks.find(({ id }) => id === "supabase.current-schema")?.status).toBe("pass");
     expect(report.checks.find(({ id }) => id === "supabase.unified-sessions")?.status).toBe("pass");
     expect(report.checks.find(({ id }) => id === "supabase.owner-role")?.status).toBe("pass");
+  });
+
+  it("blocks incomplete structural lifecycle or evaluated header evidence", () => {
+    const checks = auditRepositories({
+      ...completeSnapshot,
+      portalAuthLifecycleEvidence: {
+        ...completeSnapshot.portalAuthLifecycleEvidence!,
+        callbackUsesTrustedRedirectType: false,
+      },
+      portalSecurityEvidence: {
+        enforcedChallengeCompatibleCsp: true,
+        exactNoStoreRoutes: false,
+        noStoreRoutes: ["/login", "/signup"],
+      },
+    });
+
+    expect(checks.find(({ id }) => id === "portal.auth-lifecycle")?.status).toBe("blocked");
+    expect(checks.find(({ id }) => id === "portal.credential-security")?.status).toBe("blocked");
+  });
+
+  it("does not accept a query-only recovery branch as trusted callback provenance", () => {
+    const evidence = analyzePortalAuthLifecycle({
+      confirmRoute: `
+        async function clearRejectedExchange() {
+          await clearPortalSupabaseAuthCookies();
+          await clearRecoveryAuthorization();
+        }
+        async function GET() {
+          const result = await supabase.auth.exchangeCodeForSession(parsed.data.code);
+          const destination = parsed.data.flow === "recovery" ? "/reset-password" : "/account";
+          await issueRecoveryAuthorization({ userId: result.data.user.id });
+          await clearRejectedExchange();
+          return destination;
+        }
+      `,
+      resetAction: `async function resetPassword() { await getSession(); await getUser(session.access_token); const authorized = await consumeRecoveryAuthorization(); if (!authorized) return; await updateUser(); }`,
+      turnstileField: `function TurnstileField() { const completed = wasDisabled.current && !disabled; if (completed) window.turnstile.reset(widgetId); }`,
+    });
+
+    expect(evidence?.callbackUsesTrustedRedirectType).toBe(false);
+  });
+
+  it("does not accept an ordinary-session password update without marker consumption", () => {
+    const evidence = analyzePortalAuthLifecycle({
+      confirmRoute: `
+        async function clearRejectedExchange() {
+          await clearPortalSupabaseAuthCookies();
+          await clearRecoveryAuthorization();
+        }
+        async function GET() {
+          const result = await supabase.auth.exchangeCodeForSession(parsed.data.code);
+          const redirectType = "redirectType" in result.data ? result.data.redirectType : undefined;
+          const destination = resolveTrustedAuthDestination(parsed.data.flow, redirectType);
+          await issueRecoveryAuthorization({ userId: result.data.user.id, accessToken: result.data.session.access_token, secure: true });
+          await clearRejectedExchange();
+          return destination;
+        }
+      `,
+      resetAction: `async function resetPassword() { await getSession(); await getUser(session.access_token); await updateUser(); }`,
+      turnstileField: `function TurnstileField() { const completed = wasDisabled.current && !disabled; if (completed) window.turnstile.reset(widgetId); }`,
+    });
+
+    expect(evidence?.resetConsumesAuthorizationBeforeUpdate).toBe(false);
+  });
+
+  it("blocks evaluated headers when one credential route lacks no-store", () => {
+    const sources = [
+      "/login",
+      "/signup",
+      "/forgot-password",
+      "/reset-password",
+      "/account/:path*",
+      "/admin/:path*",
+    ];
+    const evidence = analyzePortalSecurityHeaders([
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value:
+              "script-src 'self' https://challenges.cloudflare.com; connect-src 'self' https://*.supabase.co",
+          },
+        ],
+      },
+      ...sources.map((source) => ({
+        source,
+        headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
+      })),
+    ]);
+
+    expect(evidence?.enforcedChallengeCompatibleCsp).toBe(true);
+    expect(evidence?.exactNoStoreRoutes).toBe(false);
+    expect(evidence?.noStoreRoutes).not.toContain("/auth/:path*");
   });
 
   it("blocks environment names outside the checked-in allow-list", () => {

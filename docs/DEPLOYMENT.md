@@ -2,7 +2,7 @@
 
 ## Current release boundary
 
-The portal source is suitable for GitHub CI and a Vercel **preview/staging** project. It is not yet approved for production: signup/recovery/MFA/admin flows and the dedicated Azure Account API remain future rollout work, and the checked-in Supabase migrations have not run against PostgreSQL or staging.
+The portal source is suitable for GitHub CI and a Vercel **preview/staging** project. Website signup, trusted PKCE confirmation, non-enumerating recovery/reset, consent metadata, and Supabase-managed Turnstile submission are implemented in source but have not been exercised against an authorized managed project. Recovery reset uses a five-minute HttpOnly browser marker bound to the exchanged UUID/access token and consumes it before mutation; without a separately approved server-held signing secret or atomic nonce store, that marker does not protect against a malicious bearer-token holder or concurrent replay. MFA/admin flows and the dedicated Azure Account API remain future rollout work, and the checked-in Supabase migrations have not run against PostgreSQL or staging.
 
 Vercel builds must never migrate Supabase, seed roles, inspect desktop data, or deploy Azure resources.
 
@@ -13,16 +13,16 @@ Vercel builds must never migrate Supabase, seed roles, inspect desktop data, or 
 3. Enable Vercel Deployment Protection before supplying staging credentials, scope every staging value to Preview, and leave Production values unset. Do not attach the production account domain until the production gate below passes and the code lock is removed in the reviewed release task.
 4. Configure only these reviewed values in Vercel project settings:
 
-   | Variable                               | Scope                       | Rule                                                                                                                               |
-   | -------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-   | `NEXT_PUBLIC_SITE_URL`                 | Browser-safe                | Exact staging portal origin, HTTPS outside localhost.                                                                              |
-   | `NEXT_PUBLIC_SUPABASE_URL`             | Browser-safe                | Authorized staging Supabase URL, HTTPS.                                                                                            |
-   | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe                | Publishable/anonymous staging key only.                                                                                            |
-   | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`       | Browser-safe                | Staging site key; server verification is added with the signup abuse-protection task.                                              |
-   | `QT_ACCOUNT_API_URL`                   | Server-side public endpoint | Leave on the documented placeholder/omit from active use until the Task 8 Account API exists. Never place a credential in the URL. |
+   | Variable                               | Scope                       | Rule                                                                                                                                                                    |
+   | -------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `NEXT_PUBLIC_SITE_URL`                 | Browser-safe                | Exact staging portal origin, HTTPS outside localhost.                                                                                                                   |
+   | `NEXT_PUBLIC_SUPABASE_URL`             | Browser-safe                | Authorized staging Supabase URL, HTTPS.                                                                                                                                 |
+   | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe                | Publishable/anonymous staging key only.                                                                                                                                 |
+   | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`       | Browser-safe                | Staging site key. The portal submits responses as Supabase Auth `captchaToken`; the private verification secret belongs only in authorized Supabase Auth configuration. |
+   | `QT_ACCOUNT_API_URL`                   | Server-side public endpoint | Leave on the documented placeholder/omit from active use until the Task 8 Account API exists. Never place a credential in the URL.                                      |
 
 5. Never configure `SUPABASE_SERVICE_ROLE_KEY`, `AZURE_STORAGE_CONNECTION_STRING`, `BREVO_API_KEY`, `QT_AUTH_RESET_SECRET`, signing private keys, database passwords, or refresh/access tokens in this project.
-6. Configure Supabase redirect/site URLs only in an authorized staging project. Do not change production Auth settings during preview setup.
+6. In an authorized, isolated staging Supabase project only, configure the exact site origin and callback URLs produced by the portal: `/auth/confirm?flow=signup` and `/auth/confirm?flow=recovery`. Enable managed Turnstile verification and approved SMTP/templates there. Do not change production Auth settings during preview setup. The current desktop signup expects an immediate Auth session, so mandatory email confirmation must not be enabled on the shared/live project before desktop compatibility is proven.
 7. Require the GitHub `Portal CI` workflow to pass before promoting a preview.
 
 ## Validation commands
@@ -42,7 +42,7 @@ npm run validate
 npm run preflight:strict
 ```
 
-The strict preflight is expected to fail until every production warning is resolved. It does not read `.env` files or mutate cloud resources.
+The strict preflight is expected to fail while `productionReady` remains locked, including while any production warning is unresolved. It does not read `.env` files or mutate cloud resources.
 
 ## Azure backend boundary
 

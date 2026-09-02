@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  CHALLENGE_ERROR_MESSAGE,
+  CHALLENGE_FIELD_NAME,
+  MAX_CHALLENGE_TOKEN_LENGTH,
+} from "@/lib/auth/challenge";
+
 const loginSchema = z.object({
   email: z
     .string({ error: "Enter your email address." })
@@ -11,6 +17,11 @@ const loginSchema = z.object({
     .string({ error: "Enter your password." })
     .min(1, "Enter your password.")
     .max(1_024, "Password is too long."),
+  challenge: z
+    .string({ error: CHALLENGE_ERROR_MESSAGE })
+    .trim()
+    .min(1, CHALLENGE_ERROR_MESSAGE)
+    .max(MAX_CHALLENGE_TOKEN_LENGTH, CHALLENGE_ERROR_MESSAGE),
 });
 
 export type LoginActionState = {
@@ -19,6 +30,7 @@ export type LoginActionState = {
   fieldErrors: {
     email: string[];
     password: string[];
+    challenge: string[];
   };
 };
 
@@ -30,7 +42,7 @@ export type LoginAction = (
 export const INITIAL_LOGIN_STATE: LoginActionState = {
   status: "idle",
   message: null,
-  fieldErrors: { email: [], password: [] },
+  fieldErrors: { email: [], password: [], challenge: [] },
 };
 
 export function sanitizeNextPath(value: unknown): string {
@@ -66,7 +78,7 @@ export function isCredentialRejection(error: unknown): boolean {
 export type ParsedLoginForm =
   | {
       success: true;
-      data: { email: string; password: string; nextPath: string };
+      data: { email: string; password: string; captchaToken: string; nextPath: string };
     }
   | { success: false; state: LoginActionState };
 
@@ -74,6 +86,7 @@ export function parseLoginFormData(formData: FormData): ParsedLoginForm {
   const result = loginSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
+    challenge: formData.get(CHALLENGE_FIELD_NAME),
   });
 
   if (!result.success) {
@@ -86,6 +99,7 @@ export function parseLoginFormData(formData: FormData): ParsedLoginForm {
         fieldErrors: {
           email: errors.email ?? [],
           password: errors.password ?? [],
+          challenge: errors.challenge ?? [],
         },
       },
     };
@@ -96,6 +110,7 @@ export function parseLoginFormData(formData: FormData): ParsedLoginForm {
     data: {
       email: result.data.email,
       password: result.data.password,
+      captchaToken: result.data.challenge,
       nextPath: sanitizeNextPath(formData.get("next")),
     },
   };

@@ -22,9 +22,26 @@ export type PreflightCheck = {
   evidence: string[];
 };
 
+export type PortalAuthLifecycleEvidence = {
+  callbackUsesTrustedRedirectType: boolean;
+  callbackIssuesRecoveryAuthorization: boolean;
+  callbackClearsRejectedExchange: boolean;
+  resetRequiresVerifiedSession: boolean;
+  resetConsumesAuthorizationBeforeUpdate: boolean;
+  turnstileResetsAfterSubmission: boolean;
+};
+
+export type PortalSecurityEvidence = {
+  enforcedChallengeCompatibleCsp: boolean;
+  exactNoStoreRoutes: boolean;
+  noStoreRoutes: string[];
+};
+
 export type RepositorySnapshot = {
   portalPackageJson: string | null;
   portalEnvironmentExample: string | null;
+  portalAuthLifecycleEvidence: PortalAuthLifecycleEvidence | null;
+  portalSecurityEvidence: PortalSecurityEvidence | null;
   desktopEnvironmentExample: string | null;
   desktopSupabaseSchema: string | null;
   desktopAuthService: string | null;

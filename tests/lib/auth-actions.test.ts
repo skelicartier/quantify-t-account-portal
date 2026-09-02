@@ -1,3 +1,4 @@
+import { CHALLENGE_FIELD_NAME } from "@/lib/auth/challenge";
 import { INITIAL_LOGIN_STATE } from "@/lib/auth/login";
 
 const mocks = vi.hoisted(() => ({
@@ -48,13 +49,14 @@ describe("authentication Server Actions", () => {
     const formData = new FormData();
     formData.set("email", "user@example.com");
     formData.set("password", submittedPassword);
+    formData.set(CHALLENGE_FIELD_NAME, "turnstile-response");
 
     const result = await login(INITIAL_LOGIN_STATE, formData);
 
     expect(result).toEqual({
       status: "error",
       message: "Unable to sign in with those credentials.",
-      fieldErrors: { email: [], password: [] },
+      fieldErrors: { email: [], password: [], challenge: [] },
     });
     expect(JSON.stringify(result)).not.toContain(submittedPassword);
     expect(mocks.redirect).not.toHaveBeenCalled();
@@ -71,6 +73,7 @@ describe("authentication Server Actions", () => {
     const formData = new FormData();
     formData.set("email", "user@example.com");
     formData.set("password", "not-returned");
+    formData.set(CHALLENGE_FIELD_NAME, "turnstile-response");
 
     await expect(login(INITIAL_LOGIN_STATE, formData)).resolves.toMatchObject({
       status: "error",
@@ -89,9 +92,15 @@ describe("authentication Server Actions", () => {
     const formData = new FormData();
     formData.set("email", "user@example.com");
     formData.set("password", "correct-password");
+    formData.set(CHALLENGE_FIELD_NAME, "turnstile-response");
     formData.set("next", "https://evil.example/steal");
 
     await expect(login(INITIAL_LOGIN_STATE, formData)).rejects.toThrow("NEXT_REDIRECT:/account");
+    expect(signInWithPassword).toHaveBeenCalledWith({
+      email: "user@example.com",
+      password: "correct-password",
+      options: { captchaToken: "turnstile-response" },
+    });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 

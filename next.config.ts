@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const developmentScriptSource = process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -8,15 +10,16 @@ const contentSecurityPolicy = [
   "frame-ancestors 'none'",
   "img-src 'self' data: blob:",
   "object-src 'none'",
-  "script-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline'${developmentScriptSource} https://challenges.cloudflare.com`,
   "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' https://*.supabase.co https://*.azurewebsites.net",
+  "frame-src https://challenges.cloudflare.com",
+  "connect-src 'self' https://challenges.cloudflare.com https://*.supabase.co https://*.azurewebsites.net",
   "upgrade-insecure-requests",
 ].join("; ");
 
 const securityHeaders = [
   {
-    key: "Content-Security-Policy-Report-Only",
+    key: "Content-Security-Policy",
     value: contentSecurityPolicy,
   },
   {
@@ -57,6 +60,18 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/login",
+        headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
+      },
+      {
+        source: "/signup",
+        headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
+      },
+      {
+        source: "/forgot-password",
+        headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
+      },
+      {
+        source: "/reset-password",
         headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
       },
       {

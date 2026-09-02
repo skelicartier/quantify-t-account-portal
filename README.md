@@ -4,9 +4,9 @@ Secure, web-only account surface for Quantify Terminal.
 
 ## Current rollout status
 
-The repository currently includes the Next.js foundation, security headers, read-only integrated preflight, Supabase SSR login/logout, protected account routing, a UUID-scoped server DAL, and an allow-listed account overview DTO. The ordered Supabase identity/RBAC/session migrations live in the desktop repository and have **not** been applied to any cloud project.
+The repository currently includes the Next.js foundation, enforced security headers, read-only integrated preflight, Supabase SSR login/logout, website signup, PKCE email confirmation, non-enumerating password recovery/reset, explicit legal-consent metadata, Supabase-managed Turnstile challenge submission, protected account routing, a UUID-scoped server DAL, and an allow-listed account overview DTO. The ordered Supabase identity/RBAC/session migrations live in the desktop repository and have **not** been applied to any cloud project.
 
-Signup, recovery, MFA, administration, unified revocation, and the Azure Account API are later rollout tasks. In particular, the Account API implementation and deployment are future Task 8 work; this repository must not be treated as a completed production administration backend.
+Task 5 is complete in source only. Managed email delivery, redirect allow-lists, CAPTCHA enforcement, provisioning, and same-account portal/desktop behavior remain unverified staging evidence. MFA, administration, unified revocation, and the Azure Account API are later rollout tasks. In particular, the Account API implementation and deployment are future Task 8 work; this repository must not be treated as a completed production administration backend.
 
 ## Safety boundary
 
@@ -19,11 +19,20 @@ Signup, recovery, MFA, administration, unified revocation, and the Azure Account
 
 ## Account authentication
 
-- `/login` submits credentials through a Server Action; passwords and tokens never enter returned page state or URLs.
+- `/login`, `/signup`, and `/forgot-password` submit through Server Actions; passwords, challenge responses, provider details, and tokens never enter returned page state or URLs.
+- Login, signup, and recovery pass the browser-safe Turnstile response to Supabase Auth as `captchaToken`; the private verification secret remains in the managed Supabase project, not this portal.
+- Signup uses the configured portal origin for a fixed PKCE callback and returns the same accepted response for new and existing addresses.
+- Required Terms/Privacy acceptance is captured with server-owned version, source, and timestamp metadata. This source metadata is not claimed to be an immutable legal receipt.
+- `/auth/confirm` accepts one bounded PKCE code, ignores arbitrary destinations, binds the requested flow to Supabase's runtime `redirectType`, and redirects only to `/account` or `/reset-password`. A mismatch clears the exchanged portal session.
+- Recovery returns one generic accepted response for known and unknown addresses. A trusted recovery exchange issues a five-minute, HttpOnly marker bound to the exact Auth UUID and access token; reset consumes that browser marker before updating the revalidated identity, then clears only the portal-local session.
+- The recovery marker is a normal-browser flow guard, not a new root of trust: it is signed with the exchanged bearer access token because this task forbids a portal signing secret or server-side nonce store. It is not globally atomic across concurrent requests and does not defend against a malicious holder of that bearer token. Those stronger guarantees require separately approved server-held secret/state and remain outside this source-only task.
 - `/account` is protected by the Next.js proxy and independently revalidated in the server-only DAL.
 - The overview reads named `app_profiles` columns under the verified Supabase UUID and maps them to an allow-listed DTO.
-- Web sign-out uses Supabase `local` scope and clears only this portal's cookie family. It does not revoke desktop or other-device sessions.
+- Web sign-out uses Supabase `local` scope and clears only this portal's cookie family. It does not deliberately revoke desktop or other-device sessions.
 - Session cookies are `HttpOnly`, `SameSite=Lax`, path `/`, and `Secure` outside local development.
+- Credential and callback routes are private/no-store, and the enforced CSP permits only the reviewed Cloudflare challenge, Supabase, and Azure endpoint classes.
+
+The current desktop signup expects Supabase to return a session immediately. Do **not** enable mandatory email confirmation on the shared/live Auth project until an authorized staging desktop regression and the later desktop migration prove coexistence. Source code alone also cannot prove that portal and desktop point at the same managed Supabase project.
 
 ## Validation
 
@@ -43,7 +52,7 @@ The integrated workspace additionally contains the desktop and marketing reposit
 npm run validate
 ```
 
-This adds the offline cross-repository preflight. It reads only explicit checked-in paths and process-environment presence; it never opens real `.env` files or contacts cloud services. `npm run preflight:strict` is the production gate and intentionally fails while any warning remains.
+This adds the offline cross-repository preflight. It reads only explicit checked-in paths and process-environment presence; it never opens real `.env` files or contacts cloud services. `npm run preflight:strict` remains nonzero while `productionReady` is locked, including while any warning remains.
 
 A real authenticated login/refresh/logout and `/account` accessibility pass requires an explicitly authorized disposable staging account. Never run lifecycle or migration tests against production users.
 

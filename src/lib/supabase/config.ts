@@ -24,6 +24,8 @@ export function getSupabaseAuthCookieOptions(
 export function getSupabasePublicConfiguration(): {
   url: string;
   publishableKey: string;
+  siteUrl: string;
+  turnstileSiteKey: string;
   cookieOptions: CookieOptionsWithName;
 } {
   const environment = parsePublicEnvironment({
@@ -37,6 +39,8 @@ export function getSupabasePublicConfiguration(): {
   return {
     url,
     publishableKey: environment.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    siteUrl: environment.NEXT_PUBLIC_SITE_URL,
+    turnstileSiteKey: environment.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
     cookieOptions: getSupabaseAuthCookieOptions(url),
   };
 }

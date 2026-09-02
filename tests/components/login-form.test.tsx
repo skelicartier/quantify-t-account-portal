@@ -4,16 +4,28 @@ import userEvent from "@testing-library/user-event";
 import { LoginForm } from "@/components/auth/login-form";
 import type { LoginAction } from "@/lib/auth/login";
 
+vi.mock("@/components/auth/turnstile-field", () => ({
+  TurnstileField: () => (
+    <input type="hidden" name="cf-turnstile-response" value="turnstile-test-response" />
+  ),
+}));
+
 describe("LoginForm", () => {
   it("submits accessible credentials and presents a generic authentication error", async () => {
     const user = userEvent.setup();
     const action = vi.fn<LoginAction>().mockResolvedValue({
       status: "error",
       message: "Unable to sign in with those credentials.",
-      fieldErrors: { email: [], password: [] },
+      fieldErrors: { email: [], password: [], challenge: [] },
     });
 
-    render(<LoginForm action={action} nextPath="/account/security" />);
+    render(
+      <LoginForm
+        action={action}
+        nextPath="/account/security"
+        turnstileSiteKey="turnstile-public-key"
+      />,
+    );
 
     const email = screen.getByRole("textbox", { name: /email address/i });
     const password = screen.getByLabelText(/^password$/i);
@@ -29,6 +41,7 @@ describe("LoginForm", () => {
     const submitted = action.mock.calls[0]?.[1];
     expect(submitted).toBeInstanceOf(FormData);
     expect(submitted?.get("next")).toBe("/account/security");
+    expect(submitted?.get("cf-turnstile-response")).toBe("turnstile-test-response");
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Unable to sign in with those credentials.",
     );

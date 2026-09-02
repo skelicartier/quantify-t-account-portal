@@ -1,18 +1,23 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
+
+import { TurnstileField } from "@/components/auth/turnstile-field";
 
 import { INITIAL_LOGIN_STATE, type LoginAction } from "@/lib/auth/login";
 
 type LoginFormProps = {
   action: LoginAction;
   nextPath: string;
+  turnstileSiteKey: string;
 };
 
-export function LoginForm({ action, nextPath }: LoginFormProps) {
+export function LoginForm({ action, nextPath, turnstileSiteKey }: LoginFormProps) {
   const [state, formAction, isPending] = useActionState(action, INITIAL_LOGIN_STATE);
   const emailError = state.fieldErrors.email[0];
   const passwordError = state.fieldErrors.password[0];
+  const challengeError = state.fieldErrors.challenge[0];
 
   return (
     <>
@@ -62,7 +67,11 @@ export function LoginForm({ action, nextPath }: LoginFormProps) {
               {passwordError}
             </p>
           )}
+          <Link className="field-assist-link" href="/forgot-password">
+            Forgot password?
+          </Link>
         </div>
+        <TurnstileField siteKey={turnstileSiteKey} error={challengeError} disabled={isPending} />
         <button className="button button--primary" type="submit" disabled={isPending}>
           {isPending ? "Verifying account…" : "Sign in securely"}
         </button>

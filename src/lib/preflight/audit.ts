@@ -198,6 +198,43 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
     ),
   );
 
+  const lifecycleEvidence = snapshot.portalAuthLifecycleEvidence;
+  const lifecycleComplete =
+    lifecycleEvidence !== null && Object.values(lifecycleEvidence).every(Boolean);
+  checks.push(
+    check(
+      "portal.auth-lifecycle",
+      "portal",
+      lifecycleComplete ? "pass" : "blocked",
+      lifecycleComplete
+        ? "Portal callback provenance, recovery authorization, reset ordering, and challenge replay controls are structurally represented per file."
+        : "Portal account-lifecycle relationships are missing or structurally incomplete.",
+      lifecycleEvidence
+        ? Object.entries(lifecycleEvidence)
+            .filter(([, present]) => !present)
+            .map(([relationship]) => `Missing relationship: ${relationship}`)
+        : ["Per-file lifecycle evidence is unavailable."],
+    ),
+  );
+
+  const securityEvidence = snapshot.portalSecurityEvidence;
+  const credentialSecurityComplete =
+    securityEvidence?.enforcedChallengeCompatibleCsp === true &&
+    securityEvidence.exactNoStoreRoutes;
+  checks.push(
+    check(
+      "portal.credential-security",
+      "portal",
+      credentialSecurityComplete ? "pass" : "blocked",
+      credentialSecurityComplete
+        ? "Evaluated header rules enforce the challenge-compatible CSP and exact credential-route no-store set."
+        : "Evaluated credential-route CSP or exact no-store controls are incomplete.",
+      securityEvidence
+        ? [`Evaluated no-store routes: ${securityEvidence.noStoreRoutes.join(", ")}`]
+        : ["Evaluated Next.js header evidence is unavailable."],
+    ),
+  );
+
   checks.push(
     check(
       "desktop.public-cloud-contract",
