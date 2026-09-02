@@ -8,7 +8,7 @@ This document records non-secret source findings only. No production setting, da
 
 - The portal has exact dependency pins, tests, report-only CSP plus baseline security headers, environment allow-list validation, Supabase SSR login/logout, protected account routing, and a UUID-scoped DAL/DTO.
 - The desktop-owned ordered migration ledger represents immutable UUID identity, canonical Owner/Admin/Support/User roles, session inventory, append-only auth events, grants, and RLS contracts.
-- The portal preflight reads the seven migration filenames through an explicit allow-list; it never uses glob discovery.
+- The portal preflight reads the eight migration filenames through an explicit allow-list; it never uses glob discovery.
 - The desktop remains the current Azure/Supabase schema owner. The dedicated Account API is not implemented or deployed yet.
 - The marketing website has its Vercel/theme source contract.
 

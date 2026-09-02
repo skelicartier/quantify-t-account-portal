@@ -1,5 +1,6 @@
 export const DESKTOP_SUPABASE_MIGRATION_FILENAMES = [
   "20260902000000_local_baseline.sql",
+  "20260902000050_adoption_preflight.sql",
   "20260902000100_immutable_identity.sql",
   "20260902000200_canonical_rbac_provisioning.sql",
   "20260902000300_account_sessions.sql",
