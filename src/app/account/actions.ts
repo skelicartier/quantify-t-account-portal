@@ -3,11 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { endCurrentAccountApiSession } from "@/lib/account/session-lifecycle";
+import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { clearPortalSupabaseAuthCookies, createServerSupabaseClient } from "@/lib/supabase/server";
 
 async function revokeCurrentProviderSession(): Promise<boolean> {
   try {
     const supabase = await createServerSupabaseClient();
+    await endCurrentAccountApiSession(supabase);
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const { error } = await supabase.auth.signOut({ scope: "local" });
@@ -23,6 +26,7 @@ async function revokeCurrentProviderSession(): Promise<boolean> {
 }
 
 export async function logout(): Promise<void> {
+  await requireSameOriginServerAction();
   const providerLogoutConfirmed = await revokeCurrentProviderSession();
 
   await clearPortalSupabaseAuthCookies();

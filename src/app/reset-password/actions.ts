@@ -8,6 +8,7 @@ import {
   consumeRecoveryAuthorization,
 } from "@/lib/auth/recovery-authorization";
 import { parseResetPasswordFormData, type ResetPasswordActionState } from "@/lib/auth/recovery";
+import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { clearPortalSupabaseAuthCookies, createServerSupabaseClient } from "@/lib/supabase/server";
 
 const EMPTY_FIELD_ERRORS: ResetPasswordActionState["fieldErrors"] = {
@@ -36,6 +37,7 @@ export async function resetPassword(
 
   let supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
   try {
+    await requireSameOriginServerAction();
     supabase = await createServerSupabaseClient();
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     const session = sessionData.session;

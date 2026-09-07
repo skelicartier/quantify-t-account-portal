@@ -1,175 +1,208 @@
-import { CHALLENGE_FIELD_NAME } from "@/lib/auth/challenge";
-import { INITIAL_RECOVERY_REQUEST_STATE, INITIAL_RESET_PASSWORD_STATE } from "@/lib/auth/recovery";
-
-const USER_ID = "11111111-1111-4111-8111-111111111111";
-const ACCESS_TOKEN = "verified-recovery-access-token";
+import {
+  ACCOUNT_DELETION_CANCEL_CONFIRMATION,
+  ACCOUNT_DELETION_CONFIRMATION,
+  ACCOUNT_EXPORT_CONFIRMATION,
+  INITIAL_ACCOUNT_LIFECYCLE_STATE,
+} from "@/lib/account/lifecycle-input";
 
 const mocks = vi.hoisted(() => ({
   createServerSupabaseClient: vi.fn(),
-  clearPortalSupabaseAuthCookies: vi.fn(),
-  consumeRecoveryAuthorization: vi.fn(),
-  clearRecoveryAuthorization: vi.fn(),
-  getSupabasePublicConfiguration: vi.fn(() => ({
-    url: "https://project.supabase.co",
-    publishableKey: "sb_publishable_test_value",
-    siteUrl: "https://account.quantifyterminal.com",
-    turnstileSiteKey: "turnstile-public-value",
-    cookieOptions: { name: "sb-project-auth-token" },
-  })),
-  redirect: vi.fn((destination: string): never => {
-    throw new Error(`NEXT_REDIRECT:${destination}`);
-  }),
+  requireMutationAssurance: vi.fn(),
+  verifyCurrentPassword: vi.fn(),
+  fetchAccountApiAccountLifecycle: vi.fn(),
+  requestAccountApiAccountExport: vi.fn(),
+  requestAccountApiAccountDeletion: vi.fn(),
+  cancelAccountApiAccountDeletion: vi.fn(),
   revalidatePath: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: mocks.createServerSupabaseClient,
-  clearPortalSupabaseAuthCookies: mocks.clearPortalSupabaseAuthCookies,
 }));
-vi.mock("@/lib/supabase/config", () => ({
-  getSupabasePublicConfiguration: mocks.getSupabasePublicConfiguration,
+vi.mock("@/lib/dal/assurance-guard", () => ({
+  requireMutationAssurance: mocks.requireMutationAssurance,
 }));
-vi.mock("@/lib/auth/recovery-authorization", () => ({
-  consumeRecoveryAuthorization: mocks.consumeRecoveryAuthorization,
-  clearRecoveryAuthorization: mocks.clearRecoveryAuthorization,
+vi.mock("@/lib/supabase/verification-client", () => ({
+  verifyCurrentPassword: mocks.verifyCurrentPassword,
 }));
-vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
+vi.mock("@/lib/admin/account-api", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/admin/account-api")>("@/lib/admin/account-api")),
+  fetchAccountApiAccountLifecycle: mocks.fetchAccountApiAccountLifecycle,
+  requestAccountApiAccountExport: mocks.requestAccountApiAccountExport,
+  requestAccountApiAccountDeletion: mocks.requestAccountApiAccountDeletion,
+  cancelAccountApiAccountDeletion: mocks.cancelAccountApiAccountDeletion,
+}));
 
-import { requestPasswordRecovery } from "@/app/forgot-password/actions";
-import { resetPassword } from "@/app/reset-password/actions";
+import {
+  cancelAccountDeletion,
+  requestAccountDeletion,
+  requestAccountExport,
+} from "@/app/account/data/actions";
+import { AccountApiRequestError } from "@/lib/admin/account-api";
 
-function recoveryFormData(): FormData {
-  const formData = new FormData();
-  formData.set("email", "User@Example.com");
-  formData.set(CHALLENGE_FIELD_NAME, "turnstile-response");
-  return formData;
+const lifecycle = {
+  revision: "lifecycle-revision-123456",
+  export_queue: { job_limit: 50, returned: 0, per_user_limit: 10 },
+  exports: [],
+  deletion: { active: null, requests: [] },
+};
+
+function form({
+  revision = lifecycle.revision,
+  currentPassword = "correct-password",
+  confirmation = ACCOUNT_EXPORT_CONFIRMATION,
+  requestId,
+}: {
+  revision?: string;
+  currentPassword?: string;
+  confirmation?: string;
+  requestId?: string;
+} = {}) {
+  const data = new FormData();
+  data.set("revision", revision);
+  data.set("currentPassword", currentPassword);
+  data.set("confirmation", confirmation);
+  if (requestId) data.set("requestId", requestId);
+  return data;
 }
 
-function resetFormData(): FormData {
-  const formData = new FormData();
-  formData.set("password", "new-password-value");
-  formData.set("passwordConfirmation", "new-password-value");
-  return formData;
-}
-
-describe("recovery Server Actions", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.clearPortalSupabaseAuthCookies.mockResolvedValue(undefined);
-    mocks.clearRecoveryAuthorization.mockResolvedValue(undefined);
+beforeEach(() => {
+  vi.resetAllMocks();
+  mocks.createServerSupabaseClient.mockResolvedValue({
+    auth: {
+      getUser: async () => ({
+        data: { user: { id: "user-id", email: "user@example.test" } },
+        error: null,
+      }),
+      getSession: async () => ({
+        data: { session: { access_token: "server-token" } },
+        error: null,
+      }),
+    },
   });
+  mocks.requireMutationAssurance.mockResolvedValue({ decision: "satisfied" });
+  mocks.verifyCurrentPassword.mockResolvedValue("verified");
+  mocks.fetchAccountApiAccountLifecycle.mockResolvedValue(lifecycle);
+  mocks.requestAccountApiAccountExport.mockResolvedValue({ ok: true });
+  mocks.requestAccountApiAccountDeletion.mockResolvedValue({ ok: true });
+  mocks.cancelAccountApiAccountDeletion.mockResolvedValue({ ok: true });
+});
 
-  it("returns one accepted recovery state for existing and unknown addresses", async () => {
-    const resetPasswordForEmail = vi
-      .fn()
-      .mockResolvedValueOnce({ data: {}, error: null })
-      .mockResolvedValueOnce({
-        data: {},
-        error: { code: "user_not_found", message: "User not found" },
-      });
-    mocks.createServerSupabaseClient.mockResolvedValue({ auth: { resetPasswordForEmail } });
+it("queues an account export after current-password reauthentication", async () => {
+  const result = await requestAccountExport(INITIAL_ACCOUNT_LIFECYCLE_STATE, form());
 
-    const existingResult = await requestPasswordRecovery(
-      INITIAL_RECOVERY_REQUEST_STATE,
-      recoveryFormData(),
-    );
-    const unknownResult = await requestPasswordRecovery(
-      INITIAL_RECOVERY_REQUEST_STATE,
-      recoveryFormData(),
-    );
+  expect(result.status).toBe("success");
+  expect(mocks.verifyCurrentPassword).toHaveBeenCalledWith("user@example.test", "correct-password");
+  expect(mocks.requestAccountApiAccountExport).toHaveBeenCalledWith(
+    "server-token",
+    {
+      expected_revision: lifecycle.revision,
+      format: "json",
+      confirmation: ACCOUNT_EXPORT_CONFIRMATION,
+    },
+    { idempotencyKey: expect.stringMatching(/^portal-/u) },
+  );
+  expect(JSON.stringify(mocks.requestAccountApiAccountExport.mock.calls[0])).not.toContain(
+    "correct-password",
+  );
+  expect(mocks.revalidatePath).toHaveBeenCalledWith("/account/data");
+});
 
-    expect(existingResult).toEqual(unknownResult);
-    expect(existingResult.status).toBe("accepted");
-    expect(resetPasswordForEmail).toHaveBeenCalledWith("user@example.com", {
-      redirectTo: "https://account.quantifyterminal.com/auth/confirm?flow=recovery",
-      captchaToken: "turnstile-response",
-    });
-  });
+it("allows the initial empty lifecycle revision", async () => {
+  mocks.fetchAccountApiAccountLifecycle.mockResolvedValue({ ...lifecycle, revision: "" });
 
-  it("rejects a request without a verified session and clears a stale marker", async () => {
-    const updateUser = vi.fn();
-    mocks.createServerSupabaseClient.mockResolvedValue({
-      auth: {
-        getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
-        updateUser,
-      },
-    });
+  const result = await requestAccountExport(
+    INITIAL_ACCOUNT_LIFECYCLE_STATE,
+    form({ revision: "" }),
+  );
 
-    const result = await resetPassword(INITIAL_RESET_PASSWORD_STATE, resetFormData());
+  expect(result.status).toBe("success");
+  expect(mocks.requestAccountApiAccountExport).toHaveBeenCalledWith(
+    "server-token",
+    {
+      expected_revision: "",
+      format: "json",
+      confirmation: ACCOUNT_EXPORT_CONFIRMATION,
+    },
+    { idempotencyKey: expect.stringMatching(/^portal-/u) },
+  );
+});
 
-    expect(result.status).toBe("error");
-    expect(result.message).toContain("invalid or has expired");
-    expect(mocks.clearRecoveryAuthorization).toHaveBeenCalledOnce();
-    expect(updateUser).not.toHaveBeenCalled();
-  });
+it("creates and cancels deletion with typed confirmations", async () => {
+  const deletion = await requestAccountDeletion(
+    INITIAL_ACCOUNT_LIFECYCLE_STATE,
+    form({ confirmation: ACCOUNT_DELETION_CONFIRMATION }),
+  );
+  const cancellation = await cancelAccountDeletion(
+    INITIAL_ACCOUNT_LIFECYCLE_STATE,
+    form({
+      confirmation: ACCOUNT_DELETION_CANCEL_CONFIRMATION,
+      requestId: "25000000-0000-4000-8000-000000000001",
+    }),
+  );
 
-  it("rejects an ordinary authenticated session without a recovery marker", async () => {
-    const updateUser = vi.fn();
-    const getUser = vi.fn().mockResolvedValue({
-      data: { user: { id: USER_ID } },
-      error: null,
-    });
-    mocks.consumeRecoveryAuthorization.mockResolvedValue(false);
-    mocks.createServerSupabaseClient.mockResolvedValue({
-      auth: {
-        getSession: vi.fn().mockResolvedValue({
-          data: { session: { access_token: ACCESS_TOKEN } },
-          error: null,
-        }),
-        getUser,
-        updateUser,
-      },
-    });
+  expect(deletion.status).toBe("success");
+  expect(cancellation.status).toBe("success");
+  expect(mocks.requestAccountApiAccountDeletion).toHaveBeenCalledWith(
+    "server-token",
+    {
+      expected_revision: lifecycle.revision,
+      confirmation: ACCOUNT_DELETION_CONFIRMATION,
+    },
+    { idempotencyKey: expect.stringMatching(/^portal-/u) },
+  );
+  expect(mocks.cancelAccountApiAccountDeletion).toHaveBeenCalledWith(
+    "server-token",
+    {
+      expected_revision: lifecycle.revision,
+      request_id: "25000000-0000-4000-8000-000000000001",
+      confirmation: ACCOUNT_DELETION_CANCEL_CONFIRMATION,
+    },
+    { idempotencyKey: expect.stringMatching(/^portal-/u) },
+  );
+});
 
-    const result = await resetPassword(INITIAL_RESET_PASSWORD_STATE, resetFormData());
+it.each([
+  [
+    "mfa",
+    () => mocks.requireMutationAssurance.mockResolvedValue({ decision: "challenge-required" }),
+  ],
+  ["password", () => mocks.verifyCurrentPassword.mockResolvedValue("rejected")],
+  [
+    "stale",
+    () =>
+      mocks.fetchAccountApiAccountLifecycle.mockResolvedValue({ ...lifecycle, revision: "new" }),
+  ],
+  ["confirmation", () => undefined],
+])("refuses the %s bypass before mutation", async (_name, setup) => {
+  setup();
+  const data =
+    _name === "confirmation"
+      ? form({ confirmation: "DELETE" })
+      : form({ confirmation: ACCOUNT_DELETION_CONFIRMATION });
 
-    expect(result.status).toBe("error");
-    expect(result.message).toContain("invalid or has expired");
-    expect(getUser).toHaveBeenCalledWith(ACCESS_TOKEN);
-    expect(mocks.consumeRecoveryAuthorization).toHaveBeenCalledWith({
-      userId: USER_ID,
-      accessToken: ACCESS_TOKEN,
-    });
-    expect(updateUser).not.toHaveBeenCalled();
-  });
+  const result = await requestAccountDeletion(INITIAL_ACCOUNT_LIFECYCLE_STATE, data);
 
-  it("consumes the bound marker before updating and clears only the local portal session", async () => {
-    const events: string[] = [];
-    const getSession = vi.fn().mockResolvedValue({
-      data: { session: { access_token: ACCESS_TOKEN } },
-      error: null,
-    });
-    const getUser = vi.fn().mockResolvedValue({
-      data: { user: { id: USER_ID } },
-      error: null,
-    });
-    mocks.consumeRecoveryAuthorization.mockImplementation(async () => {
-      events.push("consume");
-      return true;
-    });
-    const updateUser = vi.fn().mockImplementation(async () => {
-      events.push("update");
-      return { data: { user: {} }, error: null };
-    });
-    const signOut = vi.fn().mockResolvedValue({ error: null });
-    mocks.createServerSupabaseClient.mockResolvedValue({
-      auth: { getSession, getUser, updateUser, signOut },
-    });
+  expect(result.status).toBe("error");
+  expect(mocks.requestAccountApiAccountDeletion).not.toHaveBeenCalled();
+});
 
-    await expect(resetPassword(INITIAL_RESET_PASSWORD_STATE, resetFormData())).rejects.toThrow(
-      "NEXT_REDIRECT:/login?notice=password-updated",
-    );
+it("maps lifecycle API conflicts to reload-safe messages", async () => {
+  mocks.requestAccountApiAccountDeletion.mockRejectedValue(
+    new AccountApiRequestError({
+      status: 423,
+      code: "legal_hold_active",
+      message: "Held",
+      correlationId: "qt-hold",
+    }),
+  );
 
-    expect(getUser).toHaveBeenCalledWith(ACCESS_TOKEN);
-    expect(mocks.consumeRecoveryAuthorization).toHaveBeenCalledWith({
-      userId: USER_ID,
-      accessToken: ACCESS_TOKEN,
-    });
-    expect(events).toEqual(["consume", "update"]);
-    expect(updateUser).toHaveBeenCalledWith({ password: "new-password-value" });
-    expect(signOut).toHaveBeenCalledWith({ scope: "local" });
-    expect(mocks.clearPortalSupabaseAuthCookies).toHaveBeenCalledOnce();
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/", "layout");
-  });
+  const result = await requestAccountDeletion(
+    INITIAL_ACCOUNT_LIFECYCLE_STATE,
+    form({ confirmation: ACCOUNT_DELETION_CONFIRMATION }),
+  );
+
+  expect(result.status).toBe("error");
+  expect(result.message).toMatch(/legal hold/i);
 });

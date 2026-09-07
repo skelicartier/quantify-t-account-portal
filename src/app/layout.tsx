@@ -1,14 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
 
 import "./globals.css";
-
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-space-grotesk",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://account.quantifyterminal.com"),
@@ -33,7 +26,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" className={spaceGrotesk.variable}>
+    <html lang="en">
       <body>
         <a className="skip-link" href="#main-content">
           Skip to main content

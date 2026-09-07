@@ -39,9 +39,11 @@ describe("login input policy", () => {
   it.each([
     ["/account", "/account"],
     ["/account/profile?from=login", "/account/profile?from=login"],
+    ["/admin", "/admin"],
+    ["/admin/users?status=active", "/admin/users?status=active"],
+    ["/admin/roles?include=matches", "/admin/roles?include=matches"],
     ["https://evil.example/account", "/account"],
     ["//evil.example/account", "/account"],
-    ["/admin", "/account"],
     ["/account/%2e%2e/admin", "/account"],
     [null, "/account"],
   ])("sanitizes the post-login destination %s", (input, expected) => {

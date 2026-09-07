@@ -14,4 +14,4 @@ Security testing must use explicitly authorized disposable staging identities. D
 
 ## Deployment status
 
-The project is pre-production. Production remains blocked until the documented staging and explicit go/no-go gates pass. The Azure Account API and privileged web administration are not implemented in this repository yet.
+The project is pre-production. Production remains blocked until the documented staging and explicit go/no-go gates pass. The Azure Account API source is in the sibling desktop repository and is not deployed; the protected `/admin` dashboard, `/admin/roles` reconciliation page, read-only account session/activity views, account data export/deletion controls, private signed artifact-download endpoints, same-origin Server Action guard, best-effort portal session register/end hooks, and desktop session/passcode migration hooks are source-only, and privileged web administration is not production-ready.

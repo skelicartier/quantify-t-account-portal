@@ -4,18 +4,19 @@ import { resolve } from "node:path";
 import { buildPreflightReport, preflightExitCode } from "@/lib/preflight/audit";
 import { collectDesktopSupabaseEvidence } from "@/lib/preflight/migration-evidence";
 import { type NetworkProbe, type RepositorySnapshot } from "@/lib/preflight/model";
+import { ACCOUNT_API_MODULES, analyzeAccountApi } from "@/lib/preflight/account-api-analysis";
+import { resolveDesktopRoot } from "@/lib/preflight/desktop-root";
 import {
   analyzePortalAuthLifecycle,
   analyzePortalSecurityHeaders,
+  SAME_ORIGIN_SERVER_ACTION_PATHS,
 } from "@/lib/preflight/source-analysis";
 import { renderPreflightMarkdown } from "@/lib/preflight/report";
 import nextConfig from "../next.config";
 
 const portalRoot = process.cwd();
 const projectsRoot = resolve(portalRoot, "..");
-const desktopRoot = resolve(
-  process.env.QT_DESKTOP_PROJECT_PATH || resolve(projectsRoot, "Quantify Terminal"),
-);
+const desktopRoot = resolveDesktopRoot(process.env, portalRoot);
 const marketingRoot = resolve(projectsRoot, "Quantify Terminal Website");
 
 async function readKnownFile(path: string): Promise<string | null> {
@@ -37,6 +38,11 @@ async function collectSnapshot(): Promise<RepositorySnapshot> {
     accountGuard,
     profileAction,
     preferencesAction,
+    sessionQuery,
+    sessionLifecycle,
+    accountDal,
+    adminAccess,
+    actionOrigin,
   ] = await Promise.all([
     readKnownFile(resolve(portalRoot, "src/app/auth/confirm/route.ts")),
     readKnownFile(resolve(portalRoot, "src/app/reset-password/actions.ts")),
@@ -46,7 +52,32 @@ async function collectSnapshot(): Promise<RepositorySnapshot> {
     readKnownFile(resolve(portalRoot, "src/lib/dal/assurance-guard.ts")),
     readKnownFile(resolve(portalRoot, "src/app/account/profile/actions.ts")),
     readKnownFile(resolve(portalRoot, "src/app/account/preferences/actions.ts")),
+    readKnownFile(resolve(portalRoot, "src/lib/dal/session-query.ts")),
+    readKnownFile(resolve(portalRoot, "src/lib/account/session-lifecycle.ts")),
+    readKnownFile(resolve(portalRoot, "src/lib/dal/account.ts")),
+    readKnownFile(resolve(portalRoot, "src/lib/admin/access.ts")),
+    readKnownFile(resolve(portalRoot, "src/lib/security/action-origin.ts")),
   ]);
+  const serverActionSources = await Promise.all(
+    SAME_ORIGIN_SERVER_ACTION_PATHS.map(
+      async (path) => [path, await readKnownFile(resolve(portalRoot, path))] as const,
+    ),
+  );
+  const accountApiRoot = resolve(desktopRoot, "cloud/azure/account_function");
+  const accountApiModuleSources = await Promise.all(
+    ACCOUNT_API_MODULES.map(
+      async (name) =>
+        [name, await readKnownFile(resolve(accountApiRoot, `account_api/${name}.py`))] as const,
+    ),
+  );
+  const [accountApiFunctionApp, accountApiHostJson, accountApiRequirements] = await Promise.all([
+    readKnownFile(resolve(accountApiRoot, "function_app.py")),
+    readKnownFile(resolve(accountApiRoot, "host.json")),
+    readKnownFile(resolve(accountApiRoot, "requirements.txt")),
+  ]);
+  const accountInfrastructureDefinition = await readKnownFile(
+    resolve(accountApiRoot, "infra/main.bicep"),
+  );
   const headerRules = await nextConfig.headers?.();
   const desktopSupabase = await collectDesktopSupabaseEvidence(desktopRoot);
 
@@ -62,12 +93,21 @@ async function collectSnapshot(): Promise<RepositorySnapshot> {
       accountGuard,
       profileAction,
       preferencesAction,
+      sessionQuery,
+      sessionLifecycle,
+      accountDal,
+      adminAccess,
+      actionOrigin,
+      serverActions: Object.fromEntries(serverActionSources),
     }),
     portalSecurityEvidence: analyzePortalSecurityHeaders(headerRules ?? null),
     desktopEnvironmentExample: await readKnownFile(resolve(desktopRoot, ".env.example")),
     desktopSupabaseSchema: desktopSupabase.schema,
     desktopSupabaseMigrations: desktopSupabase.migrations,
     desktopAuthService: await readKnownFile(resolve(desktopRoot, "src/services/auth_service.py")),
+    desktopSupabaseService: await readKnownFile(
+      resolve(desktopRoot, "src/services/supabase_service.py"),
+    ),
     desktopAzureFunction: await readKnownFile(
       resolve(desktopRoot, "cloud/azure/update_deploy_function/function_app.py"),
     ),
@@ -77,9 +117,14 @@ async function collectSnapshot(): Promise<RepositorySnapshot> {
     ),
     marketingVercelConfig: await readKnownFile(resolve(marketingRoot, "vercel.json")),
     marketingStylesheet: await readKnownFile(resolve(marketingRoot, "style.css")),
-    accountInfrastructureDefinition: await readKnownFile(
-      resolve(desktopRoot, "cloud/azure/account_function/infra/main.bicep"),
-    ),
+    accountInfrastructureDefinition,
+    accountApiEvidence: analyzeAccountApi({
+      functionApp: accountApiFunctionApp,
+      hostJson: accountApiHostJson,
+      requirements: accountApiRequirements,
+      infrastructure: accountInfrastructureDefinition,
+      modules: Object.fromEntries(accountApiModuleSources),
+    }),
   };
 }
 

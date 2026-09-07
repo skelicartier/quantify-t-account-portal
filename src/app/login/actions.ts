@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { resolveAssuranceState } from "@/lib/auth/assurance";
+import { registerCurrentAccountApiSession } from "@/lib/account/session-lifecycle";
 import {
   isCredentialRejection,
   parseLoginFormData,
@@ -12,6 +13,7 @@ import {
   type LoginChallengeActionState,
 } from "@/lib/auth/login";
 import { parseTotpCodeOnlyFormData, TOTP_CODE_LENGTH } from "@/lib/auth/security-input";
+import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const AUTHENTICATION_ERROR: LoginActionState = {
@@ -52,6 +54,7 @@ export async function login(
   if (!parsed.success) return parsed.state;
 
   try {
+    await requireSameOriginServerAction();
     const supabase = await createServerSupabaseClient();
     const { error } = await supabase.auth.signInWithPassword({
       email: parsed.data.email,
@@ -72,6 +75,7 @@ export async function login(
     // signed-in session.
     const assurance = await resolveAssuranceState(supabase);
     if (assurance.challengeRequired) return MFA_REQUIRED;
+    await registerCurrentAccountApiSession(supabase);
   } catch {
     return SERVICE_ERROR;
   }
@@ -110,6 +114,7 @@ export async function verifyLoginChallenge(
   let unreachableFactor = false;
 
   try {
+    await requireSameOriginServerAction();
     const supabase = await createServerSupabaseClient();
     const assurance = await resolveAssuranceState(supabase);
 
@@ -133,6 +138,7 @@ export async function verifyLoginChallenge(
       }
       rejectedByEveryFactor = true;
     }
+    if (verifiedFactor) await registerCurrentAccountApiSession(supabase);
   } catch {
     return CHALLENGE_SERVICE_ERROR;
   }

@@ -33,6 +33,14 @@ describe("AccountOverview", () => {
       "href",
       "/account/preferences",
     );
+    expect(screen.getByRole("link", { name: /sessions/i })).toHaveAttribute(
+      "href",
+      "/account/sessions",
+    );
+    expect(screen.getByRole("link", { name: /activity/i })).toHaveAttribute(
+      "href",
+      "/account/activity",
+    );
     expect(screen.queryByText(/passcode|pin/i)).not.toBeInTheDocument();
   });
 });

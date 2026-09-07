@@ -31,6 +31,23 @@ const MUTATION_CALLS = [
   "verify",
 ] as const satisfies readonly string[];
 
+export const SAME_ORIGIN_SERVER_ACTION_PATHS = [
+  "src/app/account/actions.ts",
+  "src/app/account/data/actions.ts",
+  "src/app/account/notifications/actions.ts",
+  "src/app/account/preferences/actions.ts",
+  "src/app/account/profile/actions.ts",
+  "src/app/account/security/actions.ts",
+  "src/app/admin/email/actions.ts",
+  "src/app/admin/notifications/actions.ts",
+  "src/app/admin/reports/actions.ts",
+  "src/app/admin/users/[userId]/actions.ts",
+  "src/app/forgot-password/actions.ts",
+  "src/app/login/actions.ts",
+  "src/app/reset-password/actions.ts",
+  "src/app/signup/actions.ts",
+] as const;
+
 type LifecycleSources = {
   confirmRoute: string | null;
   resetAction: string | null;
@@ -40,6 +57,12 @@ type LifecycleSources = {
   accountGuard: string | null;
   profileAction: string | null;
   preferencesAction: string | null;
+  sessionQuery: string | null;
+  sessionLifecycle: string | null;
+  accountDal: string | null;
+  adminAccess: string | null;
+  actionOrigin: string | null;
+  serverActions: Readonly<Record<string, string | null>>;
 };
 
 function sourceFile(source: string): ts.SourceFile {
@@ -63,6 +86,23 @@ function functionBody(file: ts.SourceFile, name: string): ts.Block | null {
   }
   visit(file);
   return result;
+}
+
+function exportedAsyncFunctionBodies(file: ts.SourceFile): ts.Block[] {
+  const bodies: ts.Block[] = [];
+  function visit(node: ts.Node): void {
+    if (
+      ts.isFunctionDeclaration(node) &&
+      node.body &&
+      node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) &&
+      node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AsyncKeyword)
+    ) {
+      bodies.push(node.body);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(file);
+  return bodies;
 }
 
 function callName(call: ts.CallExpression): string | null {
@@ -219,6 +259,106 @@ function hasAuthorizationRejectionBeforeUpdate(body: ts.Block): boolean {
   );
 }
 
+function includesEvery(source: string, needles: string[]): boolean {
+  return needles.every((needle) => source.includes(needle));
+}
+
+function compactSource(source: string): string {
+  return source.replace(/\s+/gu, "");
+}
+
+function hasSafeSessionActivityReads(source: string): boolean {
+  const forbiddenColumns = [
+    "provider_session_id",
+    "metadata",
+    "ip_address",
+    "user_agent",
+    "password",
+    "passcode",
+    "access_token",
+    "refresh_token",
+  ];
+  const compactSource = source.replace(/\s+/gu, "");
+
+  return (
+    includesEvery(source, [
+      "ACCOUNT_SESSION_COLUMNS",
+      "ACCOUNT_ACTIVITY_COLUMNS",
+      '"account_sessions"',
+      '"auth_events"',
+      "mapAccountSessions",
+      "mapAccountActivityEvents",
+    ]) &&
+    compactSource.includes('.from("account_sessions").select(ACCOUNT_SESSION_COLUMNS)') &&
+    compactSource.includes('.from("auth_events").select(ACCOUNT_ACTIVITY_COLUMNS)') &&
+    compactSource.includes('.eq("user_id",userId)') &&
+    compactSource.includes('.order("last_seen_at",{ascending:false})') &&
+    compactSource.includes('.order("occurred_at",{ascending:false})') &&
+    !forbiddenColumns.some((column) => source.includes(column))
+  );
+}
+
+function hasPortalSessionLifecycleHooks({
+  lifecycle,
+  accountDal,
+  adminAccess,
+}: {
+  lifecycle: string;
+  accountDal: string;
+  adminAccess: string;
+}): boolean {
+  const compactDal = compactSource(accountDal);
+  const compactAdminAccess = compactSource(adminAccess);
+  return (
+    includesEvery(lifecycle, [
+      "registerCurrentAccountApiSession",
+      "heartbeatCurrentAccountApiSession",
+      "heartbeatAccountApiSession",
+      "endCurrentAccountApiSession",
+      '"sessions/register"',
+      '"sessions/heartbeat"',
+      '"sessions/end"',
+      'device_name: "Web portal"',
+      "postAccountApiJson",
+      "idempotencyKey",
+    ]) &&
+    includesEvery(accountDal, [
+      "requireCurrentAccount",
+      "requireCurrentProfile",
+      "requireCurrentSessions",
+      "requireCurrentActivityEvents",
+      "heartbeatProtectedAccountApiSession",
+      "heartbeatCurrentAccountApiSession",
+      "requireSatisfiedAssurance",
+    ]) &&
+    compactDal.includes(
+      "awaitrequireSatisfiedAssurance();awaitheartbeatProtectedAccountApiSession();",
+    ) &&
+    includesEvery(adminAccess, [
+      "fetchAccountApiMe",
+      "heartbeatAccountApiSession",
+      "fetchAccountApiRoleReport",
+    ]) &&
+    compactAdminAccess.includes(
+      "constme=awaitfetchAccountApiMe(accessToken);awaitheartbeatAccountApiSession(accessToken);",
+    )
+  );
+}
+
+function hasSameOriginServerActionCoverage(
+  serverActions: Readonly<Record<string, string | null>>,
+): boolean {
+  return SAME_ORIGIN_SERVER_ACTION_PATHS.every((path) => {
+    const source = serverActions[path];
+    if (!source) return false;
+    const bodies = exportedAsyncFunctionBodies(sourceFile(source));
+    return (
+      bodies.length > 0 &&
+      bodies.every((body) => callIndex(callsWithin(body), "requireSameOriginServerAction") >= 0)
+    );
+  });
+}
+
 export function analyzePortalAuthLifecycle({
   confirmRoute,
   resetAction,
@@ -228,10 +368,17 @@ export function analyzePortalAuthLifecycle({
   accountGuard,
   profileAction,
   preferencesAction,
+  sessionQuery,
+  sessionLifecycle,
+  accountDal,
+  adminAccess,
+  actionOrigin,
+  serverActions,
 }: LifecycleSources): PortalAuthLifecycleEvidence | null {
   if (!confirmRoute || !resetAction || !turnstileField) return null;
   if (!securityActions || !loginActions || !accountGuard) return null;
   if (!profileAction || !preferencesAction) return null;
+  if (!sessionQuery || !sessionLifecycle || !accountDal || !adminAccess) return null;
 
   const confirmFile = sourceFile(confirmRoute);
   const confirmBody = functionBody(confirmFile, "GET");
@@ -397,6 +544,23 @@ export function analyzePortalAuthLifecycle({
       confirmOwnershipIndex >= 0 &&
       confirmChallengeIndex >= 0 &&
       confirmOwnershipIndex < confirmChallengeIndex,
+    sessionQueriesUseSafeReadColumns: hasSafeSessionActivityReads(sessionQuery),
+    portalSessionLifecycleHooks: hasPortalSessionLifecycleHooks({
+      lifecycle: sessionLifecycle,
+      accountDal,
+      adminAccess,
+    }),
+    serverActionsRequireSameOrigin:
+      Boolean(actionOrigin) &&
+      includesEvery(actionOrigin ?? "", [
+        "headers",
+        "origin",
+        "referer",
+        "getSupabasePublicConfiguration",
+        "SameOriginActionError",
+        'process.env.NODE_ENV !== "production"',
+      ]) &&
+      hasSameOriginServerActionCoverage(serverActions),
   };
 }
 

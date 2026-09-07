@@ -13,6 +13,10 @@ const LINKS = [
   { href: "/account/profile", name: "Profile" },
   { href: "/account/preferences", name: "Preferences" },
   { href: "/account/security", name: "Security" },
+  { href: "/account/sessions", name: "Sessions" },
+  { href: "/account/activity", name: "Activity" },
+  { href: "/account/notifications", name: "Notifications" },
+  { href: "/account/data", name: "Data" },
 ] as const;
 
 describe("AccountNavigation", () => {

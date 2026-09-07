@@ -21,6 +21,7 @@ const FORBIDDEN_PORTAL_ENVIRONMENT = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "AZURE_STORAGE_CONNECTION_STRING",
   "BREVO_API_KEY",
+  "QT_ACCOUNT_API_EXPORT_ENCRYPTION_KEY",
   "QT_AUTH_RESET_SECRET",
   "QT_RELEASE_SIGNING_PRIVATE_KEY",
 ] as const;
@@ -80,6 +81,93 @@ function includesEvery(source: string | null, values: readonly string[]): boolea
 
 function includesAny(source: string | null, values: readonly string[]): boolean {
   return source !== null && values.some((value) => source.includes(value));
+}
+
+function pythonMethodSource(source: string | null, methodName: string): string {
+  if (source === null) return "";
+  const marker = `    def ${methodName}(`;
+  const start = source.indexOf(marker);
+  if (start < 0) return "";
+  const rest = source.slice(start);
+  const next = rest.slice(marker.length).search(/\n    def [A-Za-z_][A-Za-z0-9_]*\(/);
+  return next < 0 ? rest : rest.slice(0, marker.length + next);
+}
+
+function hasDesktopCloudPasswordLock(source: string | null): boolean {
+  const helper = pythonMethodSource(source, "_hash_cloud_local_password_lock");
+  const upsert = pythonMethodSource(source, "_upsert_local_user_from_supabase");
+  const changePassword = pythonMethodSource(source, "change_password");
+  const resetPassword = pythonMethodSource(source, "reset_password");
+
+  return (
+    includesEvery(helper, [
+      "def _hash_cloud_local_password_lock(self)",
+      "return self.hash_password(secrets.token_urlsafe(48))",
+    ]) &&
+    includesEvery(upsert, [
+      "def _upsert_local_user_from_supabase(",
+      "password_hash = self._hash_cloud_local_password_lock()",
+      "user.password_hash = password_hash",
+    ]) &&
+    !upsert.includes("self.hash_password(password)") &&
+    includesEvery(changePassword, [
+      "self.supabase_service.update_current_user_password",
+      "user.password_hash = self._hash_cloud_local_password_lock()",
+      "user.password_hash = self.hash_password(new_password)",
+    ]) &&
+    includesEvery(resetPassword, [
+      "if str(getattr(user, 'cloud_user_id', '') or '').strip():",
+      "user.password_hash = self._hash_cloud_local_password_lock()",
+      "user.password_hash = self.hash_password(new_password)",
+    ])
+  );
+}
+
+function hasDesktopRevokedSessionRuntimeGuard(source: string | null): boolean {
+  const init = source ?? "";
+  const marker = pythonMethodSource(source, "_mark_account_session_revoked");
+  const sendEvent = pythonMethodSource(source, "_send_account_session_event");
+  const validate = pythonMethodSource(source, "validate_session");
+  const createSession = pythonMethodSource(source, "create_session");
+
+  return (
+    init.includes("_account_session_revoked_user_ids: set[int] = set()") &&
+    includesEvery(marker, [
+      "def _mark_account_session_revoked(self, user_id: int)",
+      "self._account_session_revoked_user_ids.add(int(user_id))",
+      "self.clear_session_file()",
+      "self.clear_supabase_session_file()",
+    ]) &&
+    includesEvery(sendEvent, [
+      "if self._account_session_denied_text(str(exc)):",
+      "self._mark_account_session_revoked(int(user_id))",
+    ]) &&
+    includesEvery(validate, [
+      "if int(user.id) in self._account_session_revoked_user_ids:",
+      "record.is_active = False",
+      "record.ended_at = now",
+      "return None, None",
+    ]) &&
+    createSession.includes("self._account_session_revoked_user_ids.discard(int(db_user.id))")
+  );
+}
+
+function hasDesktopVersionedProfileWriter(source: string | null): boolean {
+  if (source === null) return false;
+  return (
+    includesEvery(source, [
+      "def upsert_app_profile(",
+      "/rest/v1/rpc/update_my_app_profile_v2",
+      "fetch_app_profile(token, cloud_user_id)",
+      "p_expected_profile_version",
+      "_validate_versioned_profile_receipt",
+      'set(row) != {"user_id", "profile_version", "updated_at"}',
+      "expected_version + 1",
+    ]) &&
+    !source.includes('"/rest/v1/rpc/update_my_app_profile",') &&
+    !source.includes('"profile_photo_path": "p_profile_photo_path"') &&
+    !source.includes('"app_passcode_hash"')
+  );
 }
 
 function environmentExampleIsAllowListed(source: string | null): boolean {
@@ -587,7 +675,7 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
       "portal",
       lifecycleComplete ? "pass" : "blocked",
       lifecycleComplete
-        ? "Portal callback provenance, recovery authorization, reset ordering, challenge replay, current-password reauthentication, assurance-gated account mutations, and second-factor enforcement are structurally represented per file."
+        ? "Portal callback provenance, recovery authorization, reset ordering, challenge replay, current-password reauthentication, same-origin Server Actions, assurance-gated account mutations, second-factor enforcement, self session/activity reads, and Account API lifecycle hooks are structurally represented per file."
         : "Portal account-lifecycle relationships are missing or structurally incomplete.",
       lifecycleEvidence
         ? Object.entries(lifecycleEvidence)
@@ -639,6 +727,36 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
         ? "warning"
         : "pass",
       "Legacy cloud PIN metadata must remain blocked from portal contracts and be removed only after desktop migration.",
+    ),
+  );
+  checks.push(
+    check(
+      "desktop.versioned-profile-writer",
+      "desktop",
+      hasDesktopVersionedProfileWriter(snapshot.desktopSupabaseService) ? "pass" : "blocked",
+      hasDesktopVersionedProfileWriter(snapshot.desktopSupabaseService)
+        ? "Desktop profile and preference writes use the versioned profile RPC and exact minimal receipts."
+        : "Desktop profile and preference writes must migrate from the retained v1 profile RPC before it can be revoked.",
+    ),
+  );
+  checks.push(
+    check(
+      "desktop.cloud-password-lock",
+      "desktop",
+      hasDesktopCloudPasswordLock(snapshot.desktopAuthService) ? "pass" : "blocked",
+      hasDesktopCloudPasswordLock(snapshot.desktopAuthService)
+        ? "Desktop cloud-auth password writes fill the local password column with a random lock hash, not the reusable cloud password."
+        : "Desktop cloud-auth paths must stop storing reusable cloud-password verifiers locally.",
+    ),
+  );
+  checks.push(
+    check(
+      "desktop.revoked-session-runtime-guard",
+      "desktop",
+      hasDesktopRevokedSessionRuntimeGuard(snapshot.desktopAuthService) ? "pass" : "blocked",
+      hasDesktopRevokedSessionRuntimeGuard(snapshot.desktopAuthService)
+        ? "Desktop marks Account API revoked-session responses and invalidates the running local session on validation."
+        : "Desktop must fail closed for already-running local sessions after an Account API revoked-session response.",
     ),
   );
 
@@ -790,6 +908,30 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
       snapshot.accountInfrastructureDefinition
         ? "Account API staging infrastructure is represented as code."
         : "No account API staging infrastructure definition exists yet.",
+      snapshot.accountInfrastructureDefinition
+        ? ["Reviewed source only; the template has not been linted by ARM or deployed."]
+        : [],
+    ),
+  );
+
+  const accountApi = snapshot.accountApiEvidence;
+  const accountApiComplete = accountApi !== null && Object.values(accountApi).every(Boolean);
+  checks.push(
+    check(
+      "azure.account-api-contract",
+      "azure",
+      accountApiComplete ? "pass" : "blocked",
+      accountApiComplete
+        ? "Account API package is modular with a versioned prefix, exact-origin CORS, canonical Owner-aware RBAC, typed errors, correlated audit, idempotent mutations, source-only session lifecycle/admin metrics/audit/report/account lifecycle/user administration/session revocation/notification/owner-status routes, private signed artifact downloads, disabled-by-default report/export/deletion cleanup workers, allow-listed responses, and dual-read roles with no cutover."
+        : "Account API package structure is missing or incomplete.",
+      accountApi
+        ? [
+            ...Object.entries(accountApi)
+              .filter(([, present]) => !present)
+              .map(([property]) => `Missing property: ${property}`),
+            "Structural source checks only; no live provider, Azure, or ARM behavior is evidenced.",
+          ]
+        : ["Account API package evidence is unavailable."],
     ),
   );
 

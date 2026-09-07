@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { buildLoginRedirectUrl, isProtectedAccountPath } from "@/lib/auth/route-policy";
+import { buildLoginRedirectUrl, isProtectedPortalPath } from "@/lib/auth/route-policy";
 import { copyResponseCookies, updateSupabaseSession } from "@/lib/supabase/update-session";
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
-  if (!isProtectedAccountPath(request.nextUrl.pathname)) return NextResponse.next();
+  if (!isProtectedPortalPath(request.nextUrl.pathname)) return NextResponse.next();
 
   try {
     const { response, user } = await updateSupabaseSession(request);
@@ -18,5 +18,5 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  matcher: ["/account/:path*"],
+  matcher: ["/account/:path*", "/admin/:path*"],
 };

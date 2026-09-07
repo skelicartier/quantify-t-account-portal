@@ -2,6 +2,7 @@
 
 import { buildAuthCallbackUrl } from "@/lib/auth/callback";
 import { parseRecoveryRequestFormData, type RecoveryRequestActionState } from "@/lib/auth/recovery";
+import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -38,6 +39,7 @@ export async function requestPasswordRecovery(
   if (!parsed.success) return parsed.state;
 
   try {
+    await requireSameOriginServerAction();
     const { siteUrl } = getSupabasePublicConfiguration();
     const supabase = await createServerSupabaseClient();
     const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {

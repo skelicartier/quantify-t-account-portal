@@ -98,10 +98,10 @@ export function AccountOverview({ account }: AccountOverviewProps) {
       <aside className="account-complete">
         <div>
           <p className="account-card__label">Account controls</p>
-          <h2>Shared profile controls are available</h2>
+          <h2>Account controls are available</h2>
           <p>
-            Update account details and preferences here. Security, sessions, data, and support
-            controls remain protected rollout tasks.
+            Update account details and preferences here. Session history and security events use the
+            same verified cloud identity.
           </p>
         </div>
         <div className="account-complete__actions">
@@ -110,6 +110,12 @@ export function AccountOverview({ account }: AccountOverviewProps) {
           </Link>
           <Link className="button" href="/account/preferences">
             Preferences
+          </Link>
+          <Link className="button" href="/account/sessions">
+            Sessions
+          </Link>
+          <Link className="button" href="/account/activity">
+            Activity
           </Link>
         </div>
       </aside>

@@ -3,6 +3,7 @@
 import { buildAuthCallbackUrl } from "@/lib/auth/callback";
 import { createSignupConsentMetadata } from "@/lib/auth/consent";
 import { parseSignupFormData, type SignupActionState } from "@/lib/auth/signup";
+import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -46,6 +47,7 @@ export async function signup(
   if (!parsed.success) return parsed.state;
 
   try {
+    await requireSameOriginServerAction();
     const { siteUrl } = getSupabasePublicConfiguration();
     const supabase = await createServerSupabaseClient();
     const { error } = await supabase.auth.signUp({

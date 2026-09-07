@@ -4,6 +4,8 @@ import { INITIAL_LOGIN_STATE } from "@/lib/auth/login";
 const mocks = vi.hoisted(() => ({
   createServerSupabaseClient: vi.fn(),
   clearPortalSupabaseAuthCookies: vi.fn(),
+  endCurrentAccountApiSession: vi.fn(),
+  registerCurrentAccountApiSession: vi.fn(),
   redirect: vi.fn((destination: string): never => {
     throw new Error(`NEXT_REDIRECT:${destination}`);
   }),
@@ -13,6 +15,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: mocks.createServerSupabaseClient,
   clearPortalSupabaseAuthCookies: mocks.clearPortalSupabaseAuthCookies,
+}));
+vi.mock("@/lib/account/session-lifecycle", () => ({
+  endCurrentAccountApiSession: mocks.endCurrentAccountApiSession,
+  registerCurrentAccountApiSession: mocks.registerCurrentAccountApiSession,
 }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -24,6 +30,8 @@ describe("authentication Server Actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.clearPortalSupabaseAuthCookies.mockResolvedValue(undefined);
+    mocks.endCurrentAccountApiSession.mockResolvedValue(false);
+    mocks.registerCurrentAccountApiSession.mockResolvedValue(false);
   });
 
   it("rejects malformed login input before creating a Supabase client", async () => {
@@ -96,6 +104,7 @@ describe("authentication Server Actions", () => {
     formData.set("next", "https://evil.example/steal");
 
     await expect(login(INITIAL_LOGIN_STATE, formData)).rejects.toThrow("NEXT_REDIRECT:/account");
+    expect(mocks.registerCurrentAccountApiSession).toHaveBeenCalledOnce();
     expect(signInWithPassword).toHaveBeenCalledWith({
       email: "user@example.com",
       password: "correct-password",
@@ -110,6 +119,7 @@ describe("authentication Server Actions", () => {
 
     await expect(logout()).rejects.toThrow("NEXT_REDIRECT:/login");
 
+    expect(mocks.endCurrentAccountApiSession).toHaveBeenCalledOnce();
     expect(signOut).toHaveBeenCalledWith({ scope: "local" });
     expect(mocks.clearPortalSupabaseAuthCookies).toHaveBeenCalledOnce();
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/", "layout");

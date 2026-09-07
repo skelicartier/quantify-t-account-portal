@@ -14,6 +14,7 @@ import { renderPreflightMarkdown } from "@/lib/preflight/report";
 import {
   analyzePortalAuthLifecycle,
   analyzePortalSecurityHeaders,
+  SAME_ORIGIN_SERVER_ACTION_PATHS,
 } from "@/lib/preflight/source-analysis";
 
 const PROFILE_CONTRACT_SCHEMA = String.raw`
@@ -286,6 +287,121 @@ const TASK7_LIFECYCLE_SOURCES = {
   accountGuard: TASK7_ACCOUNT_GUARD,
   profileAction: TASK7_PROFILE_ACTION,
   preferencesAction: TASK7_PREFERENCES_ACTION,
+  sessionQuery: `
+    export const ACCOUNT_SESSION_COLUMNS = [
+      "id",
+      "user_id",
+      "source",
+      "provider",
+      "client_instance_id",
+      "device_name",
+      "created_at",
+      "last_seen_at",
+      "expires_at",
+      "revoked_at",
+      "revoke_reason",
+    ].join(",");
+    export const ACCOUNT_ACTIVITY_COLUMNS = [
+      "id",
+      "user_id",
+      "session_id",
+      "event_type",
+      "outcome",
+      "source",
+      "occurred_at",
+      "created_at",
+    ].join(",");
+    export async function loadAccountSessions(client) {
+      const userId = await currentVerifiedUserId(client);
+      const result = await client
+        .from("account_sessions")
+        .select(ACCOUNT_SESSION_COLUMNS)
+        .eq("user_id", userId)
+        .order("last_seen_at", { ascending: false })
+        .limit(ACCOUNT_SESSION_LIMIT);
+      return mapAccountSessions(userId, result.data);
+    }
+    export async function loadAccountActivityEvents(client) {
+      const userId = await currentVerifiedUserId(client);
+      const result = await client
+        .from("auth_events")
+        .select(ACCOUNT_ACTIVITY_COLUMNS)
+        .eq("user_id", userId)
+        .order("occurred_at", { ascending: false })
+        .limit(ACCOUNT_ACTIVITY_LIMIT);
+      return mapAccountActivityEvents(userId, result.data);
+    }
+  `,
+  sessionLifecycle: `
+    export async function registerCurrentAccountApiSession(supabase) {
+      return postAccountApiJson("sessions/register", accessToken, {
+        source: "portal",
+        device_name: "Web portal",
+      }, { idempotencyKey });
+    }
+    export async function heartbeatAccountApiSession(accessToken) {
+      return postAccountApiJson("sessions/heartbeat", accessToken, {
+        device_name: "Web portal",
+      }, { idempotencyKey });
+    }
+    export async function heartbeatCurrentAccountApiSession(supabase) {
+      return heartbeatAccountApiSession(accessToken);
+    }
+    export async function endCurrentAccountApiSession(supabase) {
+      return postAccountApiJson("sessions/end", accessToken, { reason: "signed-out" }, { idempotencyKey });
+    }
+  `,
+  accountDal: `
+    export async function requireCurrentAccount() {
+      await requireSatisfiedAssurance();
+      await heartbeatProtectedAccountApiSession();
+    }
+    export async function requireCurrentProfile() {
+      await requireSatisfiedAssurance();
+      await heartbeatProtectedAccountApiSession();
+    }
+    export async function requireCurrentSessions() {
+      await requireSatisfiedAssurance();
+      await heartbeatProtectedAccountApiSession();
+    }
+    export async function requireCurrentActivityEvents() {
+      await requireSatisfiedAssurance();
+      await heartbeatProtectedAccountApiSession();
+    }
+    async function heartbeatProtectedAccountApiSession() {
+      await heartbeatCurrentAccountApiSession(client);
+    }
+  `,
+  adminAccess: `
+    async function currentAccountApiIdentity() {
+      const me = await fetchAccountApiMe(accessToken);
+      await heartbeatAccountApiSession(accessToken);
+      return { accessToken, me };
+    }
+    export async function getAdminRoleReportAccess() {
+      return await fetchAccountApiRoleReport(accessToken);
+    }
+  `,
+  actionOrigin: `
+    export class SameOriginActionError extends Error {}
+    export async function requireSameOriginServerAction() {
+      const headersList = await headers();
+      const origin = headersList.get("origin");
+      const referer = headersList.get("referer");
+      getSupabasePublicConfiguration();
+      if (process.env.NODE_ENV !== "production") return;
+      if (!origin && !referer) throw new SameOriginActionError();
+    }
+  `,
+  serverActions: Object.fromEntries(
+    SAME_ORIGIN_SERVER_ACTION_PATHS.map((path) => [
+      path,
+      `export async function action() {
+        await requireSameOriginServerAction();
+        await mutate();
+      }`,
+    ]),
+  ),
 };
 
 function exactMigrationArtifacts(): MigrationArtifact[] {
@@ -316,6 +432,9 @@ const completeSnapshot: RepositorySnapshot = {
     securityActionsRequireAssurance: true,
     accountActionsRequireAssurance: true,
     enrollmentBindsProviderIssuedFactor: true,
+    sessionQueriesUseSafeReadColumns: true,
+    portalSessionLifecycleHooks: true,
+    serverActionsRequireSameOrigin: true,
   },
   portalSecurityEvidence: {
     enforcedChallengeCompatibleCsp: true,
@@ -344,7 +463,51 @@ const completeSnapshot: RepositorySnapshot = {
     ${PROFILE_CONTRACT_SCHEMA}
   `,
   desktopSupabaseMigrations: exactMigrationArtifacts(),
-  desktopAuthService: "",
+  desktopAuthService: `
+    self._account_session_revoked_user_ids: set[int] = set()
+    def _hash_cloud_local_password_lock(self) -> str:
+      return self.hash_password(secrets.token_urlsafe(48))
+    def create_session(self, user):
+      self._account_session_revoked_user_ids.discard(int(db_user.id))
+    def _mark_account_session_revoked(self, user_id: int) -> None:
+      self._account_session_revoked_user_ids.add(int(user_id))
+      self.clear_session_file()
+      self.clear_supabase_session_file()
+    def _send_account_session_event(self, user_id, route, payload, *, access_token=None):
+      if self._account_session_denied_text(str(exc)):
+        self._mark_account_session_revoked(int(user_id))
+    def validate_session(self, session_token, *, touch=True):
+      if int(user.id) in self._account_session_revoked_user_ids:
+        record.is_active = False
+        record.ended_at = now
+        return None, None
+    def _upsert_local_user_from_supabase(self, cloud_session, profile, *, password=None):
+      password_hash = self._hash_cloud_local_password_lock()
+      user.password_hash = password_hash
+    def change_password(self, user_id, current_password, new_password):
+      self.supabase_service.update_current_user_password(cloud_session.access_token, new_password)
+      if self.is_online_auth_enabled() or str(getattr(user, 'cloud_user_id', '') or '').strip():
+        user.password_hash = self._hash_cloud_local_password_lock()
+      else:
+        user.password_hash = self.hash_password(new_password)
+    def reset_password(self, email, otp_code, new_password):
+      if str(getattr(user, 'cloud_user_id', '') or '').strip():
+        user.password_hash = self._hash_cloud_local_password_lock()
+      else:
+        user.password_hash = self.hash_password(new_password)
+  `,
+  desktopSupabaseService: `
+    def upsert_app_profile(self, access_token, user_id, payload):
+      current_profile = self.fetch_app_profile(token, cloud_user_id)
+      allowed["p_expected_profile_version"] = expected_version
+      response = self._request_json("POST", "/rest/v1/rpc/update_my_app_profile_v2", allowed)
+      self._validate_versioned_profile_receipt(response, cloud_user_id, expected_version)
+    def _validate_versioned_profile_receipt(self, response, user_id, expected_version):
+      if row is None or set(row) != {"user_id", "profile_version", "updated_at"}:
+        raise SupabaseServiceError("receipt")
+      if version != expected_version + 1:
+        raise SupabaseServiceError("version")
+  `,
   desktopAzureFunction: [
     "Access-Control-Allow-Origin: https://account.quantifyterminal.com",
     ...[
@@ -376,6 +539,35 @@ const completeSnapshot: RepositorySnapshot = {
   marketingVercelConfig: "{}",
   marketingStylesheet: ":root { --bg: #000; --accent: orange; --text: white; }",
   accountInfrastructureDefinition: "resource accountFunction 'Microsoft.Web/sites@2024-04-01' = {}",
+  accountApiEvidence: {
+    modularPackage: true,
+    versionedRoutePrefix: true,
+    unauthenticatedHealthRoute: true,
+    exactOriginCors: true,
+    bearerAndActiveChecks: true,
+    canonicalRoleMatrix: true,
+    correlatedAudit: true,
+    typedErrors: true,
+    idempotentMutations: true,
+    sessionLifecycleRoutes: true,
+    adminMetricsRoute: true,
+    adminAuditExplorerRoute: true,
+    reportRoutes: true,
+    accountLifecycleRoutes: true,
+    privateArtifactDownloads: true,
+    reportGenerationWorker: true,
+    accountExportGenerationWorker: true,
+    accountDeletionCleanupWorker: true,
+    adminUsersRoute: true,
+    adminUserActivationRoute: true,
+    adminUserSessionRevokeRoute: true,
+    notificationRoutes: true,
+    ownerStatusRoutes: true,
+    allowListedResponses: true,
+    dualReadRolesWithoutCutover: true,
+    pinnedRequirements: true,
+    safeStagingInfrastructure: true,
+  },
 };
 
 const validEnvironment = {
@@ -605,6 +797,7 @@ describe("preflight audit", () => {
 
   it("does not accept a query-only recovery branch as trusted callback provenance", () => {
     const evidence = analyzePortalAuthLifecycle({
+      ...TASK7_LIFECYCLE_SOURCES,
       confirmRoute: `
         async function clearRejectedExchange() {
           await clearPortalSupabaseAuthCookies();
@@ -620,11 +813,6 @@ describe("preflight audit", () => {
       `,
       resetAction: `async function resetPassword() { await getSession(); await getUser(session.access_token); const authorized = await consumeRecoveryAuthorization(); if (!authorized) return; await updateUser(); }`,
       turnstileField: `function TurnstileField() { const completed = wasDisabled.current && !disabled; if (completed) window.turnstile.reset(widgetId); }`,
-      securityActions: TASK7_SECURITY_ACTIONS,
-      loginActions: TASK7_LOGIN_ACTIONS,
-      accountGuard: TASK7_ACCOUNT_GUARD,
-      profileAction: TASK7_PROFILE_ACTION,
-      preferencesAction: TASK7_PREFERENCES_ACTION,
     });
 
     expect(evidence?.callbackUsesTrustedRedirectType).toBe(false);
@@ -632,6 +820,7 @@ describe("preflight audit", () => {
 
   it("does not accept an ordinary-session password update without marker consumption", () => {
     const evidence = analyzePortalAuthLifecycle({
+      ...TASK7_LIFECYCLE_SOURCES,
       confirmRoute: `
         async function clearRejectedExchange() {
           await clearPortalSupabaseAuthCookies();
@@ -648,11 +837,6 @@ describe("preflight audit", () => {
       `,
       resetAction: `async function resetPassword() { await getSession(); await getUser(session.access_token); await updateUser(); }`,
       turnstileField: `function TurnstileField() { const completed = wasDisabled.current && !disabled; if (completed) window.turnstile.reset(widgetId); }`,
-      securityActions: TASK7_SECURITY_ACTIONS,
-      loginActions: TASK7_LOGIN_ACTIONS,
-      accountGuard: TASK7_ACCOUNT_GUARD,
-      profileAction: TASK7_PROFILE_ACTION,
-      preferencesAction: TASK7_PREFERENCES_ACTION,
     });
 
     expect(evidence?.resetConsumesAuthorizationBeforeUpdate).toBe(false);
@@ -875,10 +1059,44 @@ describe("preflight audit", () => {
       },
       "accountGuardEnforcesAssurance",
     ],
+    [
+      "session reads that include sensitive provider fields",
+      {
+        sessionQuery: TASK7_LIFECYCLE_SOURCES.sessionQuery.replace(
+          '"device_name"',
+          '"provider_session_id"',
+        ),
+      },
+      "sessionQueriesUseSafeReadColumns",
+    ],
+    [
+      "portal lifecycle hooks that omit protected route heartbeat",
+      {
+        accountDal: TASK7_LIFECYCLE_SOURCES.accountDal.replaceAll(
+          "await heartbeatProtectedAccountApiSession();",
+          "",
+        ),
+      },
+      "portalSessionLifecycleHooks",
+    ],
+    [
+      "a Server Action that omits same-origin provenance",
+      {
+        serverActions: {
+          ...TASK7_LIFECYCLE_SOURCES.serverActions,
+          "src/app/login/actions.ts": `
+            export async function login() {
+              await mutate();
+            }
+          `,
+        },
+      },
+      "serverActionsRequireSameOrigin",
+    ],
   ])("rejects %s", (_label, overrides, relationship) => {
     const evidence = analyzePortalAuthLifecycle({
       ...TASK7_LIFECYCLE_SOURCES,
-      ...(overrides as Record<string, string>),
+      ...(overrides as Partial<typeof TASK7_LIFECYCLE_SOURCES>),
     });
 
     expect(evidence?.[relationship as keyof typeof evidence]).toBe(false);
@@ -896,6 +1114,9 @@ describe("preflight audit", () => {
     expect(evidence?.securityActionsRequireAssurance).toBe(true);
     expect(evidence?.accountActionsRequireAssurance).toBe(true);
     expect(evidence?.enrollmentBindsProviderIssuedFactor).toBe(true);
+    expect(evidence?.sessionQueriesUseSafeReadColumns).toBe(true);
+    expect(evidence?.portalSessionLifecycleHooks).toBe(true);
+    expect(evidence?.serverActionsRequireSameOrigin).toBe(true);
   });
 
   it.each([
@@ -904,6 +1125,10 @@ describe("preflight audit", () => {
     "accountGuard",
     "profileAction",
     "preferencesAction",
+    "sessionQuery",
+    "sessionLifecycle",
+    "accountDal",
+    "adminAccess",
   ])("reports unavailable lifecycle evidence when %s cannot be read", (missing) => {
     const evidence = analyzePortalAuthLifecycle({
       ...TASK7_LIFECYCLE_SOURCES,
@@ -989,6 +1214,67 @@ describe("preflight audit", () => {
     expect(checks.find(({ id }) => id === "supabase.unified-sessions")?.status).toBe("warning");
   });
 
+  it("blocks the account API contract when its package evidence is unavailable", () => {
+    const checks = auditRepositories({ ...completeSnapshot, accountApiEvidence: null });
+    const contract = checks.find(({ id }) => id === "azure.account-api-contract");
+
+    expect(contract?.status).toBe("blocked");
+    expect(contract?.evidence).toContain("Account API package evidence is unavailable.");
+  });
+
+  it.each([
+    "modularPackage",
+    "versionedRoutePrefix",
+    "unauthenticatedHealthRoute",
+    "exactOriginCors",
+    "bearerAndActiveChecks",
+    "canonicalRoleMatrix",
+    "correlatedAudit",
+    "typedErrors",
+    "idempotentMutations",
+    "sessionLifecycleRoutes",
+    "adminMetricsRoute",
+    "adminAuditExplorerRoute",
+    "reportRoutes",
+    "accountLifecycleRoutes",
+    "privateArtifactDownloads",
+    "reportGenerationWorker",
+    "accountExportGenerationWorker",
+    "accountDeletionCleanupWorker",
+    "adminUsersRoute",
+    "adminUserActivationRoute",
+    "adminUserSessionRevokeRoute",
+    "notificationRoutes",
+    "allowListedResponses",
+    "dualReadRolesWithoutCutover",
+    "pinnedRequirements",
+    "safeStagingInfrastructure",
+  ])("blocks the account API contract when %s is absent", (property) => {
+    const checks = auditRepositories({
+      ...completeSnapshot,
+      accountApiEvidence: {
+        ...completeSnapshot.accountApiEvidence!,
+        [property]: false,
+      },
+    });
+    const contract = checks.find(({ id }) => id === "azure.account-api-contract");
+
+    expect(contract?.status).toBe("blocked");
+    expect(contract?.evidence).toContain(`Missing property: ${property}`);
+  });
+
+  it("labels the account API and infrastructure checks as source-only evidence", () => {
+    const checks = auditRepositories(completeSnapshot);
+
+    // Both checks read files. Neither is evidence that Azure, ARM, or a provider agrees.
+    expect(checks.find(({ id }) => id === "azure.account-api-contract")?.evidence).toContain(
+      "Structural source checks only; no live provider, Azure, or ARM behavior is evidenced.",
+    );
+    expect(checks.find(({ id }) => id === "azure.account-infrastructure")?.evidence).toContain(
+      "Reviewed source only; the template has not been linted by ARM or deployed.",
+    );
+  });
+
   it("detects wildcard CORS, legacy PIN metadata, and open Python ranges", () => {
     const checks = auditRepositories({
       ...completeSnapshot,
@@ -999,6 +1285,57 @@ describe("preflight audit", () => {
     expect(checks.find(({ id }) => id === "azure.wildcard-cors")?.status).toBe("warning");
     expect(checks.find(({ id }) => id === "desktop.legacy-pin-metadata")?.status).toBe("warning");
     expect(checks.find(({ id }) => id === "azure.dependency-pins")?.status).toBe("warning");
+  });
+
+  it("requires desktop profile writes to use the versioned RPC", () => {
+    const checks = auditRepositories(completeSnapshot);
+    expect(checks.find(({ id }) => id === "desktop.versioned-profile-writer")?.status).toBe("pass");
+
+    const broken = auditRepositories({
+      ...completeSnapshot,
+      desktopSupabaseService: completeSnapshot.desktopSupabaseService!.replace(
+        "update_my_app_profile_v2",
+        "update_my_app_profile",
+      ),
+    });
+
+    expect(broken.find(({ id }) => id === "desktop.versioned-profile-writer")?.status).toBe(
+      "blocked",
+    );
+  });
+
+  it("requires desktop cloud auth to avoid reusable local password verifiers", () => {
+    const checks = auditRepositories(completeSnapshot);
+    expect(checks.find(({ id }) => id === "desktop.cloud-password-lock")?.status).toBe("pass");
+
+    const broken = auditRepositories({
+      ...completeSnapshot,
+      desktopAuthService: completeSnapshot.desktopAuthService!.replace(
+        "password_hash = self._hash_cloud_local_password_lock()",
+        "password_hash = self.hash_password(password)",
+      ),
+    });
+
+    expect(broken.find(({ id }) => id === "desktop.cloud-password-lock")?.status).toBe("blocked");
+  });
+
+  it("requires desktop runtime validation after revoked-session API responses", () => {
+    const checks = auditRepositories(completeSnapshot);
+    expect(checks.find(({ id }) => id === "desktop.revoked-session-runtime-guard")?.status).toBe(
+      "pass",
+    );
+
+    const broken = auditRepositories({
+      ...completeSnapshot,
+      desktopAuthService: completeSnapshot.desktopAuthService!.replace(
+        "record.is_active = False",
+        "record.is_active = True",
+      ),
+    });
+
+    expect(broken.find(({ id }) => id === "desktop.revoked-session-runtime-guard")?.status).toBe(
+      "blocked",
+    );
   });
 
   it("never serializes configured secret values", () => {

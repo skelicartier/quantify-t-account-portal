@@ -15,6 +15,7 @@ import {
   type TotpEnrollmentState,
 } from "@/lib/auth/security-input";
 import { requireMutationAssurance } from "@/lib/dal/assurance-guard";
+import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { verifyCurrentPassword } from "@/lib/supabase/verification-client";
@@ -117,6 +118,7 @@ export async function changePassword(
   let otherSessionsCleared = false;
 
   try {
+    await requireSameOriginServerAction();
     // Assurance first, before any password is checked: an AAL1 caller must not be
     // able to use this action as a password oracle, or spend the provider's
     // verification rate limit, on a request that will be refused anyway.
@@ -168,6 +170,7 @@ export async function changeEmail(
   if (!parsed.success) return parsed.state;
 
   try {
+    await requireSameOriginServerAction();
     const { decision } = await requireMutationAssurance();
     if (decision === "challenge-required") return EMAIL_CHALLENGE_ERROR;
     if (decision !== "satisfied") return EMAIL_SERVICE_ERROR;
@@ -239,6 +242,7 @@ export async function startTotpEnrollment(
   }
 
   try {
+    await requireSameOriginServerAction();
     const { decision, assurance } = await requireMutationAssurance();
     if (decision === "challenge-required") return TOTP_CHALLENGE_ERROR;
     if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
@@ -317,6 +321,7 @@ export async function confirmTotpEnrollment(
   }
 
   try {
+    await requireSameOriginServerAction();
     const { decision, assurance } = await requireMutationAssurance();
     if (decision === "challenge-required") return TOTP_CHALLENGE_ERROR;
     if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
@@ -390,6 +395,7 @@ export async function removeTotpFactor(
   let remainingVerifiedFactors = 0;
 
   try {
+    await requireSameOriginServerAction();
     const { decision, assurance } = await requireMutationAssurance();
     if (decision === "challenge-required") return TOTP_CHALLENGE_ERROR;
     if (decision !== "satisfied") return TOTP_SERVICE_ERROR;

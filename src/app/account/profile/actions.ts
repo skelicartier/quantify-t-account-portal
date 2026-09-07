@@ -14,6 +14,7 @@ import {
   type ProfileVersionReader,
 } from "@/lib/account/profile-mutation";
 import { requireMutationAssurance } from "@/lib/dal/assurance-guard";
+import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const AUTH_ERROR: ProfileActionState = {
@@ -48,6 +49,7 @@ export async function updateProfile(
   if (!parsed.success) return parsed.state;
 
   try {
+    await requireSameOriginServerAction();
     // The page that hosts this form is unreachable until the second factor is
     // satisfied, but the action behind it is reachable on its own, so it repeats the
     // route guard's requirement as a value instead of a redirect.

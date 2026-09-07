@@ -5,6 +5,7 @@ import {
   CHALLENGE_FIELD_NAME,
   MAX_CHALLENGE_TOKEN_LENGTH,
 } from "@/lib/auth/challenge";
+import { isProtectedAdminPath, isProtectedAccountPath } from "@/lib/auth/route-policy";
 
 const loginSchema = z.object({
   email: z
@@ -71,12 +72,18 @@ export function sanitizeNextPath(value: unknown): string {
   if (typeof value !== "string" || !value.startsWith("/")) return "/account";
 
   try {
+    const submittedPath = value.split(/[?#]/u, 1)[0] ?? "";
+    if (/%2e|%2f|%5c/i.test(submittedPath)) return "/account";
+
     const base = new URL("https://account.quantifyterminal.invalid");
     const destination = new URL(value, base);
-    const isAccountPath =
-      destination.pathname === "/account" || destination.pathname.startsWith("/account/");
 
-    if (destination.origin !== base.origin || !isAccountPath) return "/account";
+    if (
+      destination.origin !== base.origin ||
+      (!isProtectedAccountPath(destination.pathname) && !isProtectedAdminPath(destination.pathname))
+    ) {
+      return "/account";
+    }
     return `${destination.pathname}${destination.search}`;
   } catch {
     return "/account";
