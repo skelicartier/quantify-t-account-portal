@@ -3,7 +3,6 @@ import Link from "next/link";
 import { signup } from "@/app/signup/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { SignupForm } from "@/components/auth/signup-form";
-import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
 
 export const metadata = {
   title: "Create account",
@@ -12,7 +11,7 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default function SignupPage() {
-  const { turnstileSiteKey } = getSupabasePublicConfiguration();
+  const turnstileSiteKey = "";
 
   return (
     <AuthShell

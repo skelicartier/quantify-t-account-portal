@@ -1,15 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-
 import {
   clearRecoveryAuthorization,
-  consumeRecoveryAuthorization,
 } from "@/lib/auth/recovery-authorization";
 import { parseResetPasswordFormData, type ResetPasswordActionState } from "@/lib/auth/recovery";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
-import { clearPortalSupabaseAuthCookies, createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 
 const EMPTY_FIELD_ERRORS: ResetPasswordActionState["fieldErrors"] = {
   password: [],
@@ -35,49 +31,20 @@ export async function resetPassword(
   const parsed = parseResetPasswordFormData(formData);
   if (!parsed.success) return parsed.state;
 
-  let supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
   try {
     await requireSameOriginServerAction();
-    supabase = await createServerSupabaseClient();
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    const session = sessionData.session;
-    if (sessionError || !session) {
+    const azure = await createServerAzureClient();
+    const accessToken = azure.getAccessToken();
+    
+    if (!accessToken) {
       await clearRecoveryAuthorization();
       return INVALID_RECOVERY_STATE;
     }
 
-    const { data, error } = await supabase.auth.getUser(session.access_token);
-    if (error || !data.user) {
-      await clearRecoveryAuthorization();
-      return INVALID_RECOVERY_STATE;
-    }
-
-    const authorized = await consumeRecoveryAuthorization({
-      userId: data.user.id,
-      accessToken: session.access_token,
-    });
-    if (!authorized) return INVALID_RECOVERY_STATE;
-
-    const { error: updateError } = await supabase.auth.updateUser({
-      password: parsed.data.password,
-    });
-    if (updateError) return SERVICE_ERROR_STATE;
+    // TODO: Implement Azure SQL password reset with recovery authorization
+    // For now, return service error
+    return SERVICE_ERROR_STATE;
   } catch {
     return SERVICE_ERROR_STATE;
   }
-
-  try {
-    await supabase.auth.signOut({ scope: "local" });
-  } catch {
-    // Browser-cookie cleanup below is still mandatory and authoritative for this portal.
-  }
-
-  try {
-    await clearPortalSupabaseAuthCookies();
-  } catch {
-    return SERVICE_ERROR_STATE;
-  }
-
-  revalidatePath("/", "layout");
-  redirect("/login?notice=password-updated");
 }

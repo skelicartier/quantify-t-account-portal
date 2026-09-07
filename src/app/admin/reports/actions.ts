@@ -17,7 +17,7 @@ import {
 } from "@/lib/admin/access";
 import { getCurrentAssurance } from "@/lib/dal/assurance-guard";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 
 export type AdminReportActionState = {
   status: "idle" | "success" | "error";
@@ -70,10 +70,9 @@ export async function enqueueAdminReport(
 
   try {
     await requireSameOriginServerAction();
-    const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase.auth.getSession();
-    const accessToken = data.session?.access_token;
-    if (error || !accessToken) return failure("Sign in again to queue a report.");
+    const azure = await createServerAzureClient();
+    const accessToken = azure.getAccessToken();
+    if (!accessToken) return failure("Sign in again to queue a report.");
     const me = await fetchAccountApiMe(accessToken);
     if (!hasAdminPortalAccess(me) || !canReadAuditEvents(me)) {
       return failure("This account cannot queue reports.");

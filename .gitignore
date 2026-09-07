@@ -34,3 +34,6 @@ semantic-review/
 *.log
 *.tsbuildinfo
 npm-debug.log*
+.vercel
+.env*
+supabase/.temp/

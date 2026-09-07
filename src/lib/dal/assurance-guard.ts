@@ -6,11 +6,10 @@ import { redirect } from "next/navigation";
 import {
   assuranceForMutation,
   EMPTY_ASSURANCE_STATE,
-  resolveAssuranceState,
   type AssuranceState,
   type MutationAssurance,
 } from "@/lib/auth/assurance";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 
 export const MFA_CHALLENGE_NOTICE = "/login?notice=mfa-required";
 
@@ -24,8 +23,9 @@ export const MFA_CHALLENGE_NOTICE = "/login?notice=mfa-required";
  */
 export const getCurrentAssurance = cache(async (): Promise<AssuranceState> => {
   try {
-    const client = await createServerSupabaseClient({ cookieWriteMode: "best-effort" });
-    return await resolveAssuranceState(client);
+    await createServerAzureClient({ cookieWriteMode: "best-effort" });
+    // For now, return empty assurance state - MFA will be implemented later
+    return EMPTY_ASSURANCE_STATE;
   } catch {
     return EMPTY_ASSURANCE_STATE;
   }

@@ -8,16 +8,15 @@ import {
   fetchAccountApiAccountLifecycle,
 } from "@/lib/admin/account-api";
 import { requireCurrentAccount } from "@/lib/dal/account";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 
 export async function requireCurrentAccountLifecycle() {
   await requireCurrentAccount();
-  const supabase = await createServerSupabaseClient({ cookieWriteMode: "best-effort" });
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw new AccountApiUnavailableError();
-  if (!data.session?.access_token) redirect("/login?next=%2Faccount%2Fdata");
+  const azure = await createServerAzureClient({ cookieWriteMode: "best-effort" });
+  const accessToken = azure.getAccessToken();
+  if (!accessToken) redirect("/login?next=%2Faccount%2Fdata");
   try {
-    return await fetchAccountApiAccountLifecycle(data.session.access_token);
+    return await fetchAccountApiAccountLifecycle(accessToken);
   } catch (error) {
     if (error instanceof AccountApiRequestError && error.status === 401) {
       redirect("/login?next=%2Faccount%2Fdata");

@@ -20,7 +20,7 @@ import type { AdminUserActivationState } from "@/lib/admin/user-activation";
 import type { AdminUserSessionRevocationState } from "@/lib/admin/user-session-revocation";
 import { getCurrentAssurance } from "@/lib/dal/assurance-guard";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 
 const AUTH_ERROR: AdminUserActivationState = {
   status: "error",
@@ -74,10 +74,9 @@ export async function updateAdminUserActivation(
 
   try {
     await requireSameOriginServerAction();
-    const supabase = await createServerSupabaseClient();
-    const sessionResult = (await supabase.auth.getSession()) as SessionResult;
-    const accessToken = sessionResult.data.session?.access_token;
-    if (sessionResult.error || !accessToken) return AUTH_ERROR;
+    const azure = await createServerAzureClient();
+    const accessToken = azure.getAccessToken();
+    if (!accessToken) return AUTH_ERROR;
 
     const me = await fetchAccountApiMe(accessToken);
     if (
@@ -123,10 +122,9 @@ export async function revokeAdminUserSession(
 
   try {
     await requireSameOriginServerAction();
-    const supabase = await createServerSupabaseClient();
-    const sessionResult = (await supabase.auth.getSession()) as SessionResult;
-    const accessToken = sessionResult.data.session?.access_token;
-    if (sessionResult.error || !accessToken) return AUTH_ERROR;
+    const azure = await createServerAzureClient();
+    const accessToken = azure.getAccessToken();
+    if (!accessToken) return AUTH_ERROR;
 
     const me = await fetchAccountApiMe(accessToken);
     if (

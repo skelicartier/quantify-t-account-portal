@@ -8,21 +8,14 @@ import {
   postAccountApiJson,
 } from "@/lib/admin/account-api";
 
-type SupabaseSessionReader = {
-  auth: {
-    getSession: () => Promise<{
-      data?: { session?: { access_token?: string | null } | null };
-      error?: unknown;
-    }>;
-  };
+type AzureSessionReader = {
+  getUser: () => Promise<{ id: string } | null>;
+  getAccessToken: () => string | null;
 };
 
-async function currentAccessToken(supabase: SupabaseSessionReader): Promise<string | null> {
+async function currentAccessToken(reader: AzureSessionReader): Promise<string | null> {
   try {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) return null;
-    const token = data?.session?.access_token?.trim();
-    return token || null;
+    return reader.getAccessToken();
   } catch {
     return null;
   }
@@ -47,9 +40,9 @@ async function postSessionLifecycle(
 }
 
 export async function registerCurrentAccountApiSession(
-  supabase: SupabaseSessionReader,
+  reader: AzureSessionReader,
 ): Promise<boolean> {
-  const accessToken = await currentAccessToken(supabase);
+  const accessToken = await currentAccessToken(reader);
   if (!accessToken) return false;
   return postSessionLifecycle("sessions/register", accessToken, {
     source: "portal",
@@ -64,17 +57,17 @@ export async function heartbeatAccountApiSession(accessToken: string): Promise<b
 }
 
 export async function heartbeatCurrentAccountApiSession(
-  supabase: SupabaseSessionReader,
+  reader: AzureSessionReader,
 ): Promise<boolean> {
-  const accessToken = await currentAccessToken(supabase);
+  const accessToken = await currentAccessToken(reader);
   if (!accessToken) return false;
   return heartbeatAccountApiSession(accessToken);
 }
 
 export async function endCurrentAccountApiSession(
-  supabase: SupabaseSessionReader,
+  reader: AzureSessionReader,
 ): Promise<boolean> {
-  const accessToken = await currentAccessToken(supabase);
+  const accessToken = await currentAccessToken(reader);
   if (!accessToken) return false;
   return postSessionLifecycle("sessions/end", accessToken, { reason: "signed-out" });
 }

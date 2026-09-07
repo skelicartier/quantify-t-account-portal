@@ -1,12 +1,12 @@
 import { z } from "zod";
 
-import type { AccountIdentity } from "@/lib/dto/account";
 import {
   mapAccountActivityEvents,
   mapAccountSessions,
   type AccountActivityEventDto,
   type AccountSessionDto,
 } from "@/lib/dto/session";
+import { azureFrom } from "@/lib/dal/azure-sql-client";
 
 export const ACCOUNT_SESSION_COLUMNS = [
   "id",
@@ -36,10 +36,7 @@ export const ACCOUNT_ACTIVITY_COLUMNS = [
 export const ACCOUNT_SESSION_LIMIT = 50;
 export const ACCOUNT_ACTIVITY_LIMIT = 100;
 
-type AuthResult = {
-  data: { user: AccountIdentity | null };
-  error: unknown;
-};
+type AzureUserResult = { id: string; email: string; [key: string]: unknown } | null;
 
 type QueryResult = {
   data: unknown;
@@ -50,21 +47,8 @@ type OrderedQuery = {
   limit: (count: number) => Promise<QueryResult>;
 };
 
-type OwnerQuery = {
-  order: (column: string, options: { ascending: boolean }) => OrderedQuery;
-};
-
-type SelectQuery = {
-  eq: (column: "user_id", value: string) => OwnerQuery;
-};
-
 export type AccountSessionDataClient = {
-  auth: {
-    getUser: () => Promise<AuthResult>;
-  };
-  from: (table: "account_sessions" | "auth_events") => {
-    select: (columns: string) => SelectQuery;
-  };
+  getUser: () => Promise<AzureUserResult>;
 };
 
 export const ACCOUNT_SESSIONS_UNAVAILABLE_MESSAGE = "Account sessions are temporarily unavailable.";
@@ -88,15 +72,15 @@ async function currentVerifiedUserId(
   client: AccountSessionDataClient,
   unavailable: () => Error,
 ): Promise<string | null> {
-  let auth: AuthResult;
+  let identity: AzureUserResult;
   try {
-    auth = await client.auth.getUser();
+    identity = await client.getUser();
   } catch {
     throw unavailable();
   }
 
-  const userId = auth.data.user?.id;
-  if (auth.error || !userId) return null;
+  const userId = identity?.id;
+  if (!userId) return null;
   if (!z.string().uuid().safeParse(userId).success) throw unavailable();
   return userId;
 }
@@ -110,12 +94,12 @@ export async function loadAccountSessions(
 
   let result: QueryResult;
   try {
-    result = await client
-      .from("account_sessions")
+    result = await azureFrom("account_sessions")
       .select(ACCOUNT_SESSION_COLUMNS)
       .eq("user_id", userId)
       .order("last_seen_at", { ascending: false })
-      .limit(ACCOUNT_SESSION_LIMIT);
+      .limit(ACCOUNT_SESSION_LIMIT)
+      .execute();
   } catch {
     throw new AccountSessionsUnavailableError();
   }
@@ -137,12 +121,12 @@ export async function loadAccountActivityEvents(
 
   let result: QueryResult;
   try {
-    result = await client
-      .from("auth_events")
+    result = await azureFrom("auth_events")
       .select(ACCOUNT_ACTIVITY_COLUMNS)
       .eq("user_id", userId)
       .order("occurred_at", { ascending: false })
-      .limit(ACCOUNT_ACTIVITY_LIMIT);
+      .limit(ACCOUNT_ACTIVITY_LIMIT)
+      .execute();
   } catch {
     throw new AccountActivityUnavailableError();
   }

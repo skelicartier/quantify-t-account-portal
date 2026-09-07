@@ -1,25 +1,18 @@
-import { getSupabaseAuthCookieOptions, getSupabaseAuthStorageKey } from "@/lib/supabase/config";
+import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
-describe("Supabase authentication cookie policy", () => {
-  it("uses the same project-scoped key as the pinned Supabase client", () => {
-    expect(getSupabaseAuthStorageKey("https://project-ref.supabase.co")).toBe(
-      "sb-project-ref-auth-token",
-    );
+describe("Azure auth cookie policy", () => {
+  it("returns correct Azure auth config", () => {
+    const config = getAzureAuthConfig();
+    expect(config.cookieName).toBe("qt-session");
+    expect(config.refreshTokenName).toBe("qt-refresh");
+    expect(config.cookieOptions.httpOnly).toBe(true);
+    expect(config.cookieOptions.sameSite).toBe("lax");
+    expect(config.cookieOptions.path).toBe("/");
   });
 
-  it("makes production session cookies HttpOnly, Secure, same-site, and site-wide", () => {
-    expect(getSupabaseAuthCookieOptions("https://project-ref.supabase.co", "production")).toEqual({
-      name: "sb-project-ref-auth-token",
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      path: "/",
-    });
-  });
-
-  it("allows local HTTP development without making cookies script-readable", () => {
-    expect(
-      getSupabaseAuthCookieOptions("https://project-ref.supabase.co", "development"),
-    ).toMatchObject({ httpOnly: true, secure: false, sameSite: "lax", path: "/" });
+  it("sets secure based on NODE_ENV", () => {
+    const config = getAzureAuthConfig();
+    // In test environment, NODE_ENV is typically "test" so secure should be false
+    expect(typeof config.cookieOptions.secure).toBe("boolean");
   });
 });

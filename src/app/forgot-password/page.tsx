@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requestPasswordRecovery } from "@/app/forgot-password/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { RecoveryRequestForm } from "@/components/auth/recovery-request-form";
-import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
+import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
 export const metadata = {
   title: "Recover account",
@@ -12,7 +12,8 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default function ForgotPasswordPage() {
-  const { turnstileSiteKey } = getSupabasePublicConfiguration();
+  // Turnstile site key would come from Azure config if needed
+  const turnstileSiteKey = "";
 
   return (
     <AuthShell

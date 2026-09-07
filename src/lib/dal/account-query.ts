@@ -1,9 +1,9 @@
 import {
   mapAccountOverview,
-  type AccountIdentity,
   type AccountOverviewDto,
   type AccountProfileState,
 } from "@/lib/dto/account";
+import { azureFrom } from "@/lib/dal/azure-sql-client";
 
 export const ACCOUNT_PROFILE_COLUMNS = [
   "user_id",
@@ -15,15 +15,7 @@ export const ACCOUNT_PROFILE_COLUMNS = [
   "last_login_at",
 ].join(",");
 
-type AuthUserResult = {
-  data: { user: AccountIdentity | null };
-  error: unknown;
-};
-
-type ProfileResult = {
-  data: unknown;
-  error: unknown;
-};
+type AzureUserResult = { id: string; email: string; [key: string]: unknown } | null;
 
 export const ACCOUNT_OVERVIEW_UNAVAILABLE_MESSAGE = "Account data is temporarily unavailable.";
 
@@ -39,19 +31,7 @@ export class AccountOverviewUnavailableError extends Error {
 }
 
 export type AccountDataClient = {
-  auth: {
-    getUser: () => Promise<AuthUserResult>;
-  };
-  from: (table: "app_profiles") => {
-    select: (columns: string) => {
-      eq: (
-        column: "user_id",
-        value: string,
-      ) => {
-        maybeSingle: () => Promise<ProfileResult>;
-      };
-    };
-  };
+  getUser: () => Promise<AzureUserResult>;
 };
 
 /**
@@ -67,24 +47,24 @@ export type AccountDataClient = {
 export async function loadAccountOverview(
   client: AccountDataClient,
 ): Promise<AccountOverviewDto | null> {
-  let authResult: AuthUserResult;
+  let identity: AzureUserResult;
   try {
-    authResult = await client.auth.getUser();
+    identity = await client.getUser();
   } catch {
     throw new AccountOverviewUnavailableError();
   }
 
-  const identity = authResult.data?.user ?? null;
-  if (authResult.error || !identity?.id) return null;
+  if (!identity?.id) return null;
 
   let profile: unknown = null;
   let profileState: AccountProfileState = "missing";
   try {
-    const result = await client
-      .from("app_profiles")
+    const result = await azureFrom("app_profiles")
       .select(ACCOUNT_PROFILE_COLUMNS)
       .eq("user_id", identity.id)
-      .maybeSingle();
+      .single()
+      .execute();
+
     profile = result.data;
     profileState = result.error ? "unavailable" : result.data ? "ready" : "missing";
   } catch {
@@ -94,8 +74,6 @@ export async function loadAccountOverview(
   try {
     return mapAccountOverview({ identity, profile, profileState });
   } catch {
-    // A verified identity that cannot be mapped is an availability failure, not
-    // an invalid session, so it must not become a login redirect.
     throw new AccountOverviewUnavailableError();
   }
 }

@@ -19,14 +19,10 @@ import {
   registerCurrentAccountApiSession,
 } from "@/lib/account/session-lifecycle";
 
-function supabaseWithToken(accessToken: string | null) {
+function azureWithToken(accessToken: string | null) {
   return {
-    auth: {
-      getSession: vi.fn(async () => ({
-        data: { session: accessToken ? { access_token: accessToken } : null },
-        error: null,
-      })),
-    },
+    getUser: vi.fn(async () => (accessToken ? { id: "user-1", email: "test@example.com" } : null)),
+    getAccessToken: vi.fn(() => accessToken),
   };
 }
 
@@ -35,9 +31,9 @@ describe("Account API session lifecycle hooks", () => {
 
   it("registers the completed portal session with a server-generated idempotency key", async () => {
     mocks.postAccountApiJson.mockResolvedValue({ ok: true });
-    const supabase = supabaseWithToken(" bearer-token ");
+    const azure = azureWithToken(" bearer-token ");
 
-    await expect(registerCurrentAccountApiSession(supabase)).resolves.toBe(true);
+    await expect(registerCurrentAccountApiSession(azure)).resolves.toBe(true);
 
     expect(mocks.postAccountApiJson).toHaveBeenCalledWith(
       "sessions/register",
@@ -49,9 +45,9 @@ describe("Account API session lifecycle hooks", () => {
 
   it("ends the current portal session before provider sign-out when a token exists", async () => {
     mocks.postAccountApiJson.mockResolvedValue({ ok: true });
-    const supabase = supabaseWithToken("bearer-token");
+    const azure = azureWithToken("bearer-token");
 
-    await expect(endCurrentAccountApiSession(supabase)).resolves.toBe(true);
+    await expect(endCurrentAccountApiSession(azure)).resolves.toBe(true);
 
     expect(mocks.postAccountApiJson).toHaveBeenCalledWith(
       "sessions/end",
@@ -61,44 +57,37 @@ describe("Account API session lifecycle hooks", () => {
     );
   });
 
-  it("heartbeats the current portal session with no client-controlled session id", async () => {
-    mocks.postAccountApiJson.mockResolvedValue({ ok: true });
-    const supabase = supabaseWithToken(" bearer-token ");
-
-    await expect(heartbeatCurrentAccountApiSession(supabase)).resolves.toBe(true);
-
-    expect(mocks.postAccountApiJson).toHaveBeenCalledWith(
-      "sessions/heartbeat",
-      "bearer-token",
-      { device_name: "Web portal" },
-      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^portal-/u) }),
-    );
-  });
-
-  it("can heartbeat from an access token already read by an admin route", async () => {
-    mocks.postAccountApiJson.mockResolvedValue({ ok: true });
-
-    await expect(heartbeatAccountApiSession(" bearer-token ")).resolves.toBe(true);
-
-    expect(mocks.postAccountApiJson).toHaveBeenCalledWith(
-      "sessions/heartbeat",
-      "bearer-token",
-      { device_name: "Web portal" },
-      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^portal-/u) }),
-    );
-  });
-
-  it("is a no-op without a usable provider session", async () => {
-    await expect(registerCurrentAccountApiSession(supabaseWithToken(null))).resolves.toBe(false);
-
+  it("returns false when no token is available for register", async () => {
+    const azure = azureWithToken(null);
+    await expect(registerCurrentAccountApiSession(azure)).resolves.toBe(false);
     expect(mocks.postAccountApiJson).not.toHaveBeenCalled();
   });
 
-  it("does not fail the login/logout path when the Account API is unavailable", async () => {
-    mocks.postAccountApiJson.mockRejectedValue(new Error("network detail"));
+  it("returns false when no token is available for end", async () => {
+    const azure = azureWithToken(null);
+    await expect(endCurrentAccountApiSession(azure)).resolves.toBe(false);
+    expect(mocks.postAccountApiJson).not.toHaveBeenCalled();
+  });
 
-    await expect(registerCurrentAccountApiSession(supabaseWithToken("bearer-token"))).resolves.toBe(
-      false,
+  it("sends a heartbeat with a trimmed token", async () => {
+    mocks.postAccountApiJson.mockResolvedValue({ ok: true });
+    await expect(heartbeatAccountApiSession(" token ")).resolves.toBe(true);
+    expect(mocks.postAccountApiJson).toHaveBeenCalledWith(
+      "sessions/heartbeat",
+      "token",
+      { device_name: "Web portal" },
+      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^portal-/u) }),
     );
+  });
+
+  it("returns false on heartbeat with empty token", async () => {
+    await expect(heartbeatAccountApiSession("  ")).resolves.toBe(false);
+    expect(mocks.postAccountApiJson).not.toHaveBeenCalled();
+  });
+
+  it("heartbeats current session from azure reader", async () => {
+    mocks.postAccountApiJson.mockResolvedValue({ ok: true });
+    const azure = azureWithToken("bearer-token");
+    await expect(heartbeatCurrentAccountApiSession(azure)).resolves.toBe(true);
   });
 });

@@ -2,8 +2,6 @@ import "server-only";
 
 import { headers } from "next/headers";
 
-import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
-
 export class SameOriginActionError extends Error {
   constructor() {
     super("Server Action request did not come from the configured portal origin.");
@@ -22,7 +20,9 @@ function originFromUrl(value: string | null): string | null {
 
 function configuredPortalOrigin(): string | null {
   try {
-    return originFromUrl(getSupabasePublicConfiguration().siteUrl);
+    // Use the site URL from environment variable
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    return originFromUrl(siteUrl || null);
   } catch {
     return null;
   }

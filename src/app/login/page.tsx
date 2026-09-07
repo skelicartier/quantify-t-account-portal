@@ -4,7 +4,7 @@ import { login, verifyLoginChallenge } from "@/app/login/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { sanitizeNextPath } from "@/lib/auth/login";
-import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
+import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
 export const metadata = {
   title: "Sign in",
@@ -28,7 +28,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const invalidAuthLink = notice === "invalid-auth-link";
   const passwordUpdated = notice === "password-updated";
   const mfaRequired = notice === "mfa-required";
-  const { turnstileSiteKey } = getSupabasePublicConfiguration();
+  // Turnstile site key would come from Azure config if needed
+  const turnstileSiteKey = "";
 
   return (
     <AuthShell

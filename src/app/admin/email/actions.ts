@@ -23,7 +23,7 @@ import {
   notificationEmailRevisionSchema,
   type NotificationEmailActionState,
 } from "@/lib/notifications/email-input";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 
 const failure = (message: string): NotificationEmailActionState => ({
   status: "error",
@@ -57,10 +57,9 @@ export async function enqueueAdminEmail(
 
   try {
     await requireSameOriginServerAction();
-    const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase.auth.getSession();
-    const accessToken = data.session?.access_token;
-    if (error || !accessToken) return failure("Sign in again to queue email.");
+    const azure = await createServerAzureClient();
+    const accessToken = azure.getAccessToken();
+    if (!accessToken) return failure("Sign in again to queue email.");
     const me = await fetchAccountApiMe(accessToken);
     if (!hasAdminPortalAccess(me) || !canManageNotifications(me)) {
       return failure("This account cannot queue email.");

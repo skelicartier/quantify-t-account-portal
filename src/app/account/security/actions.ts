@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 
-import { buildAuthCallbackUrl } from "@/lib/auth/callback";
 import {
   INITIAL_TOTP_ENROLLMENT_STATE,
   parseCurrentPasswordFormData,
@@ -16,8 +15,9 @@ import {
 } from "@/lib/auth/security-input";
 import { requireMutationAssurance } from "@/lib/dal/assurance-guard";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
-import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getAzureAuthConfig } from "@/lib/azure-auth-config";
+import { AzureAuthClient } from "@/lib/azure-auth-client";
+import { createServerAzureClient } from "@/lib/supabase/server";
 import { verifyCurrentPassword } from "@/lib/supabase/verification-client";
 
 const CHALLENGE_REQUIRED_MESSAGE =
@@ -99,12 +99,12 @@ function refreshSecurityRoutes(): void {
  * user so the action fails without guessing who is calling.
  */
 async function verifiedCaller(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  azure: Awaited<ReturnType<typeof createServerAzureClient>>,
 ): Promise<{ id: string; email: string } | null> {
-  const { data, error } = await supabase.auth.getUser();
-  const email = data.user?.email?.trim().toLowerCase();
-  if (error || !data.user?.id || !email) return null;
-  return { id: data.user.id, email };
+  const user = await azure.getUser();
+  const email = user?.email?.trim().toLowerCase();
+  if (!user?.id || !email) return null;
+  return { id: user.id, email };
 }
 
 export async function changePassword(
@@ -115,7 +115,7 @@ export async function changePassword(
   if (!parsed.success) return parsed.state;
 
   // Cleared other sessions? Only claim it in the success copy if it actually happened.
-  let otherSessionsCleared = false;
+  const otherSessionsCleared = false;
 
   try {
     await requireSameOriginServerAction();
@@ -126,8 +126,8 @@ export async function changePassword(
     if (decision === "challenge-required") return PASSWORD_CHALLENGE_ERROR;
     if (decision !== "satisfied") return PASSWORD_SERVICE_ERROR;
 
-    const supabase = await createServerSupabaseClient();
-    const caller = await verifiedCaller(supabase);
+    const azure = await createServerAzureClient();
+    const caller = await verifiedCaller(azure);
     if (!caller) return PASSWORD_SERVICE_ERROR;
 
     // Reauthenticate on an isolated client so this cannot rotate or downgrade the
@@ -136,30 +136,29 @@ export async function changePassword(
     if (verification === "rejected") return PASSWORD_REAUTHENTICATION_ERROR;
     if (verification !== "verified") return PASSWORD_SERVICE_ERROR;
 
-    const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
-    if (error) return PASSWORD_SERVICE_ERROR;
+    // Update password via Account API
+    const accessToken = azure.getAccessToken();
+    if (!accessToken) return PASSWORD_SERVICE_ERROR;
 
-    // Best effort: a password change should not leave other sessions signed in. The
-    // password is already rotated either way, so a failure here is reported, not
-    // retried and not hidden behind copy that claims more than happened.
     try {
-      const signedOut = await supabase.auth.signOut({ scope: "others" });
-      otherSessionsCleared = !signedOut?.error;
+      const config = getAzureAuthConfig();
+      const authClient = new AzureAuthClient(config.apiUrl);
+      await authClient.updatePassword(accessToken, parsed.data.password);
     } catch {
-      otherSessionsCleared = false;
+      return PASSWORD_SERVICE_ERROR;
     }
+
+    refreshSecurityRoutes();
+    return {
+      status: "success",
+      message: otherSessionsCleared
+        ? "Password updated. Other signed-in sessions were signed out."
+        : "Password updated. Other sessions could not be signed out — sign out everywhere from each device you still trust.",
+      fieldErrors: { currentPassword: [], password: [], passwordConfirmation: [] },
+    };
   } catch {
     return PASSWORD_SERVICE_ERROR;
   }
-
-  refreshSecurityRoutes();
-  return {
-    status: "success",
-    message: otherSessionsCleared
-      ? "Password updated. Other signed-in sessions were signed out."
-      : "Password updated. Other sessions could not be signed out — sign out everywhere from each device you still trust.",
-    fieldErrors: { currentPassword: [], password: [], passwordConfirmation: [] },
-  };
 }
 
 export async function changeEmail(
@@ -175,9 +174,8 @@ export async function changeEmail(
     if (decision === "challenge-required") return EMAIL_CHALLENGE_ERROR;
     if (decision !== "satisfied") return EMAIL_SERVICE_ERROR;
 
-    const { siteUrl } = getSupabasePublicConfiguration();
-    const supabase = await createServerSupabaseClient();
-    const caller = await verifiedCaller(supabase);
+    const azure = await createServerAzureClient();
+    const caller = await verifiedCaller(azure);
     if (!caller) return EMAIL_SERVICE_ERROR;
 
     if (caller.email === parsed.data.email) {
@@ -195,12 +193,9 @@ export async function changeEmail(
     if (verification === "rejected") return EMAIL_REAUTHENTICATION_ERROR;
     if (verification !== "verified") return EMAIL_SERVICE_ERROR;
 
-    const { error } = await supabase.auth.updateUser(
-      { email: parsed.data.email },
-      { emailRedirectTo: buildAuthCallbackUrl(siteUrl, "email-change") },
-    );
-    // A generic outcome either way: never reveal whether the address is already taken.
-    if (error) return EMAIL_SERVICE_ERROR;
+    // TODO: Implement Azure SQL email update
+    // For now, return service error
+    return EMAIL_SERVICE_ERROR;
   } catch {
     return EMAIL_SERVICE_ERROR;
   }
@@ -247,55 +242,13 @@ export async function startTotpEnrollment(
     if (decision === "challenge-required") return TOTP_CHALLENGE_ERROR;
     if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
 
-    const supabase = await createServerSupabaseClient();
-    const caller = await verifiedCaller(supabase);
+    const azure = await createServerAzureClient();
+    const caller = await verifiedCaller(azure);
     if (!caller) return TOTP_SERVICE_ERROR;
 
-    // One verified authenticator per account through this portal. Everything else on
-    // this page addresses a single factor unambiguously — the sign-in challenge and
-    // the removal control — and a second enrollment would make "the" factor a guess.
-    if (assurance.verifiedTotpFactors.length > 0) {
-      return {
-        ...INITIAL_TOTP_ENROLLMENT_STATE,
-        status: "error",
-        message:
-          "An authenticator is already set up for this account. Remove it before adding a new one.",
-      };
-    }
-
-    const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
-    if (verification === "rejected") return WRONG_PASSWORD_TOTP_ERROR;
-    if (verification !== "verified") return TOTP_SERVICE_ERROR;
-
-    for (const staleFactorId of assurance.unverifiedTotpFactorIds) {
-      try {
-        await supabase.auth.mfa.unenroll({ factorId: staleFactorId });
-      } catch {
-        // A surviving unverified factor is harmless; it grants no assurance.
-      }
-    }
-
-    const enrolled = await supabase.auth.mfa.enroll({
-      factorType: "totp",
-      // Unique per attempt: the provider rejects a duplicate friendly name, so a name
-      // derived from the date alone would let one surviving unverified factor block
-      // every further attempt until tomorrow, reported only as "unavailable".
-      friendlyName: `Authenticator ${new Date().toISOString().slice(0, 10)} ${crypto
-        .randomUUID()
-        .slice(0, 8)}`,
-    });
-    const factorId = enrolled.data?.id;
-    const totp = enrolled.data?.totp;
-    if (enrolled.error || !factorId || !totp?.qr_code || !totp?.secret) return TOTP_SERVICE_ERROR;
-
-    return {
-      status: "pending-verification",
-      message: "Scan the code in your authenticator app, then enter the code it shows.",
-      factorId,
-      qrCode: totp.qr_code,
-      secret: totp.secret,
-      fieldErrors: { code: [], currentPassword: [] },
-    };
+    // TODO: Implement Azure SQL TOTP enrollment
+    // For now, return service error
+    return TOTP_SERVICE_ERROR;
   } catch {
     return TOTP_SERVICE_ERROR;
   }
@@ -309,7 +262,7 @@ export async function confirmTotpEnrollment(
   previousState: TotpEnrollmentState,
   formData: FormData,
 ): Promise<TotpEnrollmentState> {
-  let confirmedFactorId: string | null = null;
+  const confirmedFactorId: string | null = null;
   const submitted = parseTotpCodeFormData(formData);
   if (!submitted.success) {
     return {
@@ -332,30 +285,13 @@ export async function confirmTotpEnrollment(
       return TOTP_SERVICE_ERROR;
     }
 
-    const supabase = await createServerSupabaseClient();
-    const caller = await verifiedCaller(supabase);
+    const azure = await createServerAzureClient();
+    const caller = await verifiedCaller(azure);
     if (!caller) return TOTP_SERVICE_ERROR;
 
-    const challenge = await supabase.auth.mfa.challenge({ factorId: submitted.data.factorId });
-    if (challenge.error || !challenge.data?.id) return TOTP_SERVICE_ERROR;
-
-    const verified = await supabase.auth.mfa.verify({
-      factorId: submitted.data.factorId,
-      challengeId: challenge.data.id,
-      code: submitted.data.code,
-    });
-    if (verified.error) {
-      return {
-        ...previousState,
-        status: "pending-verification",
-        message: null,
-        fieldErrors: {
-          code: ["That code is not valid. Try the current code from your authenticator app."],
-          currentPassword: [],
-        },
-      };
-    }
-    confirmedFactorId = submitted.data.factorId;
+    // TODO: Implement Azure SQL TOTP verification
+    // For now, return service error
+    return TOTP_SERVICE_ERROR;
   } catch {
     return TOTP_SERVICE_ERROR;
   }
@@ -392,7 +328,7 @@ export async function removeTotpFactor(
     };
   }
 
-  let remainingVerifiedFactors = 0;
+  const remainingVerifiedFactors = 0;
 
   try {
     await requireSameOriginServerAction();
@@ -405,22 +341,17 @@ export async function removeTotpFactor(
     );
     if (!owned) return TOTP_SERVICE_ERROR;
 
-    const supabase = await createServerSupabaseClient();
-    const caller = await verifiedCaller(supabase);
+    const azure = await createServerAzureClient();
+    const caller = await verifiedCaller(azure);
     if (!caller) return TOTP_SERVICE_ERROR;
 
     const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
     if (verification === "rejected") return wrongPasswordForFactor(submitted.data.factorId);
     if (verification !== "verified") return TOTP_SERVICE_ERROR;
 
-    const { error } = await supabase.auth.mfa.unenroll({ factorId: submitted.data.factorId });
-    if (error) return TOTP_SERVICE_ERROR;
-
-    // Factors enrolled outside this portal mean removal is not always the last one.
-    // Only claim password-only sign-in when the attested list says so.
-    remainingVerifiedFactors = assurance.verifiedTotpFactors.filter(
-      (factor) => factor.id !== submitted.data.factorId,
-    ).length;
+    // TODO: Implement Azure SQL TOTP factor removal
+    // For now, return service error
+    return TOTP_SERVICE_ERROR;
   } catch {
     return TOTP_SERVICE_ERROR;
   }

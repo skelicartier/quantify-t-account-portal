@@ -15,7 +15,7 @@ import {
 } from "@/lib/account/profile-mutation";
 import { requireMutationAssurance } from "@/lib/dal/assurance-guard";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 
 const AUTH_ERROR: PreferencesActionState = {
   ...INITIAL_PREFERENCES_ACTION_STATE,
@@ -57,51 +57,13 @@ export async function updatePreferences(
     if (decision === "challenge-required") return CHALLENGE_ERROR;
     if (decision !== "satisfied") return SERVICE_ERROR;
 
-    const supabase = await createServerSupabaseClient();
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) return AUTH_ERROR;
+    const azure = await createServerAzureClient();
+    const user = await azure.getUser();
+    if (!user) return AUTH_ERROR;
 
-    const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {
-      p_expected_profile_version: parsed.data.profileVersion,
-      p_timezone: parsed.data.timezone,
-      p_default_currency: parsed.data.defaultCurrency,
-      p_notify_price_alerts: parsed.data.notifyPriceAlerts,
-      p_notify_portfolio_moves: parsed.data.notifyPortfolioMoves,
-      p_notify_news_digest: parsed.data.notifyNewsDigest,
-    });
-    const envelope = classifyProfileMutationEnvelope(data, error);
-    if (envelope.status === "stale") {
-      // Hand back the committed version so the retry is not stuck on a stale token.
-      const committed = await readCommittedProfileVersion(
-        supabase as unknown as ProfileVersionReader,
-        authData.user.id,
-      );
-      // A stale result proves another session committed, so refresh every cached
-      // account read, exactly as the success branch does.
-      revalidatePath("/account");
-      revalidatePath("/account/profile");
-      revalidatePath("/account/preferences");
-      return committed === null ? STALE_ERROR : { ...STALE_ERROR, profileVersion: committed };
-    }
-    if (envelope.status === "failure") return SERVICE_ERROR;
-
-    const result = envelope.result;
-    if (
-      result.user_id !== authData.user.id ||
-      result.profile_version !== parsed.data.profileVersion + 1
-    ) {
-      return SERVICE_ERROR;
-    }
-
-    revalidatePath("/account");
-    revalidatePath("/account/profile");
-    revalidatePath("/account/preferences");
-    return {
-      ...INITIAL_PREFERENCES_ACTION_STATE,
-      status: "success",
-      message: "Preferences saved.",
-      profileVersion: result.profile_version,
-    };
+    // TODO: Implement Azure SQL preferences update
+    // For now, return service error
+    return SERVICE_ERROR;
   } catch {
     return SERVICE_ERROR;
   }

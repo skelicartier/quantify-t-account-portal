@@ -1,5 +1,5 @@
 import { mapAccountProfile, type AccountProfileDto } from "@/lib/dto/profile";
-import type { AccountIdentity } from "@/lib/dto/account";
+import { azureFrom } from "@/lib/dal/azure-sql-client";
 
 export const ACCOUNT_PROFILE_DETAIL_COLUMNS = [
   "user_id",
@@ -16,25 +16,12 @@ export const ACCOUNT_PROFILE_DETAIL_COLUMNS = [
   "updated_at",
 ].join(",");
 
-type AuthResult = {
-  data: { user: AccountIdentity | null };
-  error: unknown;
-};
+type AzureUserResult = { id: string; email: string; [key: string]: unknown } | null;
 
 type ProfileResult = { data: unknown; error: unknown };
 
 export type ProfileDataClient = {
-  auth: { getUser: () => Promise<AuthResult> };
-  from: (table: "app_profiles") => {
-    select: (columns: string) => {
-      eq: (
-        column: "user_id",
-        value: string,
-      ) => {
-        maybeSingle: () => Promise<ProfileResult>;
-      };
-    };
-  };
+  getUser: () => Promise<AzureUserResult>;
 };
 
 export const PROFILE_UNAVAILABLE_MESSAGE = "Account profile is temporarily unavailable.";
@@ -62,23 +49,22 @@ export class AccountProfileUnavailableError extends Error {
 export async function loadAccountProfile(
   client: ProfileDataClient,
 ): Promise<AccountProfileDto | null> {
-  let auth: AuthResult;
+  let identity: AzureUserResult;
   try {
-    auth = await client.auth.getUser();
+    identity = await client.getUser();
   } catch {
     throw new AccountProfileUnavailableError();
   }
 
-  const identity = auth.data?.user ?? null;
-  if (auth.error || !identity?.id) return null;
+  if (!identity?.id) return null;
 
   let result: ProfileResult;
   try {
-    result = await client
-      .from("app_profiles")
+    result = await azureFrom("app_profiles")
       .select(ACCOUNT_PROFILE_DETAIL_COLUMNS)
       .eq("user_id", identity.id)
-      .maybeSingle();
+      .single()
+      .execute();
   } catch {
     throw new AccountProfileUnavailableError();
   }

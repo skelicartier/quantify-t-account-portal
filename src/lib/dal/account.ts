@@ -26,7 +26,7 @@ import { heartbeatCurrentAccountApiSession } from "@/lib/account/session-lifecyc
 import type { AccountOverviewDto } from "@/lib/dto/account";
 import type { AccountProfileDto } from "@/lib/dto/profile";
 import type { AccountActivityEventDto, AccountSessionDto } from "@/lib/dto/session";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 
 /**
  * Resolve the caller's account overview using the same failure-class split as the
@@ -36,14 +36,14 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
  * to the login page during a transport outage and mask the profile route's 5xx.
  */
 export const getCurrentAccount = cache(async (): Promise<AccountOverviewDto | null> => {
-  let client: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  let client: Awaited<ReturnType<typeof createServerAzureClient>>;
   try {
-    client = await createServerSupabaseClient({ cookieWriteMode: "best-effort" });
+    client = await createServerAzureClient({ cookieWriteMode: "best-effort" });
   } catch {
     // Never surface provider or configuration detail from a failed factory.
     throw new AccountOverviewUnavailableError();
   }
-  return await loadAccountOverview(client as unknown as AccountDataClient);
+  return await loadAccountOverview(client as AccountDataClient);
 });
 
 export async function requireCurrentAccount(): Promise<AccountOverviewDto> {
@@ -62,14 +62,14 @@ export async function requireCurrentAccount(): Promise<AccountOverviewDto> {
  * error rather than redirecting an authenticated visitor to the login page.
  */
 export const getCurrentProfile = cache(async (): Promise<AccountProfileDto | null> => {
-  let client: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  let client: Awaited<ReturnType<typeof createServerAzureClient>>;
   try {
-    client = await createServerSupabaseClient({ cookieWriteMode: "best-effort" });
+    client = await createServerAzureClient({ cookieWriteMode: "best-effort" });
   } catch {
     // Never surface provider or configuration detail from a failed factory.
     throw new AccountProfileUnavailableError();
   }
-  return await loadAccountProfile(client as unknown as ProfileDataClient);
+  return await loadAccountProfile(client as ProfileDataClient);
 });
 
 export async function requireCurrentProfile(): Promise<AccountProfileDto> {
@@ -82,13 +82,13 @@ export async function requireCurrentProfile(): Promise<AccountProfileDto> {
 }
 
 export const getCurrentSessions = cache(async (): Promise<AccountSessionDto[] | null> => {
-  let client: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+  let client: Awaited<ReturnType<typeof createServerAzureClient>>;
   try {
-    client = await createServerSupabaseClient({ cookieWriteMode: "best-effort" });
+    client = await createServerAzureClient({ cookieWriteMode: "best-effort" });
   } catch {
     throw new AccountSessionsUnavailableError();
   }
-  return await loadAccountSessions(client as unknown as AccountSessionDataClient);
+  return await loadAccountSessions(client as AccountSessionDataClient);
 });
 
 export async function requireCurrentSessions(): Promise<AccountSessionDto[]> {
@@ -101,13 +101,13 @@ export async function requireCurrentSessions(): Promise<AccountSessionDto[]> {
 
 export const getCurrentActivityEvents = cache(
   async (): Promise<AccountActivityEventDto[] | null> => {
-    let client: Awaited<ReturnType<typeof createServerSupabaseClient>>;
+    let client: Awaited<ReturnType<typeof createServerAzureClient>>;
     try {
-      client = await createServerSupabaseClient({ cookieWriteMode: "best-effort" });
+      client = await createServerAzureClient({ cookieWriteMode: "best-effort" });
     } catch {
       throw new AccountActivityUnavailableError();
     }
-    return await loadAccountActivityEvents(client as unknown as AccountSessionDataClient);
+    return await loadAccountActivityEvents(client as AccountSessionDataClient);
   },
 );
 
@@ -121,7 +121,7 @@ export async function requireCurrentActivityEvents(): Promise<AccountActivityEve
 
 const heartbeatProtectedAccountApiSession = cache(async (): Promise<void> => {
   try {
-    const client = await createServerSupabaseClient({ cookieWriteMode: "best-effort" });
+    const client = await createServerAzureClient({ cookieWriteMode: "best-effort" });
     await heartbeatCurrentAccountApiSession(client);
   } catch {
     // Session telemetry must not prevent a verified account page from rendering.

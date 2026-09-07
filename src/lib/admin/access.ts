@@ -42,12 +42,7 @@ import {
   type AccountApiRoleReport,
 } from "@/lib/admin/account-api";
 import type { AssuranceState } from "@/lib/auth/assurance";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-
-type SessionResult = {
-  data: { session: { access_token?: string | null } | null };
-  error: unknown;
-};
+import { createServerAzureClient } from "@/lib/supabase/server";
 
 export type AdminDashboardAccess =
   | {
@@ -267,17 +262,14 @@ function loginDestination(nextPath: string): string {
 }
 
 async function currentAccessToken(nextPath = "/admin"): Promise<string> {
-  let result: SessionResult;
   try {
-    const supabase = await createServerSupabaseClient({ cookieWriteMode: "best-effort" });
-    result = (await supabase.auth.getSession()) as SessionResult;
+    const azure = await createServerAzureClient({ cookieWriteMode: "best-effort" });
+    const token = azure.getAccessToken();
+    if (!token) redirect(loginDestination(nextPath));
+    return token;
   } catch {
     throw new AccountApiUnavailableError();
   }
-
-  const token = result.data.session?.access_token;
-  if (result.error || !token) redirect(loginDestination(nextPath));
-  return token;
 }
 
 async function currentAccountApiIdentity(nextPath: string): Promise<{

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { recordAccountApiNotificationReceipt } from "@/lib/admin/account-api";
 import { requireMutationAssurance } from "@/lib/dal/assurance-guard";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 import type { NotificationActionState } from "@/lib/notifications/input";
 
 export async function acknowledgeNotification(
@@ -28,12 +28,12 @@ export async function acknowledgeNotification(
     return failure;
   try {
     await requireSameOriginServerAction();
-    const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase.auth.getSession();
-    if (error || !data.session?.access_token) return failure;
+    const azure = await createServerAzureClient();
+    const accessToken = azure.getAccessToken();
+    if (!accessToken) return failure;
     if ((await requireMutationAssurance()).decision !== "satisfied") return failure;
     await recordAccountApiNotificationReceipt(
-      data.session.access_token,
+      accessToken,
       id,
       status as "read" | "dismissed" | "clicked",
       {

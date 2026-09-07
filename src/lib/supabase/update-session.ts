@@ -1,45 +1,51 @@
-import { createServerClient } from "@supabase/ssr";
-import type { User } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
+import { AzureAuthClient } from "@/lib/azure-auth-client";
+import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
-export type RefreshedSupabaseSession = {
+export type RefreshedSession = {
   response: NextResponse;
-  user: User | null;
+  user: { id: string; email: string } | null;
 };
 
-export async function updateSupabaseSession(
+export async function updateSession(
   request: NextRequest,
-): Promise<RefreshedSupabaseSession> {
-  let response = NextResponse.next({ request });
-  const { url, publishableKey, cookieOptions } = getSupabasePublicConfiguration();
-  const supabase = createServerClient(url, publishableKey, {
-    cookieOptions,
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet, headersToSet) {
-        for (const { name, value } of cookiesToSet) request.cookies.set(name, value);
-        response = NextResponse.next({ request });
-        for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(name, value, options);
-        }
-        for (const [name, value] of Object.entries(headersToSet)) {
-          response.headers.set(name, value);
-        }
-      },
-    },
-  });
+): Promise<RefreshedSession> {
+  const response = NextResponse.next({ request });
+  const config = getAzureAuthConfig();
+
+  // Get access token from cookies
+  const accessToken = request.cookies.get(config.cookieName)?.value;
+  const refreshToken = request.cookies.get(config.refreshTokenName)?.value;
+
+  if (!accessToken) {
+    return { response, user: null };
+  }
 
   try {
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-    return { response, user: error ? null : user };
+    const client = new AzureAuthClient(config.apiUrl);
+    const user = await client.getUser(accessToken);
+    return { response, user: user ? { id: user.id, email: user.email } : null };
   } catch {
+    // Token might be expired, try refresh
+    if (refreshToken) {
+      try {
+        const client = new AzureAuthClient(config.apiUrl);
+        const newSession = await client.refreshSession(accessToken, refreshToken);
+        
+        // Update cookies with new tokens
+        response.cookies.set(config.cookieName, newSession.access_token, {
+          ...config.cookieOptions,
+          maxAge: newSession.expires_in,
+        });
+        response.cookies.set(config.refreshTokenName, newSession.refresh_token, config.cookieOptions);
+
+        const user = await client.getUser(newSession.access_token);
+        return { response, user: user ? { id: user.id, email: user.email } : null };
+      } catch {
+        return { response, user: null };
+      }
+    }
     return { response, user: null };
   }
 }

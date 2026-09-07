@@ -23,7 +23,7 @@ import {
 } from "@/lib/account/lifecycle-input";
 import { requireMutationAssurance } from "@/lib/dal/assurance-guard";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 import { verifyCurrentPassword } from "@/lib/supabase/verification-client";
 
 const SERVICE_ERROR: AccountLifecycleActionState = {
@@ -58,13 +58,11 @@ function formError(message: string, confirmationMessage = ""): AccountLifecycleA
 }
 
 async function verifiedSession(): Promise<{ accessToken: string; email: string } | null> {
-  const supabase = await createServerSupabaseClient();
-  const [{ data: userData, error: userError }, { data: sessionData, error: sessionError }] =
-    await Promise.all([supabase.auth.getUser(), supabase.auth.getSession()]);
-  const email = userData.user?.email?.trim().toLowerCase();
-  const accessToken = sessionData.session?.access_token?.trim();
-  if (userError || sessionError || !email || !accessToken) return null;
-  return { accessToken, email };
+  const azure = await createServerAzureClient();
+  const user = await azure.getUser();
+  const accessToken = azure.getAccessToken();
+  if (!user || !accessToken) return null;
+  return { accessToken, email: user.email?.trim().toLowerCase() || "" };
 }
 
 async function authorizedLifecycleMutation(formData: FormData, expectedConfirmation: string) {

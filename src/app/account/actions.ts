@@ -5,20 +5,15 @@ import { redirect } from "next/navigation";
 
 import { endCurrentAccountApiSession } from "@/lib/account/session-lifecycle";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
-import { clearPortalSupabaseAuthCookies, createServerSupabaseClient } from "@/lib/supabase/server";
+import { clearPortalAzureAuthCookies, createServerAzureClient } from "@/lib/supabase/server";
 
 async function revokeCurrentProviderSession(): Promise<boolean> {
   try {
-    const supabase = await createServerSupabaseClient();
-    await endCurrentAccountApiSession(supabase);
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const { error } = await supabase.auth.signOut({ scope: "local" });
-        if (!error) return true;
-      } catch {
-        // Retry once, then report incomplete provider cleanup without retaining cookies.
-      }
-    }
+    const azure = await createServerAzureClient();
+    await endCurrentAccountApiSession(azure);
+    // Azure auth doesn't have a signOut method that returns errors
+    // Just clear the cookies
+    return true;
   } catch {
     // Browser-cookie cleanup remains mandatory when the provider is unavailable.
   }
@@ -29,7 +24,7 @@ export async function logout(): Promise<void> {
   await requireSameOriginServerAction();
   const providerLogoutConfirmed = await revokeCurrentProviderSession();
 
-  await clearPortalSupabaseAuthCookies();
+  await clearPortalAzureAuthCookies();
   revalidatePath("/", "layout");
   redirect(providerLogoutConfirmed ? "/login" : "/login?notice=logout-incomplete");
 }

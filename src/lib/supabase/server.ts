@@ -1,54 +1,119 @@
+/**
+ * Azure SQL Server Client
+ * 
+ * Replaces Supabase server client for auth in server components/actions.
+ */
+
 import "server-only";
 
-import { clearAuthCookiesAtScopes, createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-import { getSupabasePublicConfiguration } from "@/lib/supabase/config";
+import { AzureAuthClient, AuthUser, getSessionFromCookies } from "@/lib/azure-auth-client";
+import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
 type ServerClientOptions = {
   cookieWriteMode?: "required" | "best-effort";
 };
 
-export async function createServerSupabaseClient({
+export async function createServerAzureClient({
   cookieWriteMode = "required",
 }: ServerClientOptions = {}) {
+  const config = getAzureAuthConfig();
   const cookieStore = await cookies();
-  const { url, publishableKey, cookieOptions } = getSupabasePublicConfiguration();
 
-  return createServerClient(url, publishableKey, {
-    cookieOptions,
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
-      },
-      setAll(cookiesToSet) {
-        try {
-          for (const { name, value, options } of cookiesToSet) {
-            cookieStore.set(name, value, options);
-          }
-        } catch (error) {
-          if (cookieWriteMode === "required") throw error;
-          // Server Components cannot write cookies. The proxy refresh path performs that write.
-        }
-      },
-    },
-  });
-}
+  return {
+    /**
+     * Get current user from session
+     */
+    async getUser(): Promise<AuthUser | null> {
+      const { accessToken } = getSessionFromCookies({
+        headers: {
+          get: (name: string) => {
+            const cookie = cookieStore.get(name);
+            return cookie?.value || null;
+          },
+        },
+      } as Request);
 
-export async function clearPortalSupabaseAuthCookies(): Promise<void> {
-  const cookieStore = await cookies();
-  const { cookieOptions } = getSupabasePublicConfiguration();
-  const { name: storageKey, ...scope } = cookieOptions;
-  if (!storageKey) throw new Error("Supabase authentication cookie name is unavailable.");
+      if (!accessToken) return null;
 
-  await clearAuthCookiesAtScopes({
-    getAll: () => cookieStore.getAll(),
-    setAll: (cookiesToSet) => {
-      for (const { name, value, options } of cookiesToSet) {
-        cookieStore.set(name, value, options);
+      try {
+        const client = new AzureAuthClient(config.apiUrl);
+        return await client.getUser(accessToken);
+      } catch {
+        return null;
       }
     },
-    storageKey,
-    scopes: [scope],
-  });
+
+    /**
+     * Get access token
+     */
+    getAccessToken(): string | null {
+      const cookie = cookieStore.get(config.cookieName);
+      return cookie?.value || null;
+    },
+
+    /**
+     * Set session cookies
+     */
+    setSession(session: { access_token: string; refresh_token: string; expires_in: number }) {
+      try {
+        cookieStore.set(config.cookieName, session.access_token, {
+          ...config.cookieOptions,
+          maxAge: session.expires_in,
+        });
+        cookieStore.set(config.refreshTokenName, session.refresh_token, config.cookieOptions);
+      } catch (error) {
+        if (cookieWriteMode === "required") throw error;
+      }
+    },
+
+    /**
+     * Clear session cookies
+     */
+    clearSession() {
+      cookieStore.set(config.cookieName, "", { ...config.cookieOptions, maxAge: 0 });
+      cookieStore.set(config.refreshTokenName, "", { ...config.cookieOptions, maxAge: 0 });
+    },
+
+    /**
+     * Sign in with email/password
+     */
+    async signInWithPassword(email: string, password: string) {
+      const client = new AzureAuthClient(config.apiUrl);
+      const result = await client.signIn(email, password);
+      this.setSession(result.session);
+      return { data: result, error: null };
+    },
+
+    /**
+     * Sign up with email/password
+     */
+    async signUp(email: string, password: string, _options?: { data?: Record<string, unknown> }) {
+      const client = new AzureAuthClient(config.apiUrl);
+      const result = await client.signUp(email, password);
+      this.setSession(result.session);
+      return { data: result, error: null };
+    },
+
+    /**
+     * Sign out
+     */
+    async signOut() {
+      const accessToken = this.getAccessToken();
+      if (accessToken) {
+        const client = new AzureAuthClient(config.apiUrl);
+        await client.signOut(accessToken);
+      }
+      this.clearSession();
+      return { error: null };
+    },
+  };
+}
+
+export async function clearPortalAzureAuthCookies(): Promise<void> {
+  const config = getAzureAuthConfig();
+  const cookieStore = await cookies();
+  cookieStore.set(config.cookieName, "", { ...config.cookieOptions, maxAge: 0 });
+  cookieStore.set(config.refreshTokenName, "", { ...config.cookieOptions, maxAge: 0 });
 }

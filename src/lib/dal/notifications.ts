@@ -8,18 +8,17 @@ import {
   fetchAccountApiNotifications,
 } from "@/lib/admin/account-api";
 import { requireCurrentAccount } from "@/lib/dal/account";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServerAzureClient } from "@/lib/supabase/server";
 
 export async function requireCurrentNotificationCenter() {
   await requireCurrentAccount();
-  const supabase = await createServerSupabaseClient({ cookieWriteMode: "best-effort" });
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw new AccountApiUnavailableError();
-  if (!data.session?.access_token) redirect("/login?next=%2Faccount%2Fnotifications");
+  const azure = await createServerAzureClient({ cookieWriteMode: "best-effort" });
+  const accessToken = azure.getAccessToken();
+  if (!accessToken) redirect("/login?next=%2Faccount%2Fnotifications");
   try {
     const [document, state] = await Promise.all([
-      fetchAccountApiNotifications(data.session.access_token),
-      fetchAccountApiNotificationState(data.session.access_token),
+      fetchAccountApiNotifications(accessToken),
+      fetchAccountApiNotificationState(accessToken),
     ]);
     return { document, state };
   } catch (error) {
