@@ -11,5 +11,20 @@ describe("deployment gate", () => {
     expect(() => assertDeploymentAllowed({ VERCEL_ENV: "production" })).toThrow(
       "Production deployment is locked",
     );
+    expect(() =>
+      assertDeploymentAllowed({
+        VERCEL_ENV: "production",
+        QT_PRODUCTION_GO_NO_GO: "true",
+      }),
+    ).toThrow("Production deployment is locked");
+  });
+
+  it("allows production only with the exact explicit go/no-go value", () => {
+    expect(() =>
+      assertDeploymentAllowed({
+        VERCEL_ENV: "production",
+        QT_PRODUCTION_GO_NO_GO: "approved",
+      }),
+    ).not.toThrow();
   });
 });
