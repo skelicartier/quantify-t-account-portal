@@ -84,9 +84,13 @@ export function TurnstileField({ siteKey, error, disabled = false }: TurnstileFi
     [],
   );
 
+  if (!siteKey) {
+    return <input type="hidden" name={CHALLENGE_FIELD_NAME} value="" disabled={disabled} readOnly />;
+  }
+
   const displayedError =
     error ??
-    (widgetUnavailable || !siteKey
+    (widgetUnavailable
       ? "Security verification is unavailable. Refresh the page and try again."
       : undefined);
 
