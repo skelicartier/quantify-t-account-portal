@@ -7,7 +7,7 @@ vi.mock("next/headers", () => ({ headers: mocks.headers }));
 import { requireSameOriginServerAction, SameOriginActionError } from "@/lib/security/action-origin";
 
 const ENV = {
-  NEXT_PUBLIC_SITE_URL: "https://account.quantifyterminal.com",
+  NEXT_PUBLIC_SITE_URL: "https://console.quantifyterminal.com",
   NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co",
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test_value",
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: "turnstile-public-value",

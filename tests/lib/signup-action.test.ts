@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   getSupabasePublicConfiguration: vi.fn(() => ({
     url: "https://project.supabase.co",
     publishableKey: "sb_publishable_test_value",
-    siteUrl: "https://account.quantifyterminal.com",
+    siteUrl: "https://console.quantifyterminal.com",
     turnstileSiteKey: "turnstile-public-value",
     cookieOptions: { name: "sb-project-auth-token" },
   })),
@@ -48,7 +48,7 @@ describe("signup Server Action", () => {
       email: "new.user@example.com",
       password: "twelve-character-password",
       options: {
-        emailRedirectTo: "https://account.quantifyterminal.com/auth/confirm?flow=signup",
+        emailRedirectTo: "https://console.quantifyterminal.com/auth/confirm?flow=signup",
         captchaToken: "turnstile-response",
         data: {
           consent_schema_version: "1",

@@ -6,6 +6,11 @@ Continuation: 2026-09-05 adds `/admin/notifications` authoring, `/account/notifi
 
 This document records non-secret source findings only. No production setting, database, DNS record, Vercel project, Azure resource, Supabase project, or user record was changed.
 
+The branded production portal origin is `https://console.quantifyterminal.com`. Staging
+must retain a separate exact Preview origin for Supabase callbacks and Account API CORS;
+the production console origin is not evidence of staging configuration and must not be
+attached during staging preparation.
+
 ## Final local checkpoint
 
 The reviewed local/source slices are complete or near-complete for account data export,

@@ -66,14 +66,14 @@ describe("authentication callback policy", () => {
   });
 
   it("uses a validated origin and fixed flow marker without accepting a next URL", () => {
-    expect(buildAuthCallbackUrl("https://account.quantifyterminal.com", "signup")).toBe(
-      "https://account.quantifyterminal.com/auth/confirm?flow=signup",
+    expect(buildAuthCallbackUrl("https://console.quantifyterminal.com", "signup")).toBe(
+      "https://console.quantifyterminal.com/auth/confirm?flow=signup",
     );
-    expect(buildAuthCallbackUrl("https://account.quantifyterminal.com/", "recovery")).toBe(
-      "https://account.quantifyterminal.com/auth/confirm?flow=recovery",
+    expect(buildAuthCallbackUrl("https://console.quantifyterminal.com/", "recovery")).toBe(
+      "https://console.quantifyterminal.com/auth/confirm?flow=recovery",
     );
-    expect(buildAuthCallbackUrl("https://account.quantifyterminal.com", "email-change")).toBe(
-      "https://account.quantifyterminal.com/auth/confirm?flow=email-change",
+    expect(buildAuthCallbackUrl("https://console.quantifyterminal.com", "email-change")).toBe(
+      "https://console.quantifyterminal.com/auth/confirm?flow=email-change",
     );
   });
 

@@ -47,6 +47,11 @@ These are source checks. No cloud project, live user, migration, provider settin
 
 ## Final Local Checkpoint
 
+The public portal brand is `console.quantifyterminal.com`; this source rename does not
+change internal `/account`, `/admin`, or authentication callback paths. Live DNS,
+Vercel domain attachment, Supabase redirect settings, and Account API CORS remain
+separate approved configuration work.
+
 The local/source account-architecture implementation is complete for the reviewed Task
 17, Task 18, private artifact download, report/export artifact worker, and deletion
 cleanup worker slices. Staging and production remain locked: `stagingReady=false` and

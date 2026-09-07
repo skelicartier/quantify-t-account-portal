@@ -8,6 +8,12 @@ Vercel builds must never migrate Supabase, seed roles, inspect desktop data, or 
 
 ## Vercel preview/staging setup
 
+The production portal origin is `https://console.quantifyterminal.com`. Staging and
+Preview must use a separate exact HTTPS origin, such as the protected Vercel Preview
+URL; do not add the production console origin to staging until the production gate is
+approved. Account API CORS must contain only the active exact staging origin during
+staging validation and must never use `*`.
+
 1. Import `aaryansaroha98/quantify-t-account-portal` into a new Vercel project.
 2. Select the Next.js framework preset and Node.js 24. Keep the default install command (`npm install`/`npm ci`) and build command (`npm run build`). The repository's `prebuild` gate permits previews but deliberately rejects `VERCEL_ENV=production`.
 3. Enable Vercel Deployment Protection before supplying staging credentials, scope every staging value to Preview, and leave Production values unset. Do not attach the production account domain until the production gate below passes and the code lock is removed in the reviewed release task.

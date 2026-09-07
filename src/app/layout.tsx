@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://account.quantifyterminal.com"),
+  metadataBase: new URL("https://console.quantifyterminal.com"),
   title: {
     default: "Quantify Terminal Account",
     template: "%s | Quantify Terminal",

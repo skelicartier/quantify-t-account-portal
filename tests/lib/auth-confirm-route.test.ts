@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   getSupabasePublicConfiguration: vi.fn(() => ({
     url: "https://project.supabase.co",
     publishableKey: "sb_publishable_test_value",
-    siteUrl: "https://account.quantifyterminal.com",
+    siteUrl: "https://console.quantifyterminal.com",
     turnstileSiteKey: "turnstile-public-value",
     cookieOptions: { name: "sb-project-auth-token", secure: true },
   })),
@@ -47,7 +47,7 @@ function installClient(result: ReturnType<typeof exchangeResult>) {
   return { exchangeCodeForSession, signOut };
 }
 
-const failureLocation = "https://account.quantifyterminal.com/login?notice=invalid-auth-link";
+const failureLocation = "https://console.quantifyterminal.com/login?notice=invalid-auth-link";
 
 describe("authentication confirmation route", () => {
   beforeEach(() => {
@@ -66,7 +66,7 @@ describe("authentication confirmation route", () => {
 
     expect(exchangeCodeForSession).toHaveBeenCalledWith("one-time-code");
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("https://account.quantifyterminal.com/account");
+    expect(response.headers.get("location")).toBe("https://console.quantifyterminal.com/account");
     expect(mocks.issueRecoveryAuthorization).not.toHaveBeenCalled();
     expect(mocks.clearRecoveryAuthorization).toHaveBeenCalledOnce();
   });
@@ -76,7 +76,7 @@ describe("authentication confirmation route", () => {
 
     const response = await GET(
       new Request(
-        "https://account.quantifyterminal.com/auth/confirm?code=recovery-code&flow=recovery",
+        "https://console.quantifyterminal.com/auth/confirm?code=recovery-code&flow=recovery",
       ),
     );
 
@@ -88,7 +88,7 @@ describe("authentication confirmation route", () => {
     expect(mocks.clearRecoveryAuthorization).not.toHaveBeenCalled();
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      "https://account.quantifyterminal.com/reset-password",
+      "https://console.quantifyterminal.com/reset-password",
     );
   });
 
@@ -102,7 +102,7 @@ describe("authentication confirmation route", () => {
       const { signOut } = installClient(exchangeResult(redirectType));
 
       const response = await GET(
-        new Request(`https://account.quantifyterminal.com/auth/confirm?code=code&flow=${flow}`),
+        new Request(`https://console.quantifyterminal.com/auth/confirm?code=code&flow=${flow}`),
       );
 
       expect(response.status).toBe(303);
@@ -138,7 +138,7 @@ describe("authentication confirmation route", () => {
     mocks.createServerSupabaseClient.mockResolvedValue({ auth: { exchangeCodeForSession } });
 
     const response = await GET(
-      new Request("https://account.quantifyterminal.com/auth/confirm?code=expired&flow=recovery"),
+      new Request("https://console.quantifyterminal.com/auth/confirm?code=expired&flow=recovery"),
     );
 
     expect(response.status).toBe(303);
@@ -151,7 +151,7 @@ describe("authentication confirmation route", () => {
     mocks.issueRecoveryAuthorization.mockRejectedValue(new Error("cookie write failed"));
 
     const response = await GET(
-      new Request("https://account.quantifyterminal.com/auth/confirm?code=code&flow=recovery"),
+      new Request("https://console.quantifyterminal.com/auth/confirm?code=code&flow=recovery"),
     );
 
     expect(response.headers.get("location")).toBe(failureLocation);

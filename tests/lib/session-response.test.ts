@@ -11,7 +11,7 @@ describe("Supabase session response", () => {
       secure: true,
       path: "/",
     });
-    const redirect = NextResponse.redirect("https://account.quantifyterminal.com/login");
+    const redirect = NextResponse.redirect("https://console.quantifyterminal.com/login");
 
     copyResponseCookies(refreshed, redirect);
 
