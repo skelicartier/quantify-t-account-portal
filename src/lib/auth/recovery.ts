@@ -17,8 +17,9 @@ const recoveryRequestSchema = z.object({
   challenge: z
     .string({ error: CHALLENGE_ERROR_MESSAGE })
     .trim()
-    .min(1, CHALLENGE_ERROR_MESSAGE)
-    .max(MAX_CHALLENGE_TOKEN_LENGTH, CHALLENGE_ERROR_MESSAGE),
+    .max(MAX_CHALLENGE_TOKEN_LENGTH, CHALLENGE_ERROR_MESSAGE)
+    .optional()
+    .or(z.literal("")),
 });
 
 const resetPasswordSchema = z
@@ -97,7 +98,7 @@ export function parseRecoveryRequestFormData(formData: FormData): ParsedRecovery
 
   return {
     success: true,
-    data: { email: result.data.email, captchaToken: result.data.challenge },
+    data: { email: result.data.email, captchaToken: result.data.challenge ?? "" },
   };
 }
 

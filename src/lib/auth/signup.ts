@@ -26,8 +26,9 @@ const signupSchema = z
     challenge: z
       .string({ error: CHALLENGE_ERROR_MESSAGE })
       .trim()
-      .min(1, CHALLENGE_ERROR_MESSAGE)
-      .max(MAX_CHALLENGE_TOKEN_LENGTH, CHALLENGE_ERROR_MESSAGE),
+      .max(MAX_CHALLENGE_TOKEN_LENGTH, CHALLENGE_ERROR_MESSAGE)
+      .optional()
+      .or(z.literal("")),
   })
   .superRefine(({ password, passwordConfirmation }, context) => {
     if (password !== passwordConfirmation) {
@@ -107,7 +108,7 @@ export function parseSignupFormData(formData: FormData): ParsedSignupForm {
     data: {
       email: result.data.email,
       password: result.data.password,
-      captchaToken: result.data.challenge,
+      captchaToken: result.data.challenge ?? "",
     },
   };
 }

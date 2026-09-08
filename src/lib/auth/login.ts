@@ -21,8 +21,9 @@ const loginSchema = z.object({
   challenge: z
     .string({ error: CHALLENGE_ERROR_MESSAGE })
     .trim()
-    .min(1, CHALLENGE_ERROR_MESSAGE)
-    .max(MAX_CHALLENGE_TOKEN_LENGTH, CHALLENGE_ERROR_MESSAGE),
+    .max(MAX_CHALLENGE_TOKEN_LENGTH, CHALLENGE_ERROR_MESSAGE)
+    .optional()
+    .or(z.literal("")),
 });
 
 export type LoginActionState = {
@@ -129,7 +130,7 @@ export function parseLoginFormData(formData: FormData): ParsedLoginForm {
     data: {
       email: result.data.email,
       password: result.data.password,
-      captchaToken: result.data.challenge,
+      captchaToken: result.data.challenge ?? "",
       nextPath: sanitizeNextPath(formData.get("next")),
     },
   };
