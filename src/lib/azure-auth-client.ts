@@ -76,13 +76,16 @@ export class AzureAuthClient {
    * Sign in with email/password
    */
   async signIn(email: string, password: string): Promise<AuthResponse> {
-    const res = await fetch(`${this.apiUrl}/api/v1/auth/login`, {
+    const url = `${this.apiUrl}/api/v1/auth/login`;
+    console.log("[AUTH] signIn calling", url);
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
 
     const data = await res.json();
+    console.log("[AUTH] signIn response", { status: res.status, ok: data.ok, errorCode: data.error?.code });
     if (!res.ok || data.ok === false) {
       throw new Error(data.error?.message || "Login failed");
     }
