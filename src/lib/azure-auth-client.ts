@@ -65,7 +65,7 @@ export class AzureAuthClient {
     });
 
     const data = await res.json();
-    if (!res.ok) {
+    if (!res.ok || data.ok === false) {
       throw new Error(data.error?.message || "Signup failed");
     }
 
@@ -83,7 +83,7 @@ export class AzureAuthClient {
     });
 
     const data = await res.json();
-    if (!res.ok) {
+    if (!res.ok || data.ok === false) {
       throw new Error(data.error?.message || "Login failed");
     }
 

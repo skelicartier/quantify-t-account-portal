@@ -81,9 +81,13 @@ export async function createServerAzureClient({
      */
     async signInWithPassword(email: string, password: string) {
       const client = new AzureAuthClient(config.apiUrl);
-      const result = await client.signIn(email, password);
-      this.setSession(result.session);
-      return { data: result, error: null };
+      try {
+        const result = await client.signIn(email, password);
+        this.setSession(result.session);
+        return { data: result, error: null };
+      } catch (e) {
+        return { data: null, error: { message: e instanceof Error ? e.message : "Login failed" } };
+      }
     },
 
     /**
@@ -91,9 +95,13 @@ export async function createServerAzureClient({
      */
     async signUp(email: string, password: string, _options?: { data?: Record<string, unknown> }) {
       const client = new AzureAuthClient(config.apiUrl);
-      const result = await client.signUp(email, password);
-      this.setSession(result.session);
-      return { data: result, error: null };
+      try {
+        const result = await client.signUp(email, password);
+        this.setSession(result.session);
+        return { data: result, error: null };
+      } catch (e) {
+        return { data: null, error: { message: e instanceof Error ? e.message : "Signup failed" } };
+      }
     },
 
     /**

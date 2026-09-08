@@ -34,11 +34,12 @@ export async function signup(
   try {
     await requireSameOriginServerAction();
     const azure = await createServerAzureClient();
-    const { error } = await azure.signUp(parsed.data.email, parsed.data.password);
+    const result = await azure.signUp(parsed.data.email, parsed.data.password);
 
-    if (error) return SERVICE_ERROR_STATE;
+    if (result.error) return SERVICE_ERROR_STATE;
     return ACCEPTED_SIGNUP_STATE;
-  } catch {
+  } catch (e) {
+    console.error("[SIGNUP ERROR]", e);
     return SERVICE_ERROR_STATE;
   }
 }
