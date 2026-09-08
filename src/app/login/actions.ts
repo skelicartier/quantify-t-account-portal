@@ -66,7 +66,8 @@ export async function login(
     // const assurance = await resolveAssuranceState(supabase);
     // if (assurance.challengeRequired) return MFA_REQUIRED;
     // await registerCurrentAccountApiSession(supabase);
-  } catch {
+  } catch (e) {
+    console.error("[LOGIN ERROR]", e);
     return SERVICE_ERROR;
   }
 
