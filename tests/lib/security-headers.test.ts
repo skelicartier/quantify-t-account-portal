@@ -10,8 +10,9 @@ describe("credential-surface security headers", () => {
     expect(csp).not.toContain("'unsafe-eval'");
     expect(csp).toContain("frame-src https://challenges.cloudflare.com");
     expect(csp).toContain(
-      "connect-src 'self' https://challenges.cloudflare.com https://*.supabase.co https://*.azurewebsites.net",
+      "connect-src 'self' https://challenges.cloudflare.com https://*.azurewebsites.net",
     );
+    expect(csp).not.toContain("supabase.co");
     expect(
       globalRule?.headers.some(({ key }) => key === "Content-Security-Policy-Report-Only"),
     ).toBe(false);

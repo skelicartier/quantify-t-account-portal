@@ -2,8 +2,8 @@ import { CHALLENGE_FIELD_NAME } from "@/lib/auth/challenge";
 import { INITIAL_LOGIN_STATE } from "@/lib/auth/login";
 
 const mocks = vi.hoisted(() => ({
-  createServerSupabaseClient: vi.fn(),
-  clearPortalSupabaseAuthCookies: vi.fn(),
+  createServerAzureClient: vi.fn(),
+  clearPortalAzureAuthCookies: vi.fn(),
   endCurrentAccountApiSession: vi.fn(),
   registerCurrentAccountApiSession: vi.fn(),
   redirect: vi.fn((destination: string): never => {
@@ -13,8 +13,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: mocks.createServerSupabaseClient,
-  clearPortalSupabaseAuthCookies: mocks.clearPortalSupabaseAuthCookies,
+  createServerAzureClient: mocks.createServerAzureClient,
+  clearPortalAzureAuthCookies: mocks.clearPortalAzureAuthCookies,
 }));
 vi.mock("@/lib/account/session-lifecycle", () => ({
   endCurrentAccountApiSession: mocks.endCurrentAccountApiSession,
@@ -26,15 +26,23 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 import { logout } from "@/app/account/actions";
 import { login } from "@/app/login/actions";
 
+function loginForm(password = "correct-password"): FormData {
+  const formData = new FormData();
+  formData.set("email", "User@Example.com");
+  formData.set("password", password);
+  formData.set(CHALLENGE_FIELD_NAME, "turnstile-response");
+  return formData;
+}
+
 describe("authentication Server Actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.clearPortalSupabaseAuthCookies.mockResolvedValue(undefined);
+    mocks.clearPortalAzureAuthCookies.mockResolvedValue(undefined);
     mocks.endCurrentAccountApiSession.mockResolvedValue(false);
     mocks.registerCurrentAccountApiSession.mockResolvedValue(false);
   });
 
-  it("rejects malformed login input before creating a Supabase client", async () => {
+  it("rejects malformed login input before creating an Azure client", async () => {
     const formData = new FormData();
     formData.set("email", "not-an-email");
     formData.set("password", "");
@@ -42,24 +50,18 @@ describe("authentication Server Actions", () => {
     const result = await login(INITIAL_LOGIN_STATE, formData);
 
     expect(result.status).toBe("error");
-    expect(mocks.createServerSupabaseClient).not.toHaveBeenCalled();
+    expect(mocks.createServerAzureClient).not.toHaveBeenCalled();
   });
 
   it("returns one generic message for rejected credentials", async () => {
     const submittedPassword = "incorrect-password-value";
     const signInWithPassword = vi.fn().mockResolvedValue({
-      data: { user: null, session: null },
-      error: { message: "Invalid login credentials", code: "invalid_credentials" },
+      data: null,
+      error: { code: "unauthenticated", message: "invalid credentials" },
     });
-    mocks.createServerSupabaseClient.mockResolvedValue({
-      auth: { signInWithPassword },
-    });
-    const formData = new FormData();
-    formData.set("email", "user@example.com");
-    formData.set("password", submittedPassword);
-    formData.set(CHALLENGE_FIELD_NAME, "turnstile-response");
+    mocks.createServerAzureClient.mockResolvedValue({ signInWithPassword });
 
-    const result = await login(INITIAL_LOGIN_STATE, formData);
+    const result = await login(INITIAL_LOGIN_STATE, loginForm(submittedPassword));
 
     expect(result).toEqual({
       status: "error",
@@ -70,78 +72,68 @@ describe("authentication Server Actions", () => {
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
 
-  it("maps returned operational failures to a non-credential service message", async () => {
+  it("maps operational failures to a non-credential service message", async () => {
     const signInWithPassword = vi.fn().mockResolvedValue({
-      data: { user: null, session: null },
-      error: { message: "Request rate limit reached", code: "over_request_rate_limit" },
+      data: null,
+      error: { code: "network_error", message: "transport failed" },
     });
-    mocks.createServerSupabaseClient.mockResolvedValue({
-      auth: { signInWithPassword },
-    });
-    const formData = new FormData();
-    formData.set("email", "user@example.com");
-    formData.set("password", "not-returned");
-    formData.set(CHALLENGE_FIELD_NAME, "turnstile-response");
+    mocks.createServerAzureClient.mockResolvedValue({ signInWithPassword });
 
-    await expect(login(INITIAL_LOGIN_STATE, formData)).resolves.toMatchObject({
+    await expect(login(INITIAL_LOGIN_STATE, loginForm("not-returned"))).resolves.toMatchObject({
       status: "error",
       message: "Secure sign-in is temporarily unavailable. Please try again.",
     });
   });
 
   it("redirects a successful login only to an approved account path", async () => {
-    const signInWithPassword = vi.fn().mockResolvedValue({
-      data: { user: { id: "verified-user" }, session: { access_token: "not-returned" } },
-      error: null,
-    });
-    mocks.createServerSupabaseClient.mockResolvedValue({
-      auth: { signInWithPassword },
-    });
-    const formData = new FormData();
-    formData.set("email", "user@example.com");
-    formData.set("password", "correct-password");
-    formData.set(CHALLENGE_FIELD_NAME, "turnstile-response");
+    const azure = {
+      signInWithPassword: vi.fn().mockResolvedValue({
+        data: {
+          user: { id: "verified-user" },
+          session: {
+            access_token: "not-returned",
+            refresh_token: "not-returned-refresh",
+            expires_in: 3600,
+          },
+        },
+        error: null,
+      }),
+      getAccessToken: vi.fn(() => "not-returned"),
+    };
+    mocks.createServerAzureClient.mockResolvedValue(azure);
+    const formData = loginForm();
     formData.set("next", "https://evil.example/steal");
 
     await expect(login(INITIAL_LOGIN_STATE, formData)).rejects.toThrow("NEXT_REDIRECT:/account");
-    expect(mocks.registerCurrentAccountApiSession).toHaveBeenCalledOnce();
-    expect(signInWithPassword).toHaveBeenCalledWith({
-      email: "user@example.com",
-      password: "correct-password",
-      options: { captchaToken: "turnstile-response" },
-    });
+    expect(mocks.registerCurrentAccountApiSession).toHaveBeenCalledWith(azure);
+    expect(azure.signInWithPassword).toHaveBeenCalledWith("user@example.com", "correct-password");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
-  it("uses local-scope sign-out and guarantees browser-cookie cleanup", async () => {
-    const signOut = vi.fn().mockResolvedValue({ error: null });
-    mocks.createServerSupabaseClient.mockResolvedValue({ auth: { signOut } });
+  it("revokes the Azure session and guarantees browser-cookie cleanup", async () => {
+    const azure = { signOut: vi.fn().mockResolvedValue({ error: null }), getAccessToken: vi.fn() };
+    mocks.createServerAzureClient.mockResolvedValue(azure);
 
     await expect(logout()).rejects.toThrow("NEXT_REDIRECT:/login");
 
-    expect(mocks.endCurrentAccountApiSession).toHaveBeenCalledOnce();
-    expect(signOut).toHaveBeenCalledWith({ scope: "local" });
-    expect(mocks.clearPortalSupabaseAuthCookies).toHaveBeenCalledOnce();
+    expect(mocks.endCurrentAccountApiSession).toHaveBeenCalledWith(azure);
+    expect(azure.signOut).toHaveBeenCalledOnce();
+    expect(mocks.clearPortalAzureAuthCookies).toHaveBeenCalledOnce();
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/", "layout");
   });
 
-  it("retries provider sign-out and reports incomplete revocation after cookie cleanup", async () => {
-    const signOut = vi.fn().mockResolvedValue({
-      error: { message: "session refresh failed", code: "refresh_token_not_found" },
-    });
-    mocks.createServerSupabaseClient.mockResolvedValue({ auth: { signOut } });
+  it("reports incomplete revocation after cookie cleanup when Azure sign-out fails", async () => {
+    const azure = { signOut: vi.fn().mockRejectedValue(new Error("provider unavailable")) };
+    mocks.createServerAzureClient.mockResolvedValue(azure);
 
     await expect(logout()).rejects.toThrow("NEXT_REDIRECT:/login?notice=logout-incomplete");
-    expect(signOut).toHaveBeenCalledTimes(2);
-    expect(signOut).toHaveBeenNthCalledWith(1, { scope: "local" });
-    expect(signOut).toHaveBeenNthCalledWith(2, { scope: "local" });
-    expect(mocks.clearPortalSupabaseAuthCookies).toHaveBeenCalledOnce();
+    expect(mocks.clearPortalAzureAuthCookies).toHaveBeenCalledOnce();
   });
 
   it("does not claim logout succeeded when browser-cookie cleanup fails", async () => {
-    const signOut = vi.fn().mockRejectedValue(new Error("provider unavailable"));
-    mocks.createServerSupabaseClient.mockResolvedValue({ auth: { signOut } });
-    mocks.clearPortalSupabaseAuthCookies.mockRejectedValue(new Error("cookie write failed"));
+    const azure = { signOut: vi.fn().mockResolvedValue({ error: null }) };
+    mocks.createServerAzureClient.mockResolvedValue(azure);
+    mocks.clearPortalAzureAuthCookies.mockRejectedValue(new Error("cookie write failed"));
 
     await expect(logout()).rejects.toThrow("cookie write failed");
     expect(mocks.redirect).not.toHaveBeenCalled();

@@ -1,6 +1,6 @@
 /**
  * Azure SQL Auth Client
- * 
+ *
  * Replaces @supabase/ssr with custom auth using Azure SQL + JWT.
  * Stores JWT in httpOnly cookies and provides user/session management.
  */
@@ -34,14 +34,92 @@ export interface AuthSession {
 
 export interface AuthResponse {
   user: AuthUser;
-  session: AuthSession;
+  session?: AuthSession;
+}
+
+export class AzureAuthError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly correlationId: string | null;
+
+  constructor({
+    status,
+    code,
+    message,
+    correlationId,
+  }: {
+    status: number;
+    code: string | null;
+    message: string;
+    correlationId: string | null;
+  }) {
+    super(message);
+    this.name = "AzureAuthError";
+    this.status = status;
+    this.code = code;
+    this.correlationId = correlationId;
+  }
 }
 
 export class AzureAuthClient {
   private apiUrl: string;
 
   constructor(apiUrl: string) {
-    this.apiUrl = apiUrl;
+    this.apiUrl = apiUrl.replace(/\/+$/u, "");
+  }
+
+  private endpoint(path: string): string {
+    const apiBase = this.apiUrl.endsWith("/api/v1") ? this.apiUrl : `${this.apiUrl}/api/v1`;
+    return `${apiBase}${path}`;
+  }
+
+  private async request<T>(path: string, init: RequestInit): Promise<T> {
+    let res: Response;
+    try {
+      res = await fetch(this.endpoint(path), init);
+    } catch (error) {
+      void error;
+      throw new AzureAuthError({
+        status: 0,
+        code: "network_error",
+        message: "Authentication service is unreachable.",
+        correlationId: null,
+      });
+    }
+
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      throw new AzureAuthError({
+        status: res.status,
+        code: "invalid_response",
+        message: "Authentication service returned an invalid response.",
+        correlationId: res.headers.get("x-correlation-id"),
+      });
+    }
+
+    if (!res.ok || (data && typeof data === "object" && (data as { ok?: unknown }).ok === false)) {
+      const error =
+        data && typeof data === "object" && "error" in data
+          ? (data as { error?: { code?: unknown; message?: unknown } }).error
+          : null;
+      const correlationId =
+        data &&
+        typeof data === "object" &&
+        typeof (data as { correlation_id?: unknown }).correlation_id === "string"
+          ? (data as { correlation_id: string }).correlation_id
+          : res.headers.get("x-correlation-id");
+      throw new AzureAuthError({
+        status: res.status,
+        code: typeof error?.code === "string" ? error.code : null,
+        message:
+          typeof error?.message === "string" ? error.message : "Authentication request failed.",
+        correlationId,
+      });
+    }
+
+    return data as T;
   }
 
   /**
@@ -51,9 +129,9 @@ export class AzureAuthClient {
     email: string,
     password: string,
     firstName?: string,
-    lastName?: string
+    lastName?: string,
   ): Promise<AuthResponse> {
-    const res = await fetch(`${this.apiUrl}/api/v1/auth/signup`, {
+    return this.request<AuthResponse>("/auth/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -63,46 +141,29 @@ export class AzureAuthClient {
         last_name: lastName,
       }),
     });
-
-    const data = await res.json();
-    if (!res.ok || data.ok === false) {
-      throw new Error(data.error?.message || "Signup failed");
-    }
-
-    return data;
   }
 
   /**
    * Sign in with email/password
    */
   async signIn(email: string, password: string): Promise<AuthResponse> {
-    const url = `${this.apiUrl}/api/v1/auth/login`;
-    console.log("[AUTH] signIn calling", url);
-    const res = await fetch(url, {
+    return this.request<AuthResponse>("/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-
-    const data = await res.json();
-    console.log("[AUTH] signIn response", { status: res.status, ok: data.ok, errorCode: data.error?.code });
-    if (!res.ok || data.ok === false) {
-      throw new Error(data.error?.message || "Login failed");
-    }
-
-    return data;
   }
 
   /**
    * Sign out
    */
-  async signOut(accessToken: string): Promise<void> {
-    await fetch(`${this.apiUrl}/api/v1/auth/logout`, {
+  async signOut(accessToken: string | null, refreshToken?: string | null): Promise<void> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    await this.request("/auth/logout", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers,
+      body: JSON.stringify({ refresh_token: refreshToken ?? "" }),
     });
   }
 
@@ -110,50 +171,31 @@ export class AzureAuthClient {
    * Get current user from access token
    */
   async getUser(accessToken: string): Promise<AuthUser> {
-    const res = await fetch(`${this.apiUrl}/api/v1/auth/user`, {
+    const data = await this.request<{ user: AuthUser }>("/auth/user", {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error?.message || "Failed to get user");
-    }
-
     return data.user;
   }
 
   /**
    * Refresh access token
    */
-  async refreshSession(
-    accessToken: string,
-    refreshToken: string
-  ): Promise<AuthSession> {
-    const res = await fetch(`${this.apiUrl}/api/v1/auth/refresh`, {
+  async refreshSession(accessToken: string | null, refreshToken: string): Promise<AuthSession> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+    const data = await this.request<{ session: AuthSession }>("/auth/refresh", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers,
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error?.message || "Refresh failed");
-    }
-
     return data.session;
   }
 
   /**
    * Update password
    */
-  async updatePassword(
-    accessToken: string,
-    newPassword: string
-  ): Promise<void> {
-    const res = await fetch(`${this.apiUrl}/api/v1/auth/password/update`, {
+  async updatePassword(accessToken: string, newPassword: string): Promise<void> {
+    await this.request("/auth/password/update", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -161,26 +203,15 @@ export class AzureAuthClient {
       },
       body: JSON.stringify({ password: newPassword }),
     });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error?.message || "Password update failed");
-    }
   }
 
   /**
    * Get user role
    */
   async getUserRole(accessToken: string): Promise<string> {
-    const res = await fetch(`${this.apiUrl}/api/v1/auth/user/role`, {
+    const data = await this.request<{ role: string }>("/auth/user/role", {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error?.message || "Failed to get role");
-    }
-
     return data.role;
   }
 
@@ -188,16 +219,43 @@ export class AzureAuthClient {
    * Get user profile
    */
   async getUserProfile(accessToken: string): Promise<Record<string, unknown>> {
-    const res = await fetch(`${this.apiUrl}/api/v1/auth/user/profile`, {
+    const data = await this.request<{ profile: Record<string, unknown> }>("/auth/user/profile", {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error?.message || "Failed to get profile");
-    }
-
     return data.profile;
+  }
+
+  /**
+   * Confirm email address via token
+   */
+  async confirmEmail(token: string): Promise<void> {
+    await this.request("/auth/confirm-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  /**
+   * Request password reset email
+   */
+  async forgotPassword(email: string): Promise<void> {
+    await this.request("/auth/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  /**
+   * Reset password via token
+   */
+  async resetPassword(token: string, password: string): Promise<void> {
+    await this.request("/auth/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, password }),
+    });
   }
 }
 
@@ -205,8 +263,10 @@ export class AzureAuthClient {
  * Server-side cookie helpers for Next.js
  */
 export function setSessionCookie(
-  response: { cookies: { set: (name: string, value: string, options: Record<string, unknown>) => void } },
-  session: AuthSession
+  response: {
+    cookies: { set: (name: string, value: string, options: Record<string, unknown>) => void };
+  },
+  session: AuthSession,
 ): void {
   response.cookies.set(COOKIE_NAME, session.access_token, {
     ...COOKIE_OPTIONS,
@@ -215,7 +275,9 @@ export function setSessionCookie(
   response.cookies.set(REFRESH_COOKIE_NAME, session.refresh_token, COOKIE_OPTIONS);
 }
 
-export function clearSessionCookies(response: { cookies: { set: (name: string, value: string, options: Record<string, unknown>) => void } }): void {
+export function clearSessionCookies(response: {
+  cookies: { set: (name: string, value: string, options: Record<string, unknown>) => void };
+}): void {
   response.cookies.set(COOKIE_NAME, "", { ...COOKIE_OPTIONS, maxAge: 0 });
   response.cookies.set(REFRESH_COOKIE_NAME, "", { ...COOKIE_OPTIONS, maxAge: 0 });
 }

@@ -8,7 +8,7 @@ const TARGET_ID = "7e5f9c11-2a3b-4c5d-8e9f-0a1b2c3d4e66";
 const SESSION_ID = "8e5f9c11-2a3b-4c5d-8e9f-0a1b2c3d4e66";
 
 const mocks = vi.hoisted(() => ({
-  createServerSupabaseClient: vi.fn(),
+  createServerAzureClient: vi.fn(),
   fetchAccountApiMe: vi.fn(),
   getCurrentAssurance: vi.fn(),
   revalidatePath: vi.fn(),
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: mocks.createServerSupabaseClient,
+  createServerAzureClient: mocks.createServerAzureClient,
 }));
 vi.mock("@/lib/dal/assurance-guard", () => ({
   getCurrentAssurance: mocks.getCurrentAssurance,
@@ -87,8 +87,8 @@ function revokeForm(userId = TARGET_ID, sessionId = SESSION_ID): FormData {
 describe("admin user activation action", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.createServerSupabaseClient.mockResolvedValue({
-      auth: { getSession: vi.fn(async () => ({ data: { session: { access_token: "token" } } })) },
+    mocks.createServerAzureClient.mockResolvedValue({
+      getAccessToken: () => "token",
     });
     mocks.fetchAccountApiMe.mockResolvedValue(me);
     mocks.getCurrentAssurance.mockResolvedValue(assurance);
@@ -150,8 +150,8 @@ describe("admin user activation action", () => {
 describe("admin user session revocation action", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.createServerSupabaseClient.mockResolvedValue({
-      auth: { getSession: vi.fn(async () => ({ data: { session: { access_token: "token" } } })) },
+    mocks.createServerAzureClient.mockResolvedValue({
+      getAccessToken: () => "token",
     });
     mocks.fetchAccountApiMe.mockResolvedValue(me);
     mocks.getCurrentAssurance.mockResolvedValue(assurance);

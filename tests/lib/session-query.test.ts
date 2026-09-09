@@ -20,7 +20,7 @@ const sessionRow = {
   id: SESSION_ID,
   user_id: USER_ID,
   source: "web",
-  provider: "supabase",
+  provider: "azure",
   client_instance_id: "browser-instance",
   device_name: "Safari on macOS",
   created_at: "2026-09-01T08:00:00.000Z",
@@ -41,6 +41,14 @@ const eventRow = {
   created_at: "2026-09-03T08:01:01.000Z",
 };
 
+const mocks = vi.hoisted(() => ({
+  azureFrom: vi.fn(),
+}));
+
+vi.mock("@/lib/dal/azure-sql-client", () => ({
+  azureFrom: mocks.azureFrom,
+}));
+
 function createClient(options?: {
   authenticated?: boolean;
   sessionRows?: unknown;
@@ -50,52 +58,55 @@ function createClient(options?: {
   malformedIdentity?: boolean;
 }) {
   const authenticated = options?.authenticated ?? true;
-  const sessionLimit = vi.fn().mockResolvedValue({
+  const sessionExecute = vi.fn().mockResolvedValue({
     data: options?.sessionRows ?? [sessionRow],
     error: options?.queryError ? { message: "provider detail" } : null,
   });
-  const activityLimit = vi.fn().mockResolvedValue({
+  const activityExecute = vi.fn().mockResolvedValue({
     data: options?.activityRows ?? [eventRow],
     error: options?.queryError ? { message: "provider detail" } : null,
   });
+  const sessionLimit = vi.fn(() => ({ execute: sessionExecute }));
+  const activityLimit = vi.fn(() => ({ execute: activityExecute }));
   const sessionOrder = vi.fn(() => ({ limit: sessionLimit }));
   const activityOrder = vi.fn(() => ({ limit: activityLimit }));
   const sessionEq = vi.fn(() => ({ order: sessionOrder }));
   const activityEq = vi.fn(() => ({ order: activityOrder }));
   const sessionSelect = vi.fn(() => ({ eq: sessionEq }));
   const activitySelect = vi.fn(() => ({ eq: activityEq }));
-  const from = vi.fn((table: "account_sessions" | "auth_events") => {
+  mocks.azureFrom.mockImplementation((table: "account_sessions" | "auth_events") => {
     if (table === "account_sessions") return { select: sessionSelect };
     return { select: activitySelect };
   });
   const getUser = vi.fn().mockImplementation(async () => {
     if (options?.authThrows) throw new Error("auth transport");
-    return {
-      data: {
-        user: authenticated
-          ? {
-              id: options?.malformedIdentity ? "not-a-uuid" : USER_ID,
-              email: "user@example.test",
-            }
-          : null,
-      },
-      error: authenticated ? null : { message: "invalid session" },
-    };
+    return authenticated
+      ? {
+          id: options?.malformedIdentity ? "not-a-uuid" : USER_ID,
+          email: "user@example.test",
+        }
+      : null;
   });
 
   return {
-    client: { auth: { getUser }, from } as unknown as AccountSessionDataClient,
-    from,
+    client: { getUser } as unknown as AccountSessionDataClient,
+    from: mocks.azureFrom,
     sessionSelect,
     sessionEq,
     sessionOrder,
     sessionLimit,
+    sessionExecute,
     activitySelect,
     activityEq,
     activityOrder,
     activityLimit,
+    activityExecute,
   };
 }
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("session DTO mapping", () => {
   it("maps active, expired, and revoked sessions without accepting cross-owner rows", () => {

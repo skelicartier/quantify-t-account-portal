@@ -262,14 +262,15 @@ function loginDestination(nextPath: string): string {
 }
 
 async function currentAccessToken(nextPath = "/admin"): Promise<string> {
+  let token: string | null;
   try {
     const azure = await createServerAzureClient({ cookieWriteMode: "best-effort" });
-    const token = azure.getAccessToken();
-    if (!token) redirect(loginDestination(nextPath));
-    return token;
+    token = azure.getAccessToken()?.trim() || null;
   } catch {
     throw new AccountApiUnavailableError();
   }
+  if (!token) redirect(loginDestination(nextPath));
+  return token;
 }
 
 async function currentAccountApiIdentity(nextPath: string): Promise<{

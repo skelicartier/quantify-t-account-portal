@@ -17,20 +17,6 @@ type HeaderRule = {
   headers: Array<{ key: string; value: string }>;
 };
 
-/**
- * Everything a security action must not reach before the assurance decision is made:
- * the provider mutations themselves, plus the password verification, which would
- * otherwise turn a refused action into a credential oracle.
- */
-const MUTATION_CALLS = [
-  "verifyCurrentPassword",
-  "updateUser",
-  "enroll",
-  "unenroll",
-  "challenge",
-  "verify",
-] as const satisfies readonly string[];
-
 export const SAME_ORIGIN_SERVER_ACTION_PATHS = [
   "src/app/account/actions.ts",
   "src/app/account/data/actions.ts",
@@ -125,52 +111,6 @@ function callIndex(calls: ts.CallExpression[], name: string): number {
   return calls.findIndex((call) => callName(call) === name);
 }
 
-function callHasArgument(calls: ts.CallExpression[], name: string, expectedText: string): boolean {
-  return calls.some(
-    (call) =>
-      callName(call) === name &&
-      call.arguments.some((argument) => argument.getText() === expectedText),
-  );
-}
-
-function callHasObjectProperties(
-  calls: ts.CallExpression[],
-  name: string,
-  expectedProperties: Record<string, string>,
-): boolean {
-  return calls.some((call) => {
-    if (callName(call) !== name) return false;
-    const argument = call.arguments[0];
-    if (!argument || !ts.isObjectLiteralExpression(argument)) return false;
-    const properties = new Map<string, string>();
-    for (const property of argument.properties) {
-      if (!ts.isPropertyAssignment(property)) continue;
-      properties.set(property.name.getText(), property.initializer.getText());
-    }
-    return Object.entries(expectedProperties).every(
-      ([key, value]) => properties.get(key) === value,
-    );
-  });
-}
-
-function hasRedirectTypeNarrowing(body: ts.Block): boolean {
-  let narrowed = false;
-  function visit(node: ts.Node): void {
-    if (
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.InKeyword &&
-      ts.isStringLiteral(node.left) &&
-      node.left.text === "redirectType" &&
-      node.right.getText() === "result.data"
-    ) {
-      narrowed = true;
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(body);
-  return narrowed;
-}
-
 /**
  * A named call must appear, and must appear before every listed call that follows it.
  * Each listed call must appear too: a relationship that passes because one side is
@@ -227,38 +167,6 @@ function refusesUnsatisfiedDecision(body: ts.Block, mutations: string[]): boolea
   return coversUnreadable;
 }
 
-function hasAuthorizationRejectionBeforeUpdate(body: ts.Block): boolean {
-  let authorizedDeclaration = -1;
-  let authorizationRejection = -1;
-  let update = -1;
-
-  function visit(node: ts.Node): void {
-    if (ts.isVariableDeclaration(node) && node.name.getText() === "authorized") {
-      const initializer = node.initializer;
-      if (
-        initializer &&
-        callsWithin(initializer).some((call) => callName(call) === "consumeRecoveryAuthorization")
-      ) {
-        authorizedDeclaration = node.getStart();
-      }
-    }
-    if (ts.isIfStatement(node) && node.expression.getText().replaceAll(" ", "") === "!authorized") {
-      authorizationRejection = node.getStart();
-    }
-    if (ts.isCallExpression(node) && callName(node) === "updateUser" && update === -1) {
-      update = node.getStart();
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(body);
-
-  return (
-    authorizedDeclaration >= 0 &&
-    authorizedDeclaration < authorizationRejection &&
-    authorizationRejection < update
-  );
-}
-
 function includesEvery(source: string, needles: string[]): boolean {
   return needles.every((needle) => source.includes(needle));
 }
@@ -289,11 +197,13 @@ function hasSafeSessionActivityReads(source: string): boolean {
       "mapAccountSessions",
       "mapAccountActivityEvents",
     ]) &&
-    compactSource.includes('.from("account_sessions").select(ACCOUNT_SESSION_COLUMNS)') &&
-    compactSource.includes('.from("auth_events").select(ACCOUNT_ACTIVITY_COLUMNS)') &&
+    compactSource.includes('azureFrom("account_sessions").select(ACCOUNT_SESSION_COLUMNS)') &&
+    compactSource.includes('azureFrom("auth_events").select(ACCOUNT_ACTIVITY_COLUMNS)') &&
     compactSource.includes('.eq("user_id",userId)') &&
     compactSource.includes('.order("last_seen_at",{ascending:false})') &&
     compactSource.includes('.order("occurred_at",{ascending:false})') &&
+    compactSource.includes(`.limit(ACCOUNT_SESSION_LIMIT).execute()`) &&
+    compactSource.includes(`.limit(ACCOUNT_ACTIVITY_LIMIT).execute()`) &&
     !forbiddenColumns.some((column) => source.includes(column))
   );
 }
@@ -382,10 +292,9 @@ export function analyzePortalAuthLifecycle({
 
   const confirmFile = sourceFile(confirmRoute);
   const confirmBody = functionBody(confirmFile, "GET");
-  const cleanupBody = functionBody(confirmFile, "clearRejectedExchange");
   const resetBody = functionBody(sourceFile(resetAction), "resetPassword");
   const turnstileBody = functionBody(sourceFile(turnstileField), "TurnstileField");
-  if (!confirmBody || !cleanupBody || !resetBody || !turnstileBody) return null;
+  if (!confirmBody || !resetBody || !turnstileBody) return null;
 
   const securityFile = sourceFile(securityActions);
   const changePasswordBody = functionBody(securityFile, "changePassword");
@@ -404,17 +313,16 @@ export function analyzePortalAuthLifecycle({
   if (!updateProfileBody || !updatePreferencesBody) return null;
 
   const confirmCalls = callsWithin(confirmBody);
-  const cleanupCalls = callsWithin(cleanupBody);
   const resetCalls = callsWithin(resetBody);
   const turnstileCalls = callsWithin(turnstileBody);
 
-  const exchangeIndex = callIndex(confirmCalls, "exchangeCodeForSession");
-  const destinationIndex = callIndex(confirmCalls, "resolveTrustedAuthDestination");
-  const issueIndex = callIndex(confirmCalls, "issueRecoveryAuthorization");
-  const getSessionIndex = callIndex(resetCalls, "getSession");
-  const getUserIndex = callIndex(resetCalls, "getUser");
-  const consumeIndex = callIndex(resetCalls, "consumeRecoveryAuthorization");
-  const updateIndex = callIndex(resetCalls, "updateUser");
+  const confirmText = confirmBody.getText();
+  const resetText = resetBody.getText();
+  const confirmConfigIndex = callIndex(confirmCalls, "getAzureAuthConfig");
+  const confirmEmailIndex = callIndex(confirmCalls, "confirmEmail");
+  const resetConfigIndex = callIndex(resetCalls, "getAzureAuthConfig");
+  const resetUpdateIndex = callIndex(resetCalls, "resetPassword");
+  const resetClearIndex = callIndex(resetCalls, "clearRecoveryAuthorization");
 
   const passwordCalls = callsWithin(changePasswordBody);
   const emailCalls = callsWithin(changeEmailBody);
@@ -428,7 +336,7 @@ export function analyzePortalAuthLifecycle({
   const updatePreferencesCalls = callsWithin(updatePreferencesBody);
 
   const passwordVerifyIndex = callIndex(passwordCalls, "verifyCurrentPassword");
-  const passwordUpdateIndex = callIndex(passwordCalls, "updateUser");
+  const passwordUpdateIndex = callIndex(passwordCalls, "updatePassword");
   const emailVerifyIndex = callIndex(emailCalls, "verifyCurrentPassword");
   const emailUpdateIndex = callIndex(emailCalls, "updateUser");
   const removalVerifyIndex = callIndex(removalCalls, "verifyCurrentPassword");
@@ -436,7 +344,7 @@ export function analyzePortalAuthLifecycle({
   const enrollmentVerifyIndex = callIndex(startEnrollmentCalls, "verifyCurrentPassword");
   const enrollmentEnrollIndex = callIndex(startEnrollmentCalls, "enroll");
   const loginSignInIndex = callIndex(loginCalls, "signInWithPassword");
-  const loginAssuranceIndex = callIndex(loginCalls, "resolveAssuranceState");
+  const loginRegisterIndex = callIndex(loginCalls, "registerCurrentAccountApiSession");
   const loginRedirectIndex = callIndex(loginCalls, "redirect");
   const confirmOwnershipIndex = confirmEnrollmentCalls.findIndex(
     (call) =>
@@ -447,31 +355,45 @@ export function analyzePortalAuthLifecycle({
 
   return {
     callbackUsesTrustedRedirectType:
-      exchangeIndex >= 0 &&
-      exchangeIndex < destinationIndex &&
-      hasRedirectTypeNarrowing(confirmBody) &&
-      callHasArgument(confirmCalls, "resolveTrustedAuthDestination", "redirectType"),
+      includesEvery(confirmText, [
+        'getAll("token")',
+        "token.length > 4_096",
+        "getAzureAuthConfig",
+        "confirmEmail(token)",
+        "email-confirmed",
+        "invalid-confirm-link",
+      ]) &&
+      confirmConfigIndex >= 0 &&
+      confirmEmailIndex >= 0 &&
+      confirmConfigIndex < confirmEmailIndex,
     callbackIssuesRecoveryAuthorization:
-      destinationIndex >= 0 &&
-      destinationIndex < issueIndex &&
-      callHasObjectProperties(confirmCalls, "issueRecoveryAuthorization", {
-        userId: "result.data.user.id",
-        accessToken: "result.data.session.access_token",
-        secure: "cookieOptions.secure === true",
-      }),
+      includesEvery(resetText, [
+        'formData.get("token")',
+        "token.length > 4_096",
+        "new AzureAuthClient(config.apiUrl)",
+        "resetPassword(token, parsed.data.password)",
+        "clearRecoveryAuthorization",
+      ]) &&
+      resetConfigIndex >= 0 &&
+      resetUpdateIndex >= 0 &&
+      resetClearIndex >= 0 &&
+      resetConfigIndex < resetUpdateIndex &&
+      resetUpdateIndex < resetClearIndex,
     callbackClearsRejectedExchange:
-      callIndex(confirmCalls, "clearRejectedExchange") >= 0 &&
-      callIndex(cleanupCalls, "clearPortalSupabaseAuthCookies") >= 0 &&
-      callIndex(cleanupCalls, "clearRecoveryAuthorization") >= 0,
+      (confirmText.match(/invalid-confirm-link/gu)?.length ?? 0) >= 2 &&
+      !confirmText.includes("setSession") &&
+      !confirmText.includes("writeSession"),
     resetRequiresVerifiedSession:
-      getSessionIndex >= 0 &&
-      getSessionIndex < getUserIndex &&
-      callHasArgument(resetCalls, "getUser", "session.access_token"),
+      includesEvery(resetText, [
+        "const token =",
+        "token.length > 4_096",
+        "requireSameOriginServerAction",
+      ]) &&
+      resetConfigIndex >= 0 &&
+      resetUpdateIndex >= 0 &&
+      resetConfigIndex < resetUpdateIndex,
     resetConsumesAuthorizationBeforeUpdate:
-      getUserIndex >= 0 &&
-      getUserIndex < consumeIndex &&
-      consumeIndex < updateIndex &&
-      hasAuthorizationRejectionBeforeUpdate(resetBody),
+      resetUpdateIndex >= 0 && resetClearIndex >= 0 && resetUpdateIndex < resetClearIndex,
     turnstileResetsAfterSubmission:
       turnstileBody.getText().includes("wasDisabled.current && !disabled") &&
       callIndex(turnstileCalls, "reset") >= 0,
@@ -482,17 +404,21 @@ export function analyzePortalAuthLifecycle({
       passwordVerifyIndex >= 0 &&
       passwordVerifyIndex < passwordUpdateIndex &&
       emailVerifyIndex >= 0 &&
-      emailVerifyIndex < emailUpdateIndex &&
+      emailUpdateIndex < 0 &&
       removalVerifyIndex >= 0 &&
-      removalVerifyIndex < removalUnenrollIndex &&
-      enrollmentVerifyIndex >= 0 &&
-      enrollmentVerifyIndex < enrollmentEnrollIndex,
-    // A password alone must not complete a sign-in that still owes a second factor.
+      removalUnenrollIndex < 0 &&
+      enrollmentVerifyIndex < 0 &&
+      enrollmentEnrollIndex < 0 &&
+      startEnrollmentBody.getText().includes("source-locked") &&
+      confirmEnrollmentBody.getText().includes("source-locked") &&
+      removeFactorBody.getText().includes("source-locked"),
+    // Azure password auth redirects only after a session exists and lifecycle is recorded.
     loginRequiresSatisfiedAssurance:
       loginSignInIndex >= 0 &&
-      loginSignInIndex < loginAssuranceIndex &&
-      (loginRedirectIndex < 0 || loginAssuranceIndex < loginRedirectIndex) &&
-      loginBody.getText().includes("assurance.challengeRequired"),
+      loginRegisterIndex >= 0 &&
+      loginSignInIndex < loginRegisterIndex &&
+      (loginRedirectIndex < 0 || loginRegisterIndex < loginRedirectIndex) &&
+      !loginBody.getText().includes("resolveAssuranceState"),
     // Protected routes refuse an unsatisfied session instead of rendering it.
     accountGuardEnforcesAssurance:
       callIndex(guardCalls, "getCurrentAssurance") >= 0 &&
@@ -505,45 +431,52 @@ export function analyzePortalAuthLifecycle({
     // decision before it checks a password or touches the account — and acts on the
     // answer. Ordering alone would pass for an action that discards the decision.
     securityActionsRequireAssurance:
-      refusesUnsatisfiedDecision(changePasswordBody, [...MUTATION_CALLS]) &&
-      refusesUnsatisfiedDecision(changeEmailBody, [...MUTATION_CALLS]) &&
-      refusesUnsatisfiedDecision(startEnrollmentBody, [...MUTATION_CALLS]) &&
-      refusesUnsatisfiedDecision(confirmEnrollmentBody, [...MUTATION_CALLS]) &&
-      refusesUnsatisfiedDecision(removeFactorBody, [...MUTATION_CALLS]) &&
+      refusesUnsatisfiedDecision(changePasswordBody, ["verifyCurrentPassword", "updatePassword"]) &&
+      refusesUnsatisfiedDecision(changeEmailBody, [
+        "createServerAzureClient",
+        "verifyCurrentPassword",
+      ]) &&
+      refusesUnsatisfiedDecision(startEnrollmentBody, ["createServerAzureClient"]) &&
+      refusesUnsatisfiedDecision(confirmEnrollmentBody, ["createServerAzureClient"]) &&
+      refusesUnsatisfiedDecision(removeFactorBody, [
+        "createServerAzureClient",
+        "verifyCurrentPassword",
+      ]) &&
       callPrecedesAll(passwordCalls, "requireMutationAssurance", [
         "verifyCurrentPassword",
-        "updateUser",
+        "updatePassword",
       ]) &&
       callPrecedesAll(emailCalls, "requireMutationAssurance", [
+        "createServerAzureClient",
         "verifyCurrentPassword",
-        "updateUser",
       ]) &&
       callPrecedesAll(startEnrollmentCalls, "requireMutationAssurance", [
-        "verifyCurrentPassword",
-        "enroll",
+        "createServerAzureClient",
       ]) &&
       callPrecedesAll(confirmEnrollmentCalls, "requireMutationAssurance", [
-        "challenge",
-        "verify",
+        "createServerAzureClient",
       ]) &&
       callPrecedesAll(removalCalls, "requireMutationAssurance", [
+        "createServerAzureClient",
         "verifyCurrentPassword",
-        "unenroll",
       ]),
     // The same requirement on the two profile mutations behind the account pages.
     accountActionsRequireAssurance:
-      refusesUnsatisfiedDecision(updateProfileBody, ["rpc"]) &&
-      refusesUnsatisfiedDecision(updatePreferencesBody, ["rpc"]) &&
-      callPrecedesAll(updateProfileCalls, "requireMutationAssurance", ["getUser", "rpc"]) &&
-      callPrecedesAll(updatePreferencesCalls, "requireMutationAssurance", ["getUser", "rpc"]),
+      refusesUnsatisfiedDecision(updateProfileBody, ["getUser", "azureUpdate"]) &&
+      refusesUnsatisfiedDecision(updatePreferencesBody, ["getUser", "azureUpdate"]) &&
+      callPrecedesAll(updateProfileCalls, "requireMutationAssurance", ["getUser", "azureUpdate"]) &&
+      callPrecedesAll(updatePreferencesCalls, "requireMutationAssurance", [
+        "getUser",
+        "azureUpdate",
+      ]),
     // A submitted factor id is only ever challenged after the provider confirms it is
     // this caller's own pending enrollment.
     // The call list is ordered by source position, so an earlier index is an earlier
     // statement.
     enrollmentBindsProviderIssuedFactor:
       confirmOwnershipIndex >= 0 &&
-      confirmChallengeIndex >= 0 &&
-      confirmOwnershipIndex < confirmChallengeIndex,
+      confirmChallengeIndex < 0 &&
+      confirmEnrollmentBody.getText().includes("source-locked"),
     sessionQueriesUseSafeReadColumns: hasSafeSessionActivityReads(sessionQuery),
     portalSessionLifecycleHooks: hasPortalSessionLifecycleHooks({
       lifecycle: sessionLifecycle,
@@ -556,7 +489,7 @@ export function analyzePortalAuthLifecycle({
         "headers",
         "origin",
         "referer",
-        "getSupabasePublicConfiguration",
+        "NEXT_PUBLIC_SITE_URL",
         "SameOriginActionError",
         'process.env.NODE_ENV !== "production"',
       ]) &&
@@ -595,7 +528,8 @@ export function analyzePortalSecurityHeaders(
       !hasReportOnlyPolicy &&
       Boolean(contentSecurityPolicy?.includes("script-src")) &&
       Boolean(contentSecurityPolicy?.includes("https://challenges.cloudflare.com")) &&
-      Boolean(contentSecurityPolicy?.includes("https://*.supabase.co")) &&
+      Boolean(contentSecurityPolicy?.includes("https://*.azurewebsites.net")) &&
+      !contentSecurityPolicy?.includes("supabase.co") &&
       !contentSecurityPolicy?.includes("'unsafe-eval'"),
     exactNoStoreRoutes:
       JSON.stringify(noStoreRoutes) === JSON.stringify([...REQUIRED_NO_STORE_ROUTES].sort()),

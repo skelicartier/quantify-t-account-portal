@@ -50,13 +50,10 @@ export function parseAuthCallback(parameters: URLSearchParams): ParsedAuthCallba
  * flow accepts exactly one provider value. Anything else returns null so the caller
  * fails closed to the generic invalid-link notice.
  *
- * In the pinned `@supabase/auth-js` this value is two-valued. It is read back from
- * the stored PKCE verifier, and the only writer that appends a type is the password
- * recovery path (`getCodeChallengeAndMethod(..., isPasswordRecovery = true)`, called
- * solely by `resetPasswordForEmail`). An `updateUser({ email })` link therefore
- * exchanges to `redirectType: null`, exactly like a signup confirmation: there is no
- * `"email_change"` value to match, so requiring one would reject every real
- * confirmation. Both non-recovery flows are bound to `null` instead.
+ * In the legacy PKCE flow this value was two-valued: password recovery exchanged as
+ * `"recovery"`, while signup and email-change exchanged as `null`. The Azure token
+ * confirmation route does not use this helper for new links, but the policy remains
+ * fail-closed while older references are retired.
  *
  * Binding two flows to the same value costs nothing that matters here. `null` cannot
  * reach `/reset-password`, which is the only destination that authorizes a password

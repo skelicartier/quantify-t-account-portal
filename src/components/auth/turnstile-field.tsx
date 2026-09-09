@@ -85,7 +85,9 @@ export function TurnstileField({ siteKey, error, disabled = false }: TurnstileFi
   );
 
   if (!siteKey) {
-    return <input type="hidden" name={CHALLENGE_FIELD_NAME} value="" disabled={disabled} readOnly />;
+    return (
+      <input type="hidden" name={CHALLENGE_FIELD_NAME} value="" disabled={disabled} readOnly />
+    );
   }
 
   const displayedError =

@@ -11,8 +11,8 @@ async function revokeCurrentProviderSession(): Promise<boolean> {
   try {
     const azure = await createServerAzureClient();
     await endCurrentAccountApiSession(azure);
-    // Azure auth doesn't have a signOut method that returns errors
-    // Just clear the cookies
+    const { error } = await azure.signOut();
+    if (error) return false;
     return true;
   } catch {
     // Browser-cookie cleanup remains mandatory when the provider is unavailable.

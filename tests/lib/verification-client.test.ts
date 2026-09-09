@@ -32,7 +32,9 @@ function installIsolated(
       }
     );
   });
-  mocks.AzureAuthClient.mockReturnValue({ signIn });
+  mocks.AzureAuthClient.mockImplementation(function (this: Record<string, unknown>) {
+    this.signIn = signIn;
+  });
   return { signIn };
 }
 

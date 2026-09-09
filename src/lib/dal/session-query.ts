@@ -43,10 +43,6 @@ type QueryResult = {
   error: unknown;
 };
 
-type OrderedQuery = {
-  limit: (count: number) => Promise<QueryResult>;
-};
-
 export type AccountSessionDataClient = {
   getUser: () => Promise<AzureUserResult>;
 };

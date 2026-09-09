@@ -6,7 +6,7 @@ import {
 } from "@/lib/account/lifecycle-input";
 
 const mocks = vi.hoisted(() => ({
-  createServerSupabaseClient: vi.fn(),
+  createServerAzureClient: vi.fn(),
   requireMutationAssurance: vi.fn(),
   verifyCurrentPassword: vi.fn(),
   fetchAccountApiAccountLifecycle: vi.fn(),
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: mocks.createServerSupabaseClient,
+  createServerAzureClient: mocks.createServerAzureClient,
 }));
 vi.mock("@/lib/dal/assurance-guard", () => ({
   requireMutationAssurance: mocks.requireMutationAssurance,
@@ -69,17 +69,9 @@ function form({
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.createServerSupabaseClient.mockResolvedValue({
-    auth: {
-      getUser: async () => ({
-        data: { user: { id: "user-id", email: "user@example.test" } },
-        error: null,
-      }),
-      getSession: async () => ({
-        data: { session: { access_token: "server-token" } },
-        error: null,
-      }),
-    },
+  mocks.createServerAzureClient.mockResolvedValue({
+    getUser: async () => ({ id: "user-id", email: "user@example.test" }),
+    getAccessToken: () => "server-token",
   });
   mocks.requireMutationAssurance.mockResolvedValue({ decision: "satisfied" });
   mocks.verifyCurrentPassword.mockResolvedValue("verified");

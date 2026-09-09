@@ -15,7 +15,8 @@ type AzureSessionReader = {
 
 async function currentAccessToken(reader: AzureSessionReader): Promise<string | null> {
   try {
-    return reader.getAccessToken();
+    const token = reader.getAccessToken()?.trim() ?? "";
+    return token || null;
   } catch {
     return null;
   }
@@ -64,9 +65,7 @@ export async function heartbeatCurrentAccountApiSession(
   return heartbeatAccountApiSession(accessToken);
 }
 
-export async function endCurrentAccountApiSession(
-  reader: AzureSessionReader,
-): Promise<boolean> {
+export async function endCurrentAccountApiSession(reader: AzureSessionReader): Promise<boolean> {
   const accessToken = await currentAccessToken(reader);
   if (!accessToken) return false;
   return postSessionLifecycle("sessions/end", accessToken, { reason: "signed-out" });

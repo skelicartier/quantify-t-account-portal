@@ -42,11 +42,6 @@ const SERVICE_ERROR: AdminUserActivationState = {
   message: "User status changes are temporarily unavailable. Please try again.",
 };
 
-type SessionResult = {
-  data: { session: { access_token?: string | null } | null };
-  error: unknown;
-};
-
 function parseUuid(value: FormDataEntryValue | null): string | null {
   const candidate = String(value ?? "")
     .trim()

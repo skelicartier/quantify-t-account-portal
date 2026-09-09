@@ -3,7 +3,6 @@ import Link from "next/link";
 import { requestPasswordRecovery } from "@/app/forgot-password/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { RecoveryRequestForm } from "@/components/auth/recovery-request-form";
-import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
 export const metadata = {
   title: "Recover account",

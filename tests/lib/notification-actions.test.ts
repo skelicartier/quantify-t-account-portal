@@ -3,7 +3,7 @@ import { INITIAL_NOTIFICATION_STATE } from "@/lib/notifications/input";
 import { notification, notificationDocument } from "../fixtures/notifications";
 
 const mocks = vi.hoisted(() => ({
-  createServerSupabaseClient: vi.fn(),
+  createServerAzureClient: vi.fn(),
   fetchAccountApiMe: vi.fn(),
   enqueueAccountApiAdminReport: vi.fn(),
   fetchAccountApiAdminReports: vi.fn(),
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
 }));
 vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: mocks.createServerSupabaseClient,
+  createServerAzureClient: mocks.createServerAzureClient,
 }));
 vi.mock("@/lib/dal/assurance-guard", () => ({
   getCurrentAssurance: mocks.getCurrentAssurance,
@@ -74,13 +74,8 @@ function reportForm(value: Record<string, string> = {}) {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.createServerSupabaseClient.mockResolvedValue({
-    auth: {
-      getSession: async () => ({
-        data: { session: { access_token: "server-token" } },
-        error: null,
-      }),
-    },
+  mocks.createServerAzureClient.mockResolvedValue({
+    getAccessToken: () => "server-token",
   });
   mocks.fetchAccountApiMe.mockResolvedValue({
     capabilities: ["account:read-any", "notifications:write"],
@@ -182,8 +177,8 @@ it.each(["capability", "mfa", "session", "stale", "missing-revision", "duplicate
     if (scenario === "mfa")
       mocks.getCurrentAssurance.mockResolvedValue({ currentLevel: "aal1", levelReadable: true });
     if (scenario === "session")
-      mocks.createServerSupabaseClient.mockResolvedValue({
-        auth: { getSession: async () => ({ data: { session: null } }) },
+      mocks.createServerAzureClient.mockResolvedValue({
+        getAccessToken: () => null,
       });
     if (scenario === "stale") data.set("revision", "old-revision");
     if (scenario === "missing-revision") data.delete("revision");

@@ -1,34 +1,57 @@
 /**
- * Azure SQL DAL Client
- * 
- * Provides Supabase-like query interface for Azure SQL.
- * Replaces Supabase .from().select().eq() pattern.
+ * Azure SQL DAL Client.
+ *
+ * Small Supabase-like query surface used by the account portal during the Azure
+ * migration. It accepts only code-owned identifiers and parameterizes every value.
  */
 
 import sql from "mssql";
 
-const AZURE_SQL_CONFIG: sql.config = {
-  server: process.env.AZURE_SQL_SERVER || "qt-sql-prod-aaryan01.database.windows.net",
-  database: process.env.AZURE_SQL_DATABASE || "quantify-terminal",
-  user: process.env.AZURE_SQL_USER || "qtadmin",
-  password: process.env.AZURE_SQL_PASSWORD,
-  options: {
-    encrypt: true,
-    trustServerCertificate: false,
-    enableArithAbort: true,
-  },
-  pool: {
-    max: 10,
-    min: 0,
-    idleTimeoutMillis: 30000,
-  },
-};
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+
+export class AzureSqlConfigurationError extends Error {
+  constructor() {
+    super("Azure SQL is not configured.");
+    this.name = "AzureSqlConfigurationError";
+  }
+}
 
 let pool: sql.ConnectionPool | null = null;
 
+function requiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new AzureSqlConfigurationError();
+  return value;
+}
+
+function azureSqlConfig(): sql.config {
+  return {
+    server: requiredEnv("AZURE_SQL_SERVER"),
+    database: requiredEnv("AZURE_SQL_DATABASE"),
+    user: requiredEnv("AZURE_SQL_USER"),
+    password: requiredEnv("AZURE_SQL_PASSWORD"),
+    options: {
+      encrypt: true,
+      trustServerCertificate: false,
+      enableArithAbort: true,
+    },
+    pool: {
+      max: 10,
+      min: 0,
+      idleTimeoutMillis: 30000,
+    },
+  };
+}
+
+function identifier(value: string): string {
+  const trimmed = value.trim();
+  if (!IDENTIFIER.test(trimmed)) throw new Error("Invalid Azure SQL identifier.");
+  return `[${trimmed}]`;
+}
+
 async function getPool(): Promise<sql.ConnectionPool> {
   if (!pool) {
-    pool = await new sql.ConnectionPool(AZURE_SQL_CONFIG).connect();
+    pool = await new sql.ConnectionPool(azureSqlConfig()).connect();
   }
   return pool;
 }
@@ -115,8 +138,9 @@ class AzureQuery<T = unknown> {
       const request = pool.request();
 
       // Build SELECT
-      const columns = this.selectColumns.length > 0 ? this.selectColumns.join(", ") : "*";
-      let query = `SELECT ${columns} FROM [${this.table}]`;
+      const columns =
+        this.selectColumns.length > 0 ? this.selectColumns.map(identifier).join(", ") : "*";
+      let query = `SELECT ${columns} FROM ${identifier(this.table)}`;
 
       // Build WHERE
       if (this.whereConditions.length > 0) {
@@ -126,10 +150,10 @@ class AzureQuery<T = unknown> {
             const values = cond.value as unknown[];
             const placeholders = values.map((_, j) => `@${paramName}${j}`).join(", ");
             values.forEach((v, j) => request.input(`${paramName}${j}`, v));
-            return `[${cond.column}] IN (${placeholders})`;
+            return `${identifier(cond.column)} IN (${placeholders})`;
           } else {
             request.input(paramName, cond.value);
-            return `[${cond.column}] ${cond.operator} @${paramName}`;
+            return `${identifier(cond.column)} ${cond.operator} @${paramName}`;
           }
         });
         query += ` WHERE ${whereClauses.join(" AND ")}`;
@@ -138,12 +162,12 @@ class AzureQuery<T = unknown> {
       // Build ORDER BY
       if (this.orderClause) {
         const direction = this.orderClause.ascending ? "ASC" : "DESC";
-        query += ` ORDER BY [${this.orderClause.column}] ${direction}`;
+        query += ` ORDER BY ${identifier(this.orderClause.column)} ${direction}`;
       }
 
       // Build LIMIT
       if (this.limitCount) {
-        query += ` OFFSET 0 ROWS FETCH NEXT ${this.limitCount} ROWS ONLY`;
+        query += ` OFFSET 0 ROWS FETCH NEXT ${Math.max(1, Math.trunc(this.limitCount))} ROWS ONLY`;
       }
 
       const result = await request.query(query);
@@ -154,8 +178,8 @@ class AzureQuery<T = unknown> {
       }
       return { data: rows as T, error: null };
     } catch (error) {
-      console.error("Azure SQL query error:", error);
-      return { data: null, error: error as Error };
+      void error;
+      return { data: null, error: new Error("Azure SQL query failed.") };
     }
   }
 }
@@ -177,15 +201,15 @@ async function insert<T = unknown>(
 
     values.forEach((v, i) => request.input(`p${i}`, v));
 
-    const query = `INSERT INTO [${table}] (${columns.map((c) => `[${c}]`).join(", ")}) 
-                   OUTPUT INSERTED.* 
+    const query = `INSERT INTO ${identifier(table)} (${columns.map(identifier).join(", ")})
+                   OUTPUT INSERTED.*
                    VALUES (${paramNames.join(", ")})`;
 
     const result = await request.query(query);
-    return { data: result.recordset[0] as T, error: null };
+    return { data: (result.recordset[0] as T) || null, error: null };
   } catch (error) {
-    console.error("Azure SQL insert error:", error);
-    return { data: null, error: error as Error };
+    void error;
+    return { data: null, error: new Error("Azure SQL insert failed.") };
   }
 }
 
@@ -203,23 +227,23 @@ async function update<T = unknown>(
 
     const setClauses = Object.keys(data).map((col, i) => {
       request.input(`set${i}`, data[col as keyof T]);
-      return `[${col}] = @set${i}`;
+      return `${identifier(col)} = @set${i}`;
     });
 
     const whereClauses = where.map((cond, i) => {
       request.input(`where${i}`, cond.value);
-      return `[${cond.column}] = @where${i}`;
+      return `${identifier(cond.column)} = @where${i}`;
     });
 
-    const query = `UPDATE [${table}] SET ${setClauses.join(", ")} 
-                   OUTPUT INSERTED.* 
+    const query = `UPDATE ${identifier(table)} SET ${setClauses.join(", ")}
+                   OUTPUT INSERTED.*
                    WHERE ${whereClauses.join(" AND ")}`;
 
     const result = await request.query(query);
-    return { data: result.recordset[0] as T, error: null };
+    return { data: (result.recordset[0] as T) || null, error: null };
   } catch (error) {
-    console.error("Azure SQL update error:", error);
-    return { data: null, error: error as Error };
+    void error;
+    return { data: null, error: new Error("Azure SQL update failed.") };
   }
 }
 
@@ -236,15 +260,15 @@ async function deleteRow(
 
     const whereClauses = where.map((cond, i) => {
       request.input(`p${i}`, cond.value);
-      return `[${cond.column}] = @p${i}`;
+      return `${identifier(cond.column)} = @p${i}`;
     });
 
-    const query = `DELETE FROM [${table}] WHERE ${whereClauses.join(" AND ")}`;
+    const query = `DELETE FROM ${identifier(table)} WHERE ${whereClauses.join(" AND ")}`;
     await request.query(query);
     return { error: null };
   } catch (error) {
-    console.error("Azure SQL delete error:", error);
-    return { error: error as Error };
+    void error;
+    return { error: new Error("Azure SQL delete failed.") };
   }
 }
 

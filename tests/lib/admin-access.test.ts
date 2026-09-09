@@ -288,20 +288,12 @@ async function loadAccessHarness(options: AccessHarnessOptions = {}) {
   const redirect = vi.fn((destination: string) => {
     throw new Error(`NEXT_REDIRECT:${destination}`);
   });
-  const getSession = vi.fn(async () => ({
-    data: {
-      session:
-        options.sessionToken === null
-          ? null
-          : { access_token: options.sessionToken ?? "bearer-token" },
-    },
-    error: null,
-  }));
-  const createServerSupabaseClient = vi.fn(async () => ({
-    auth: { getSession },
+  const createServerAzureClient = vi.fn(async () => ({
+    getAccessToken: () =>
+      options.sessionToken === null ? null : (options.sessionToken ?? "bearer-token"),
   }));
 
-  vi.doMock("@/lib/supabase/server", () => ({ createServerSupabaseClient }));
+  vi.doMock("@/lib/supabase/server", () => ({ createServerAzureClient }));
   vi.doMock("@/lib/dal/assurance-guard", () => ({ getCurrentAssurance }));
   vi.doMock("next/navigation", () => ({ redirect }));
   vi.doMock("@/lib/admin/account-api", async () => {
@@ -327,7 +319,7 @@ async function loadAccessHarness(options: AccessHarnessOptions = {}) {
   const access = await import("@/lib/admin/access");
   return {
     access,
-    createServerSupabaseClient,
+    createServerAzureClient,
     fetchAccountApiAdminAuditEvents,
     fetchAccountApiAdminReports,
     fetchAccountApiAdminConfiguration,

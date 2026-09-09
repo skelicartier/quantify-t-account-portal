@@ -1,5 +1,5 @@
 /**
- * Multi-factor state derived only from verified Supabase Auth factors.
+ * Multi-factor state derived only from provider-verified auth factors.
  *
  * `app_profiles.two_factor_enabled` is a desktop-owned legacy column and is never
  * consulted here: a boolean in application data cannot prove that a second factor
@@ -67,6 +67,17 @@ export const EMPTY_ASSURANCE_STATE: AssuranceState = {
   challengeRequired: false,
   levelReadable: false,
   factorsReadable: false,
+};
+
+export const AZURE_PASSWORD_ONLY_ASSURANCE_STATE: AssuranceState = {
+  verifiedTotpFactors: [],
+  unverifiedTotpFactorIds: [],
+  currentLevel: "aal1",
+  requiredLevel: "aal1",
+  mfaEnrolled: false,
+  challengeRequired: false,
+  levelReadable: true,
+  factorsReadable: true,
 };
 
 type FactorLike = {

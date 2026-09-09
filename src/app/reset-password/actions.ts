@@ -1,11 +1,10 @@
 "use server";
 
-import {
-  clearRecoveryAuthorization,
-} from "@/lib/auth/recovery-authorization";
+import { clearRecoveryAuthorization } from "@/lib/auth/recovery-authorization";
 import { parseResetPasswordFormData, type ResetPasswordActionState } from "@/lib/auth/recovery";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
-import { createServerAzureClient } from "@/lib/supabase/server";
+import { AzureAuthClient } from "@/lib/azure-auth-client";
+import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
 const EMPTY_FIELD_ERRORS: ResetPasswordActionState["fieldErrors"] = {
   password: [],
@@ -24,6 +23,12 @@ const SERVICE_ERROR_STATE: ResetPasswordActionState = {
   fieldErrors: EMPTY_FIELD_ERRORS,
 };
 
+const SUCCESS_STATE: ResetPasswordActionState = {
+  status: "success",
+  message: "Password updated. You can now sign in with your new password.",
+  fieldErrors: EMPTY_FIELD_ERRORS,
+};
+
 export async function resetPassword(
   _previousState: ResetPasswordActionState,
   formData: FormData,
@@ -31,19 +36,19 @@ export async function resetPassword(
   const parsed = parseResetPasswordFormData(formData);
   if (!parsed.success) return parsed.state;
 
+  const rawToken = formData.get("token");
+  const token = typeof rawToken === "string" ? rawToken.trim() : "";
+  if (!token || token.length > 4_096) {
+    return INVALID_RECOVERY_STATE;
+  }
+
   try {
     await requireSameOriginServerAction();
-    const azure = await createServerAzureClient();
-    const accessToken = azure.getAccessToken();
-    
-    if (!accessToken) {
-      await clearRecoveryAuthorization();
-      return INVALID_RECOVERY_STATE;
-    }
-
-    // TODO: Implement Azure SQL password reset with recovery authorization
-    // For now, return service error
-    return SERVICE_ERROR_STATE;
+    const config = getAzureAuthConfig();
+    const client = new AzureAuthClient(config.apiUrl);
+    await client.resetPassword(token, parsed.data.password);
+    await clearRecoveryAuthorization();
+    return SUCCESS_STATE;
   } catch {
     return SERVICE_ERROR_STATE;
   }

@@ -12,7 +12,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
     const redirectResponse = NextResponse.redirect(buildLoginRedirectUrl(request.nextUrl));
     return copyResponseCookies(response, redirectResponse);
-  } catch {
+  } catch (e) {
+    console.error("[PROXY ERROR]", e instanceof Error ? e.message : String(e));
     return NextResponse.redirect(buildLoginRedirectUrl(request.nextUrl));
   }
 }

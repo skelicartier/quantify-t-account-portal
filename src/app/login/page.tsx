@@ -4,7 +4,6 @@ import { login, verifyLoginChallenge } from "@/app/login/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { sanitizeNextPath } from "@/lib/auth/login";
-import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
 export const metadata = {
   title: "Sign in",
@@ -26,6 +25,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const nextPath = sanitizeNextPath(requestedPath);
   const providerLogoutIncomplete = notice === "logout-incomplete";
   const invalidAuthLink = notice === "invalid-auth-link";
+  const invalidConfirmLink = notice === "invalid-confirm-link";
+  const emailConfirmed = notice === "email-confirmed";
   const passwordUpdated = notice === "password-updated";
   const mfaRequired = notice === "mfa-required";
   // Turnstile site key would come from Azure config if needed
@@ -43,10 +44,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           again only on a trusted device.
         </div>
       )}
-      {invalidAuthLink && (
+      {(invalidAuthLink || invalidConfirmLink) && (
         <div className="auth-alert" role="status">
           This confirmation or recovery link is invalid or has expired. Request a new email and try
           again.
+        </div>
+      )}
+      {emailConfirmed && (
+        <div className="auth-alert auth-alert--success" role="status">
+          Your email address is confirmed. Sign in to continue.
         </div>
       )}
       {passwordUpdated && (

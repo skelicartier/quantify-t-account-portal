@@ -1,6 +1,6 @@
 /**
  * Azure SQL Server Client
- * 
+ *
  * Replaces Supabase server client for auth in server components/actions.
  */
 
@@ -8,7 +8,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import { AzureAuthClient, AuthUser, getSessionFromCookies } from "@/lib/azure-auth-client";
+import { AzureAuthClient, AuthUser } from "@/lib/azure-auth-client";
 import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
 type ServerClientOptions = {
@@ -26,22 +26,51 @@ export async function createServerAzureClient({
      * Get current user from session
      */
     async getUser(): Promise<AuthUser | null> {
-      const { accessToken } = getSessionFromCookies({
-        headers: {
-          get: (name: string) => {
-            const cookie = cookieStore.get(name);
-            return cookie?.value || null;
-          },
-        },
-      } as Request);
+      const accessToken = cookieStore.get(config.cookieName)?.value;
+      const refreshToken = cookieStore.get(config.refreshTokenName)?.value;
+      const client = new AzureAuthClient(config.apiUrl);
 
-      if (!accessToken) return null;
+      function writeSession(session: {
+        access_token: string;
+        refresh_token: string;
+        expires_in: number;
+      }): void {
+        try {
+          cookieStore.set(config.cookieName, session.access_token, {
+            ...config.cookieOptions,
+            maxAge: session.expires_in,
+          });
+          cookieStore.set(config.refreshTokenName, session.refresh_token, config.cookieOptions);
+        } catch (error) {
+          if (cookieWriteMode === "required") throw error;
+        }
+      }
+
+      async function refreshUser(): Promise<AuthUser | null> {
+        if (!refreshToken) return null;
+        try {
+          const session = await client.refreshSession(accessToken ?? null, refreshToken);
+          if (
+            !session.access_token ||
+            !session.refresh_token ||
+            !Number.isSafeInteger(session.expires_in) ||
+            session.expires_in <= 0
+          ) {
+            return null;
+          }
+          writeSession(session);
+          return await client.getUser(session.access_token);
+        } catch {
+          return null;
+        }
+      }
+
+      if (!accessToken) return await refreshUser();
 
       try {
-        const client = new AzureAuthClient(config.apiUrl);
         return await client.getUser(accessToken);
       } catch {
-        return null;
+        return await refreshUser();
       }
     },
 
@@ -54,9 +83,25 @@ export async function createServerAzureClient({
     },
 
     /**
+     * Get refresh token
+     */
+    getRefreshToken(): string | null {
+      const cookie = cookieStore.get(config.refreshTokenName);
+      return cookie?.value || null;
+    },
+
+    /**
      * Set session cookies
      */
     setSession(session: { access_token: string; refresh_token: string; expires_in: number }) {
+      if (
+        !session.access_token ||
+        !session.refresh_token ||
+        !Number.isSafeInteger(session.expires_in) ||
+        session.expires_in <= 0
+      ) {
+        throw new Error("Login response did not include a valid session.");
+      }
       try {
         cookieStore.set(config.cookieName, session.access_token, {
           ...config.cookieOptions,
@@ -83,24 +128,36 @@ export async function createServerAzureClient({
       const client = new AzureAuthClient(config.apiUrl);
       try {
         const result = await client.signIn(email, password);
+        if (!result.session) throw new Error("Login response did not include a session.");
         this.setSession(result.session);
         return { data: result, error: null };
       } catch (e) {
-        return { data: null, error: { message: e instanceof Error ? e.message : "Login failed" } };
+        return {
+          data: null,
+          error:
+            e && typeof e === "object" && "code" in e
+              ? e
+              : { code: null, message: e instanceof Error ? e.message : "Login failed" },
+        };
       }
     },
 
     /**
      * Sign up with email/password
      */
-    async signUp(email: string, password: string, _options?: { data?: Record<string, unknown> }) {
+    async signUp(email: string, password: string) {
       const client = new AzureAuthClient(config.apiUrl);
       try {
         const result = await client.signUp(email, password);
-        this.setSession(result.session);
         return { data: result, error: null };
       } catch (e) {
-        return { data: null, error: { message: e instanceof Error ? e.message : "Signup failed" } };
+        return {
+          data: null,
+          error:
+            e && typeof e === "object" && "code" in e
+              ? e
+              : { code: null, message: e instanceof Error ? e.message : "Signup failed" },
+        };
       }
     },
 
@@ -109,9 +166,10 @@ export async function createServerAzureClient({
      */
     async signOut() {
       const accessToken = this.getAccessToken();
-      if (accessToken) {
+      const refreshToken = this.getRefreshToken();
+      if (accessToken || refreshToken) {
         const client = new AzureAuthClient(config.apiUrl);
-        await client.signOut(accessToken);
+        await client.signOut(accessToken, refreshToken);
       }
       this.clearSession();
       return { error: null };

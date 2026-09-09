@@ -11,13 +11,13 @@ import {
 
 const REQUIRED_PUBLIC_ENVIRONMENT = [
   "NEXT_PUBLIC_SITE_URL",
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
   "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
   "QT_ACCOUNT_API_URL",
 ] as const;
 
 const FORBIDDEN_PORTAL_ENVIRONMENT = [
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
   "AZURE_STORAGE_CONNECTION_STRING",
   "BREVO_API_KEY",
@@ -675,7 +675,7 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
       "portal",
       lifecycleComplete ? "pass" : "blocked",
       lifecycleComplete
-        ? "Portal callback provenance, recovery authorization, reset ordering, challenge replay, current-password reauthentication, same-origin Server Actions, assurance-gated account mutations, second-factor enforcement, self session/activity reads, and Account API lifecycle hooks are structurally represented per file."
+        ? "Portal Azure token confirmation/reset, current-password reauthentication, same-origin Server Actions, assurance-gated account mutations, source-locked MFA/email-change controls, self session/activity reads, and Account API lifecycle hooks are structurally represented per file."
         : "Portal account-lifecycle relationships are missing or structurally incomplete.",
       lifecycleEvidence
         ? Object.entries(lifecycleEvidence)

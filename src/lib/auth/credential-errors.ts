@@ -14,9 +14,11 @@
  * the ordinary wrong-password case is classified precisely.
  */
 export const CREDENTIAL_REJECTION_CODES: ReadonlySet<string> = new Set([
+  "account_inactive",
   "email_not_confirmed",
   "invalid_credentials",
   "invalid_grant",
+  "unauthenticated",
   "user_banned",
   "user_not_found",
 ]);

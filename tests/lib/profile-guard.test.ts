@@ -3,14 +3,26 @@ import { PROFILE_UNAVAILABLE_MESSAGE } from "@/lib/dal/profile-query";
 const USER_ID = "860aac31-73fb-4e10-8f3f-bfcf22a71c11";
 
 const mocks = vi.hoisted(() => ({
-  createServerSupabaseClient: vi.fn(),
+  createServerAzureClient: vi.fn(),
+  azureFrom: vi.fn(),
+  requireSatisfiedAssurance: vi.fn(),
+  heartbeatCurrentAccountApiSession: vi.fn(),
   redirect: vi.fn((destination: string) => {
     throw new Error(`NEXT_REDIRECT:${destination}`);
   }),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: mocks.createServerSupabaseClient,
+  createServerAzureClient: mocks.createServerAzureClient,
+}));
+vi.mock("@/lib/dal/azure-sql-client", () => ({
+  azureFrom: mocks.azureFrom,
+}));
+vi.mock("@/lib/dal/assurance-guard", () => ({
+  requireSatisfiedAssurance: mocks.requireSatisfiedAssurance,
+}));
+vi.mock("@/lib/account/session-lifecycle", () => ({
+  heartbeatCurrentAccountApiSession: mocks.heartbeatCurrentAccountApiSession,
 }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
@@ -24,14 +36,14 @@ type ClientOptions = {
 
 function installClient(options: ClientOptions = {}) {
   if (options.factoryThrows) {
-    mocks.createServerSupabaseClient.mockRejectedValue(
-      new Error("SUPABASE_URL is not configured for this deployment"),
+    mocks.createServerAzureClient.mockRejectedValue(
+      new Error("QT_ACCOUNT_API_URL is not configured for this deployment"),
     );
     return;
   }
 
   const authenticated = options.authenticated ?? true;
-  const maybeSingle = vi.fn().mockResolvedValue({
+  const execute = vi.fn().mockResolvedValue({
     data: {
       user_id: USER_ID,
       first_name: "Avery",
@@ -48,19 +60,23 @@ function installClient(options: ClientOptions = {}) {
     },
     error: options.queryError ?? null,
   });
-  mocks.createServerSupabaseClient.mockResolvedValue({
-    auth: {
-      getUser: vi.fn().mockResolvedValue({
-        data: { user: authenticated ? { id: USER_ID, email: "user@example.com" } : null },
-        error: authenticated ? null : { code: "bad_jwt" },
-      }),
-    },
-    from: vi.fn(() => ({ select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle })) })) })),
+  mocks.azureFrom.mockReturnValue({
+    select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn(() => ({ execute })) })) })),
+  });
+  mocks.createServerAzureClient.mockResolvedValue({
+    getUser: vi
+      .fn()
+      .mockResolvedValue(authenticated ? { id: USER_ID, email: "user@example.com" } : null),
+    getAccessToken: vi.fn(() => "server-token"),
   });
 }
 
 describe("requireCurrentProfile guard", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requireSatisfiedAssurance.mockResolvedValue(undefined);
+    mocks.heartbeatCurrentAccountApiSession.mockResolvedValue(true);
+  });
 
   it("returns the profile for a verified owner without redirecting", async () => {
     installClient();
@@ -94,7 +110,7 @@ describe("requireCurrentProfile guard", () => {
 
     await expect(requireCurrentProfile()).rejects.toSatisfy((error: unknown) => {
       const text = error instanceof Error ? error.message : String(error);
-      return text === PROFILE_UNAVAILABLE_MESSAGE && !text.includes("SUPABASE_URL");
+      return text === PROFILE_UNAVAILABLE_MESSAGE && !text.includes("QT_ACCOUNT_API_URL");
     });
   });
 });

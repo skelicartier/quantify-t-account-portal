@@ -4,6 +4,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import {
+  AZURE_PASSWORD_ONLY_ASSURANCE_STATE,
   assuranceForMutation,
   EMPTY_ASSURANCE_STATE,
   type AssuranceState,
@@ -23,9 +24,9 @@ export const MFA_CHALLENGE_NOTICE = "/login?notice=mfa-required";
  */
 export const getCurrentAssurance = cache(async (): Promise<AssuranceState> => {
   try {
-    await createServerAzureClient({ cookieWriteMode: "best-effort" });
-    // For now, return empty assurance state - MFA will be implemented later
-    return EMPTY_ASSURANCE_STATE;
+    const azure = await createServerAzureClient({ cookieWriteMode: "best-effort" });
+    const user = await azure.getUser();
+    return user ? AZURE_PASSWORD_ONLY_ASSURANCE_STATE : EMPTY_ASSURANCE_STATE;
   } catch {
     return EMPTY_ASSURANCE_STATE;
   }

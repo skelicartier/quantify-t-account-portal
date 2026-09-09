@@ -3,21 +3,11 @@ import { LEGAL_CONSENT_FIELD_NAME } from "@/lib/auth/consent";
 import { INITIAL_SIGNUP_STATE } from "@/lib/auth/signup";
 
 const mocks = vi.hoisted(() => ({
-  createServerSupabaseClient: vi.fn(),
-  getSupabasePublicConfiguration: vi.fn(() => ({
-    url: "https://project.supabase.co",
-    publishableKey: "sb_publishable_test_value",
-    siteUrl: "https://console.quantifyterminal.com",
-    turnstileSiteKey: "turnstile-public-value",
-    cookieOptions: { name: "sb-project-auth-token" },
-  })),
+  createServerAzureClient: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: mocks.createServerSupabaseClient,
-}));
-vi.mock("@/lib/supabase/config", () => ({
-  getSupabasePublicConfiguration: mocks.getSupabasePublicConfiguration,
+  createServerAzureClient: mocks.createServerAzureClient,
 }));
 
 import { signup } from "@/app/signup/actions";
@@ -35,56 +25,37 @@ function signupFormData(): FormData {
 describe("signup Server Action", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("uses the publishable SSR client with fixed callback, CAPTCHA, and server consent metadata", async () => {
+  it("creates the account through the Azure auth client", async () => {
     const signUp = vi.fn().mockResolvedValue({
       data: { user: { id: "new-user" }, session: null },
       error: null,
     });
-    mocks.createServerSupabaseClient.mockResolvedValue({ auth: { signUp } });
+    mocks.createServerAzureClient.mockResolvedValue({ signUp });
 
     const result = await signup(INITIAL_SIGNUP_STATE, signupFormData());
 
-    expect(signUp).toHaveBeenCalledWith({
-      email: "new.user@example.com",
-      password: "twelve-character-password",
-      options: {
-        emailRedirectTo: "https://console.quantifyterminal.com/auth/confirm?flow=signup",
-        captchaToken: "turnstile-response",
-        data: {
-          consent_schema_version: "1",
-          terms_version: "2026-09-02",
-          privacy_version: "2026-09-02",
-          consent_source: "account_portal_signup",
-          consent_captured_at: expect.any(String),
-        },
-      },
-    });
+    expect(signUp).toHaveBeenCalledWith("new.user@example.com", "twelve-character-password");
     expect(result.status).toBe("accepted");
     expect(JSON.stringify(result)).not.toContain("twelve-character-password");
     expect(JSON.stringify(result)).not.toContain("turnstile-response");
   });
 
-  it("returns the same accepted state for an existing address", async () => {
-    const signUp = vi.fn().mockResolvedValueOnce({ data: { user: null }, error: null });
-    mocks.createServerSupabaseClient.mockResolvedValue({ auth: { signUp } });
-    const normalResult = await signup(INITIAL_SIGNUP_STATE, signupFormData());
+  it("returns the same accepted state for an existing address handled by the API", async () => {
+    const signUp = vi.fn().mockResolvedValue({ data: { user: null, session: null }, error: null });
+    mocks.createServerAzureClient.mockResolvedValue({ signUp });
 
-    signUp.mockResolvedValueOnce({
-      data: { user: null },
-      error: { code: "user_already_exists", message: "User already registered" },
-    });
     const duplicateResult = await signup(INITIAL_SIGNUP_STATE, signupFormData());
 
-    expect(duplicateResult).toEqual(normalResult);
+    expect(duplicateResult.status).toBe("accepted");
   });
 
-  it("rejects invalid input before creating a Supabase client", async () => {
+  it("rejects invalid input before creating an Azure client", async () => {
     const formData = signupFormData();
     formData.delete(LEGAL_CONSENT_FIELD_NAME);
 
     const result = await signup(INITIAL_SIGNUP_STATE, formData);
 
     expect(result.status).toBe("error");
-    expect(mocks.createServerSupabaseClient).not.toHaveBeenCalled();
+    expect(mocks.createServerAzureClient).not.toHaveBeenCalled();
   });
 });

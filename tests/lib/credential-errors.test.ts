@@ -8,9 +8,11 @@ describe("credential rejection classification", () => {
     // lie to the user, the other would refuse a legitimate change.
     expect(loginClassifier).toBe(isCredentialRejection);
     expect([...CREDENTIAL_REJECTION_CODES].sort()).toStrictEqual([
+      "account_inactive",
       "email_not_confirmed",
       "invalid_credentials",
       "invalid_grant",
+      "unauthenticated",
       "user_banned",
       "user_not_found",
     ]);

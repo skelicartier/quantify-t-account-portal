@@ -10,14 +10,20 @@ export const metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function ResetPasswordPage() {
+export default async function ResetPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>;
+}) {
+  const { token } = await searchParams;
+
   return (
     <AuthShell
       eyebrow="Verified recovery"
       title="Choose a new password"
       description="Your recovery link must still be valid before the password can be changed."
     >
-      <ResetPasswordForm action={resetPassword} />
+      <ResetPasswordForm action={resetPassword} token={token} />
 
       <p className="auth-card__footer">
         Link expired? <Link href="/forgot-password">Request another recovery email</Link>

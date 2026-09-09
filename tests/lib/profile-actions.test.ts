@@ -6,12 +6,26 @@ import {
 const USER_ID = "860aac31-73fb-4e10-8f3f-bfcf22a71c11";
 
 const mocks = vi.hoisted(() => ({
-  createServerSupabaseClient: vi.fn(),
+  createServerAzureClient: vi.fn(),
+  azureFrom: vi.fn(),
+  azureUpdate: vi.fn(),
+  requireMutationAssurance: vi.fn(),
+  requireSameOriginServerAction: vi.fn(),
   revalidatePath: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: mocks.createServerSupabaseClient,
+  createServerAzureClient: mocks.createServerAzureClient,
+}));
+vi.mock("@/lib/dal/azure-sql-client", () => ({
+  azureFrom: mocks.azureFrom,
+  azureUpdate: mocks.azureUpdate,
+}));
+vi.mock("@/lib/dal/assurance-guard", () => ({
+  requireMutationAssurance: mocks.requireMutationAssurance,
+}));
+vi.mock("@/lib/security/action-origin", () => ({
+  requireSameOriginServerAction: mocks.requireSameOriginServerAction,
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
@@ -40,138 +54,74 @@ function preferencesForm(): FormData {
 
 function installClient(options?: {
   authenticated?: boolean;
-  rpcError?: unknown;
-  rpcData?: unknown;
-  rpcResponse?: unknown;
-  rpcThrows?: boolean;
-  rpcVersion?: number;
-  ownerId?: string;
-  committedVersion?: number;
-  factors?: Array<Record<string, unknown>>;
-  currentLevel?: string | null;
-  nextLevel?: string | null;
-  levelError?: unknown;
+  updateData?: unknown;
+  updateError?: unknown;
+  updateThrows?: boolean;
+  committedVersion?: number | null;
+  assuranceDecision?: "satisfied" | "challenge-required" | "unavailable";
 }) {
-  const events: string[] = [];
   const authenticated = options?.authenticated ?? true;
-  const getUser = vi.fn().mockImplementation(async () => {
-    events.push("getUser");
-    return {
-      data: { user: authenticated ? { id: USER_ID } : null },
-      error: authenticated ? null : { code: "bad_jwt" },
-    };
+  const execute = vi.fn().mockResolvedValue({
+    data:
+      options && "committedVersion" in options
+        ? { profile_version: options.committedVersion }
+        : { profile_version: 9 },
+    error: null,
   });
-  const rpc = vi.fn().mockImplementation(async (_name, parameters) => {
-    events.push("rpc");
-    if (options?.rpcThrows) throw new Error("provider transport failed");
-    if (options && "rpcResponse" in options) return options.rpcResponse;
-    if (options && "rpcError" in options) return { data: null, error: options.rpcError };
-    if (options && "rpcData" in options) return { data: options.rpcData, error: null };
+  const single = vi.fn(() => ({ execute }));
+  const eq = vi.fn(() => ({ single }));
+  const select = vi.fn(() => ({ eq }));
+  mocks.azureFrom.mockReturnValue({ select });
+  mocks.azureUpdate.mockImplementation(async (_table, values, conditions) => {
+    if (options?.updateThrows) throw new Error("provider transport failed");
+    if (options?.updateError !== undefined) return { data: null, error: options.updateError };
+    if (options && "updateData" in options) return { data: options.updateData, error: null };
     return {
       data: {
-        user_id: options?.ownerId ?? USER_ID,
-        profile_version: options?.rpcVersion ?? parameters.p_expected_profile_version + 1,
-        updated_at: "2026-09-02T08:00:00.000Z",
+        user_id: conditions[0].value,
+        profile_version: values.profile_version,
       },
       error: null,
     };
   });
-  const maybeSingle = vi.fn().mockImplementation(async () => {
-    events.push("read-committed-version");
-    return { data: { profile_version: options?.committedVersion ?? 9 }, error: null };
+  mocks.createServerAzureClient.mockResolvedValue({
+    getUser: vi.fn().mockResolvedValue(authenticated ? { id: USER_ID } : null),
   });
-  const eq = vi.fn(() => ({ maybeSingle }));
-  const select = vi.fn(() => ({ eq }));
-  const from = vi.fn(() => ({ select }));
-  // Both mutations consult the assurance gate before touching the profile, so the
-  // fixture has to answer the same MFA surface the real client exposes.
-  const listFactors = vi.fn(async () => ({ data: { all: options?.factors ?? [] }, error: null }));
-  const getAuthenticatorAssuranceLevel = vi.fn(async () => ({
-    data: {
-      currentLevel: options?.currentLevel ?? "aal1",
-      nextLevel: options?.nextLevel ?? "aal1",
-    },
-    error: options?.levelError ?? null,
-  }));
-  mocks.createServerSupabaseClient.mockResolvedValue({
-    auth: { getUser, mfa: { listFactors, getAuthenticatorAssuranceLevel } },
-    rpc,
-    from,
+  mocks.requireMutationAssurance.mockResolvedValue({
+    decision: options?.assuranceDecision ?? "satisfied",
   });
-  return { events, getUser, rpc, from };
-}
-
-function mutationReceipt(profileVersion = 6, overrides: Record<string, unknown> = {}) {
-  return {
-    user_id: USER_ID,
-    profile_version: profileVersion,
-    updated_at: "2026-09-02T08:00:00.000Z",
-    ...overrides,
-  };
+  mocks.requireSameOriginServerAction.mockResolvedValue(undefined);
+  return { execute, select, eq };
 }
 
 describe("profile Server Actions", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("verifies Auth then calls only the owner-bound versioned RPC", async () => {
-    const { events, rpc } = installClient();
+  it("updates profile fields through an owner and version scoped Azure SQL mutation", async () => {
+    installClient();
 
     const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
 
-    expect(events).toEqual(["getUser", "rpc"]);
-    expect(rpc).toHaveBeenCalledWith("update_my_app_profile_v2", {
-      p_expected_profile_version: 4,
-      p_first_name: "Avery",
-      p_last_name: "Stone",
-      p_phone: "+1 415 555 0100",
-      p_country: "United States",
-    });
-    expect(JSON.stringify(rpc.mock.calls)).not.toContain("p_user_id");
     expect(result).toMatchObject({
       status: "success",
       message: "Profile saved.",
       profileVersion: 5,
     });
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/account/profile");
-  });
-
-  it("writes bounded preferences through the versioned owner RPC only", async () => {
-    const { rpc } = installClient();
-
-    const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
-
-    expect(rpc).toHaveBeenCalledWith("update_my_app_profile_v2", {
-      p_expected_profile_version: 5,
-      p_timezone: "America/New_York",
-      p_default_currency: "USD",
-      p_notify_price_alerts: true,
-      p_notify_portfolio_moves: false,
-      p_notify_news_digest: true,
-    });
-    expect(JSON.stringify(rpc.mock.calls)).not.toContain("photo");
-    expect(result).toMatchObject({ status: "success", profileVersion: 6 });
-  });
-
-  it("accepts an exact singleton-array three-field receipt", async () => {
-    installClient({ rpcData: [mutationReceipt(5)] });
-
-    const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
-
-    expect(result).toMatchObject({ status: "success", profileVersion: 5 });
-    expect(mocks.revalidatePath).toHaveBeenCalledWith("/account/profile");
-  });
-
-  it("maps a database serialization conflict to a generic stale state", async () => {
-    installClient({
-      rpcError: { code: "40001", message: "provider details must not cross" },
-    });
-
-    const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
-
-    expect(result.status).toBe("stale");
-    expect(result.message).toContain("Reload");
-    expect(JSON.stringify(result)).not.toContain("provider details");
-    // A stale result refreshes every cached account read.
+    expect(mocks.azureUpdate).toHaveBeenCalledWith(
+      "app_profiles",
+      expect.objectContaining({
+        first_name: "Avery",
+        last_name: "Stone",
+        phone: "+1 415 555 0100",
+        country: "United States",
+        profile_version: 5,
+      }),
+      [
+        { column: "user_id", value: USER_ID },
+        { column: "profile_version", value: 4 },
+      ],
+    );
+    expect(JSON.stringify(mocks.azureUpdate.mock.calls)).not.toContain("p_user_id");
     expect(mocks.revalidatePath.mock.calls.flat()).toEqual([
       "/account",
       "/account/profile",
@@ -179,224 +129,89 @@ describe("profile Server Actions", () => {
     ]);
   });
 
-  it("returns the committed version after a stale conflict so a retry can succeed", async () => {
-    const { events } = installClient({
-      rpcError: { code: "40001" },
-      committedVersion: 11,
-    });
+  it("updates preference fields without touching retired photo or passcode data", async () => {
+    installClient();
+
+    const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
+
+    expect(result).toMatchObject({ status: "success", profileVersion: 6 });
+    expect(mocks.azureUpdate).toHaveBeenCalledWith(
+      "app_profiles",
+      expect.objectContaining({
+        timezone: "America/New_York",
+        default_currency: "USD",
+        notify_price_alerts: true,
+        notify_portfolio_moves: false,
+        notify_news_digest: true,
+        profile_version: 6,
+      }),
+      [
+        { column: "user_id", value: USER_ID },
+        { column: "profile_version", value: 5 },
+      ],
+    );
+    expect(JSON.stringify(mocks.azureUpdate.mock.calls)).not.toContain("photo");
+    expect(JSON.stringify(mocks.azureUpdate.mock.calls)).not.toContain("passcode");
+  });
+
+  it("returns a stale state and committed version when the exact version update matches no row", async () => {
+    const { select, eq, execute } = installClient({ updateData: null, committedVersion: 11 });
 
     const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
 
     expect(result).toMatchObject({ status: "stale", profileVersion: 11 });
-    expect(events).toEqual(["getUser", "rpc", "read-committed-version"]);
+    expect(mocks.azureFrom).toHaveBeenCalledWith("app_profiles");
+    expect(select).toHaveBeenCalledWith("profile_version");
+    expect(eq).toHaveBeenCalledWith("user_id", USER_ID);
+    expect(execute).toHaveBeenCalled();
   });
 
-  it("keeps the stale state without a version when the committed read fails", async () => {
-    installClient({ rpcError: { code: "40001" }, committedVersion: 0 });
+  it("keeps stale retry safe when the committed version read is unavailable", async () => {
+    installClient({ updateData: null, committedVersion: null });
 
-    const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
+    const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
 
     expect(result).toMatchObject({ status: "stale", profileVersion: null });
   });
 
-  it("does not call the mutation RPC without a verified user", async () => {
-    const { rpc } = installClient({ authenticated: false });
+  it("does not mutate without a verified Azure account session", async () => {
+    installClient({ authenticated: false });
 
     const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
 
     expect(result.status).toBe("error");
     expect(result.message).toContain("session");
-    expect(rpc).not.toHaveBeenCalled();
+    expect(mocks.azureUpdate).not.toHaveBeenCalled();
   });
 
-  it("rejects a non-monotonic profile mutation receipt", async () => {
-    installClient({ rpcVersion: 6 });
+  it.each([
+    ["owed challenge", "challenge-required", "authenticator code"],
+    ["unreadable assurance", "unavailable", "temporarily unavailable"],
+  ] as const)("refuses a mutation with %s", async (_label, assuranceDecision, message) => {
+    installClient({ assuranceDecision });
+
+    const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
+
+    expect(result.status).toBe("error");
+    expect(result.message).toContain(message);
+    expect(mocks.azureUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "wrong owner",
+      { user_id: "7e5f9c11-2a3b-4c5d-8e9f-0a1b2c3d4e66", profile_version: 5 },
+      undefined,
+    ],
+    ["wrong version", { user_id: USER_ID, profile_version: 4 }, undefined],
+    ["provider error", null, { code: "57014" }],
+  ] as const)("fails closed for a %s update result", async (_label, updateData, updateError) => {
+    installClient({ updateData, updateError });
 
     const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
-
-    expect(result.status).toBe("error");
-    expect(mocks.revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it("rejects a receipt that still carries the retired photo pointer field", async () => {
-    installClient({ rpcData: mutationReceipt(6, { profile_photo_path: null }) });
-
-    const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
-
-    expect(result.status).toBe("error");
-    expect(mocks.revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["null", null],
-    ["empty-array", []],
-    ["multi-row", [mutationReceipt(), mutationReceipt()]],
-    ["malformed UUID", mutationReceipt(6, { user_id: "not-a-uuid" })],
-    ["non-positive version", mutationReceipt(6, { profile_version: 0 })],
-    ["fractional version", mutationReceipt(6, { profile_version: 6.5 })],
-    ["datetime without offset", mutationReceipt(6, { updated_at: "2026-09-02T08:00:00" })],
-    ["extra field", mutationReceipt(6, { unexpected: true })],
-  ])("rejects a %s preferences mutation receipt", async (_label, rpcData) => {
-    installClient({ rpcData });
-
-    const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
-
-    expect(result.status).toBe("error");
-    expect(mocks.revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it("rejects a mutation result for a different UUID", async () => {
-    installClient({ ownerId: "22222222-2222-4222-8222-222222222222" });
-    const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
-    expect(result.status).toBe("error");
-    expect(mocks.revalidatePath).not.toHaveBeenCalled();
-  });
-
-  describe("exact RPC envelope classification", () => {
-    /**
-     * `committedVersion` is the exact version the action requires for success, so
-     * only envelope shape decides the outcome. Success is permitted for exactly
-     * one shape; every other shape must be a stale or retained service failure.
-     */
-    function envelopeCases(
-      committedVersion: number,
-    ): [string, unknown, "success" | "stale" | "error"][] {
-      const receipt = mutationReceipt(committedVersion);
-      return [
-        ["exact success", { data: receipt, error: null }, "success"],
-        ["exact definitive stale", { data: null, error: { code: "40001" } }, "stale"],
-        [
-          "mixed valid receipt with a stale code",
-          { data: receipt, error: { code: "40001" } },
-          "error",
-        ],
-        [
-          "stale code with a non-null data payload",
-          { data: [], error: { code: "40001" } },
-          "error",
-        ],
-        ["missing error key", { data: receipt }, "error"],
-        ["undefined error", { data: receipt, error: undefined }, "error"],
-        ["undefined data with a stale code", { error: { code: "40001" } }, "error"],
-        ["numeric stale code", { data: null, error: { code: 40001 } }, "error"],
-        ["stale code without an error object", { data: null, error: "40001" }, "error"],
-        ["non-stale provider error", { data: null, error: { code: "57014" } }, "error"],
-        ["null envelope", null, "error"],
-        ["malformed data with a null error", { data: { user_id: USER_ID }, error: null }, "error"],
-      ];
-    }
-
-    it.each(envelopeCases(5))(
-      "classifies a %s profile envelope",
-      async (_label, rpcResponse, status) => {
-        installClient({ rpcResponse });
-
-        const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
-
-        expect(result.status).toBe(status);
-        if (status === "success") {
-          expect(mocks.revalidatePath).toHaveBeenCalledWith("/account/profile");
-        } else if (status === "stale") {
-          expect(mocks.revalidatePath).toHaveBeenCalledWith("/account/profile");
-        } else {
-          expect(mocks.revalidatePath).not.toHaveBeenCalled();
-        }
-      },
-    );
-
-    it.each(envelopeCases(6))(
-      "classifies a %s preferences envelope",
-      async (_label, rpcResponse, status) => {
-        installClient({ rpcResponse });
-
-        const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
-
-        expect(result.status).toBe(status);
-        if (status === "success") {
-          expect(mocks.revalidatePath).toHaveBeenCalledWith("/account/preferences");
-        } else if (status === "stale") {
-          expect(mocks.revalidatePath).toHaveBeenCalledWith("/account/preferences");
-        } else {
-          expect(mocks.revalidatePath).not.toHaveBeenCalled();
-        }
-      },
-    );
-
-    it("treats a thrown RPC as a retained service failure", async () => {
-      installClient({ rpcThrows: true });
-
-      const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
-
-      expect(result.status).toBe("error");
-      expect(result.message).toContain("temporarily unavailable");
-      expect(mocks.revalidatePath).not.toHaveBeenCalled();
-    });
-  });
-});
-
-describe("assurance enforcement on profile mutations", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  const verifiedFactor = { id: "factor-verified", factor_type: "totp", status: "verified" };
-
-  it.each([
-    ["updateProfile", () => updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm())],
-    [
-      "updatePreferences",
-      () => updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm()),
-    ],
-  ])("%s refuses a session that still owes its second factor", async (_label, run) => {
-    // The hosting page redirects such a session to the challenge, but the action is
-    // reachable on its own, so it has to make the same decision itself.
-    const { rpc } = installClient({
-      factors: [verifiedFactor],
-      currentLevel: "aal1",
-      nextLevel: "aal2",
-    });
-
-    const result = await run();
-
-    expect(result.status).toBe("error");
-    expect(result.message).toContain("authenticator code");
-    expect(rpc).not.toHaveBeenCalled();
-    expect(mocks.revalidatePath).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["updateProfile", () => updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm())],
-    [
-      "updatePreferences",
-      () => updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm()),
-    ],
-  ])("%s fails closed when the assurance level cannot be read", async (_label, run) => {
-    const { rpc } = installClient({ levelError: { message: "session unreadable" } });
-
-    const result = await run();
 
     expect(result.status).toBe("error");
     expect(result.message).toContain("temporarily unavailable");
-    expect(rpc).not.toHaveBeenCalled();
-  });
-
-  it("still saves for a session that satisfied the factor", async () => {
-    const { rpc } = installClient({
-      factors: [verifiedFactor],
-      currentLevel: "aal2",
-      nextLevel: "aal2",
-    });
-
-    const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
-
-    expect(result.status).toBe("success");
-    expect(rpc).toHaveBeenCalledTimes(1);
-  });
-
-  it("still saves for an account with no enrolled factor", async () => {
-    const { rpc } = installClient();
-
-    const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
-
-    expect(result.status).toBe("success");
-    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 });

@@ -103,7 +103,7 @@ export function AdminDashboard({ access }: AdminDashboardProps) {
           <p className="eyebrow">Administration</p>
           <h1 id="admin-heading">Control center</h1>
           <p>
-            Administrative access is decided by the Account API using the Supabase Auth UUID, active
+            Administrative access is decided by the Account API using the Azure auth UUID, active
             account state, canonical role, and returned capabilities.
           </p>
         </div>

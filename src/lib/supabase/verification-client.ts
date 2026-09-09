@@ -2,6 +2,7 @@ import "server-only";
 
 import { AzureAuthClient } from "@/lib/azure-auth-client";
 import { getAzureAuthConfig } from "@/lib/azure-auth-config";
+import { isCredentialRejection } from "@/lib/auth/credential-errors";
 
 /**
  * Build an Azure auth client that is completely isolated from the caller's session.
@@ -41,7 +42,7 @@ export async function verifyCurrentPassword(
     if (!result || !result.user) return "rejected";
     if (result.user.email?.toLowerCase() !== email) return "unavailable";
     return "verified";
-  } catch {
-    return "unavailable";
+  } catch (error) {
+    return isCredentialRejection(error) ? "rejected" : "unavailable";
   }
 }

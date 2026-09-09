@@ -7,12 +7,7 @@ import {
   parseProfileFormData,
   type ProfileActionState,
 } from "@/lib/account/profile-input";
-import {
-  classifyProfileMutationEnvelope,
-  PROFILE_UPDATE_RPC,
-  readCommittedProfileVersion,
-  type ProfileVersionReader,
-} from "@/lib/account/profile-mutation";
+import { azureFrom, azureUpdate } from "@/lib/dal/azure-sql-client";
 import { requireMutationAssurance } from "@/lib/dal/assurance-guard";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { createServerAzureClient } from "@/lib/supabase/server";
@@ -41,6 +36,37 @@ const STALE_ERROR: ProfileActionState = {
   message: "This profile changed in another session. Reload before saving again.",
 };
 
+function refreshProfileRoutes(): void {
+  revalidatePath("/account");
+  revalidatePath("/account/profile");
+  revalidatePath("/account/preferences");
+}
+
+async function readCommittedProfileVersion(userId: string): Promise<number | null> {
+  try {
+    const result = await azureFrom<{ profile_version: number }>("app_profiles")
+      .select("profile_version")
+      .eq("user_id", userId)
+      .single()
+      .execute();
+    const version = result.data?.profile_version;
+    return !result.error &&
+      typeof version === "number" &&
+      Number.isSafeInteger(version) &&
+      version > 0
+      ? version
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function rowMatchesVersion(row: unknown, userId: string, profileVersion: number): boolean {
+  if (!row || typeof row !== "object") return false;
+  const data = row as { user_id?: unknown; profile_version?: unknown };
+  return data.user_id === userId && data.profile_version === profileVersion;
+}
+
 export async function updateProfile(
   _previousState: ProfileActionState,
   formData: FormData,
@@ -61,9 +87,37 @@ export async function updateProfile(
     const user = await azure.getUser();
     if (!user) return AUTH_ERROR;
 
-    // TODO: Implement Azure SQL profile update
-    // For now, return service error
-    return SERVICE_ERROR;
+    const nextVersion = parsed.data.profileVersion + 1;
+    const result = await azureUpdate(
+      "app_profiles",
+      {
+        first_name: parsed.data.firstName,
+        last_name: parsed.data.lastName,
+        phone: parsed.data.phone,
+        country: parsed.data.country,
+        profile_version: nextVersion,
+        updated_at: new Date().toISOString(),
+      },
+      [
+        { column: "user_id", value: user.id },
+        { column: "profile_version", value: parsed.data.profileVersion },
+      ],
+    );
+
+    if (result.error) return SERVICE_ERROR;
+    if (!result.data) {
+      refreshProfileRoutes();
+      return { ...STALE_ERROR, profileVersion: await readCommittedProfileVersion(user.id) };
+    }
+    if (!rowMatchesVersion(result.data, user.id, nextVersion)) return SERVICE_ERROR;
+
+    refreshProfileRoutes();
+    return {
+      ...INITIAL_PROFILE_ACTION_STATE,
+      status: "success",
+      message: "Profile saved.",
+      profileVersion: nextVersion,
+    };
   } catch {
     return SERVICE_ERROR;
   }

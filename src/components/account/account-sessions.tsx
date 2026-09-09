@@ -42,7 +42,7 @@ export function AccountSessions({ sessions }: AccountSessionsProps) {
       <section className="account-page-heading" aria-labelledby="account-sessions-heading">
         <p className="eyebrow">Cloud account</p>
         <h1 id="account-sessions-heading">Sessions</h1>
-        <p>Cloud session inventory for the signed-in Supabase identity.</p>
+        <p>Cloud session inventory for the signed-in account identity.</p>
       </section>
 
       <section className="account-grid account-grid--compact" aria-label="Session summary">

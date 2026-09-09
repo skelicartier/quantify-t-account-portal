@@ -14,7 +14,7 @@ const EMPTY_FIELD_ERRORS: SignupActionState["fieldErrors"] = {
 
 const ACCEPTED_SIGNUP_STATE: SignupActionState = {
   status: "accepted",
-  message: "If this address can be registered, check your email for the next step.",
+  message: "Account created! Check your email to confirm your address.",
   fieldErrors: EMPTY_FIELD_ERRORS,
 };
 

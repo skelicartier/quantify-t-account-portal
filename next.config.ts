@@ -13,7 +13,7 @@ const contentSecurityPolicy = [
   `script-src 'self' 'unsafe-inline'${developmentScriptSource} https://challenges.cloudflare.com`,
   "style-src 'self' 'unsafe-inline'",
   "frame-src https://challenges.cloudflare.com",
-  "connect-src 'self' https://challenges.cloudflare.com https://*.supabase.co https://*.azurewebsites.net",
+  "connect-src 'self' https://challenges.cloudflare.com https://*.azurewebsites.net",
   "upgrade-insecure-requests",
 ].join("; ");
 

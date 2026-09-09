@@ -7,6 +7,14 @@ import {
 
 const USER_ID = "860aac31-73fb-4e10-8f3f-bfcf22a71c11";
 
+const mocks = vi.hoisted(() => ({
+  azureFrom: vi.fn(),
+}));
+
+vi.mock("@/lib/dal/azure-sql-client", () => ({
+  azureFrom: mocks.azureFrom,
+}));
+
 type ClientOptions = {
   authenticated?: boolean;
   ownerId?: string;
@@ -38,31 +46,35 @@ function profileRow(ownerId: string) {
 function createClient(options?: ClientOptions) {
   const authenticated = options?.authenticated ?? true;
   const row = options && "row" in options ? options.row : profileRow(options?.ownerId ?? USER_ID);
-  const maybeSingle = vi.fn(async () => {
+  const execute = vi.fn(async () => {
     if (options?.queryThrows) throw new Error("provider transport failed");
     return { data: row, error: options?.queryError ?? null };
   });
-  const eq = vi.fn(() => ({ maybeSingle }));
+  const single = vi.fn(() => ({ execute }));
+  const eq = vi.fn(() => ({ single }));
   const select = vi.fn(() => ({ eq }));
-  const from = vi.fn(() => ({ select }));
+  mocks.azureFrom.mockReturnValue({ select });
   const getUser = vi.fn(async () => {
     if (options?.authThrows) throw new Error("auth transport failed");
-    return {
-      data: { user: authenticated ? { id: USER_ID, email: "user@example.com" } : null },
-      error: authenticated ? null : { code: "bad_jwt" },
-    };
+    return authenticated ? { id: USER_ID, email: "user@example.com" } : null;
   });
   return {
-    client: { auth: { getUser }, from } as unknown as ProfileDataClient,
+    client: { getUser } as unknown as ProfileDataClient,
     getUser,
-    from,
+    from: mocks.azureFrom,
     select,
     eq,
+    single,
+    execute,
   };
 }
 
 describe("profile DAL query", () => {
-  it("verifies Auth before an explicit UUID-owner query", async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("verifies Azure auth before an explicit UUID-owner query", async () => {
     const { client, getUser, from, select, eq } = createClient();
 
     const result = await loadAccountProfile(client);

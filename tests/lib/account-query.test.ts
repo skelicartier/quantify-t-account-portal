@@ -5,6 +5,14 @@ import {
   type AccountDataClient,
 } from "@/lib/dal/account-query";
 
+const mocks = vi.hoisted(() => ({
+  azureFrom: vi.fn(),
+}));
+
+vi.mock("@/lib/dal/azure-sql-client", () => ({
+  azureFrom: mocks.azureFrom,
+}));
+
 function createClient(options?: {
   authenticated?: boolean;
   profileError?: boolean;
@@ -13,7 +21,7 @@ function createClient(options?: {
   crossOwnerRow?: boolean;
 }) {
   const authenticated = options?.authenticated ?? true;
-  const maybeSingle = vi.fn().mockResolvedValue(
+  const execute = vi.fn().mockResolvedValue(
     options?.profileError
       ? { data: null, error: { message: "provider detail must remain server-side" } }
       : {
@@ -31,38 +39,38 @@ function createClient(options?: {
           error: null,
         },
   );
-  const eq = vi.fn(() => ({ maybeSingle }));
+  const single = vi.fn(() => ({ execute }));
+  const eq = vi.fn(() => ({ single }));
   const select = vi.fn(() => ({ eq }));
-  const from = vi.fn(() => ({ select }));
+  mocks.azureFrom.mockReturnValue({ select });
   const getUser = vi.fn().mockImplementation(async () => {
     if (options?.authThrows) throw new Error("auth transport failed");
-    return {
-      data: {
-        user: authenticated
-          ? {
-              id: options?.malformedIdentity
-                ? "not-a-uuid"
-                : "860aac31-73fb-4e10-8f3f-bfcf22a71c11",
-              email: "user@example.com",
-              created_at: "2024-01-02T03:04:05.000Z",
-              last_sign_in_at: null,
-              email_confirmed_at: "2024-01-02T03:05:00.000Z",
-            }
-          : null,
-      },
-      error: authenticated ? null : { message: "invalid session" },
-    };
+    return authenticated
+      ? {
+          id: options?.malformedIdentity ? "not-a-uuid" : "860aac31-73fb-4e10-8f3f-bfcf22a71c11",
+          email: "user@example.com",
+          created_at: "2024-01-02T03:04:05.000Z",
+          last_sign_in_at: null,
+          email_confirmed_at: "2024-01-02T03:05:00.000Z",
+        }
+      : null;
   });
 
   return {
-    client: { auth: { getUser }, from } as unknown as AccountDataClient,
-    from,
+    client: { getUser } as unknown as AccountDataClient,
+    from: mocks.azureFrom,
     select,
     eq,
+    single,
+    execute,
   };
 }
 
 describe("account DAL query", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("verifies the Auth user before issuing an owner-scoped explicit-column query", async () => {
     const { client, from, select, eq } = createClient();
 

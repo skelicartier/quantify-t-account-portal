@@ -187,21 +187,31 @@ const PROFILE_V2_TYPE_SIGNATURE_SQL = `
 `;
 
 const TASK7_CONFIRM_ROUTE = `
-  async function clearRejectedExchange() {
-    await clearPortalSupabaseAuthCookies();
-    await clearRecoveryAuthorization();
-  }
-  async function GET() {
-    const result = await supabase.auth.exchangeCodeForSession(parsed.data.code);
-    const redirectType = "redirectType" in result.data ? result.data.redirectType : undefined;
-    const destination = resolveTrustedAuthDestination(parsed.data.flow, redirectType);
-    await issueRecoveryAuthorization({ userId: result.data.user.id, accessToken: result.data.session.access_token, secure: cookieOptions.secure === true });
-    await clearRejectedExchange();
-    return destination;
+  async function GET(request) {
+    const tokens = new URL(request.url).searchParams.getAll("token");
+    const token = tokens.length === 1 ? tokens[0]?.trim() : "";
+    if (!token || token.length > 4_096) return Response.redirect("/login?notice=invalid-confirm-link");
+    try {
+      const config = getAzureAuthConfig();
+      await new AzureAuthClient(config.apiUrl).confirmEmail(token);
+      return Response.redirect("/login?notice=email-confirmed");
+    } catch {}
+    return Response.redirect("/login?notice=invalid-confirm-link");
   }
 `;
 
-const TASK7_RESET_ACTION = `async function resetPassword() { await getSession(); await getUser(session.access_token); const authorized = await consumeRecoveryAuthorization(); if (!authorized) return; await updateUser(); }`;
+const TASK7_RESET_ACTION = `
+  async function resetPassword() {
+    const rawToken = formData.get("token");
+    const token = typeof rawToken === "string" ? rawToken.trim() : "";
+    if (!token || token.length > 4_096) return INVALID_RECOVERY_STATE;
+    await requireSameOriginServerAction();
+    const config = getAzureAuthConfig();
+    const client = new AzureAuthClient(config.apiUrl);
+    await client.resetPassword(token, parsed.data.password);
+    await clearRecoveryAuthorization();
+  }
+`;
 
 const TASK7_TURNSTILE_FIELD = `function TurnstileField() { const completed = wasDisabled.current && !disabled; if (completed) window.turnstile.reset(widgetId); }`;
 
@@ -209,33 +219,36 @@ const TASK7_SECURITY_ACTIONS = `
   export async function changePassword() {
     const { decision } = await requireMutationAssurance();
     if (decision !== "satisfied") return PASSWORD_SERVICE_ERROR;
+    const azure = await createServerAzureClient();
     const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);
-    await supabase.auth.updateUser({ password: parsed.data.password });
+    await authClient.updatePassword(accessToken, parsed.data.password);
   }
   export async function changeEmail() {
     const { decision } = await requireMutationAssurance();
     if (decision !== "satisfied") return EMAIL_SERVICE_ERROR;
+    const azure = await createServerAzureClient();
     const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);
-    await supabase.auth.updateUser({ email: parsed.data.email });
+    return EMAIL_SERVICE_ERROR; // Azure email-change confirmation is source-locked.
   }
   export async function startTotpEnrollment() {
     const { decision, assurance } = await requireMutationAssurance();
     if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
-    const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
-    await supabase.auth.mfa.enroll({ factorType: "totp" });
+    const azure = await createServerAzureClient();
+    return TOTP_SERVICE_ERROR; // Azure TOTP enrollment is source-locked.
   }
   export async function confirmTotpEnrollment() {
     const { decision, assurance } = await requireMutationAssurance();
     if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
     if (!assurance.unverifiedTotpFactorIds.includes(submitted.data.factorId)) return;
-    const challenge = await supabase.auth.mfa.challenge({ factorId: submitted.data.factorId });
-    await supabase.auth.mfa.verify({ factorId: submitted.data.factorId });
+    const azure = await createServerAzureClient();
+    return TOTP_SERVICE_ERROR; // Azure TOTP verification is source-locked.
   }
   export async function removeTotpFactor() {
     const { decision, assurance } = await requireMutationAssurance();
     if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
+    const azure = await createServerAzureClient();
     const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
-    await supabase.auth.mfa.unenroll({ factorId: submitted.data.factorId });
+    return TOTP_SERVICE_ERROR; // Azure TOTP removal is source-locked.
   }
 `;
 
@@ -243,8 +256,9 @@ const TASK7_PROFILE_ACTION = `
   export async function updateProfile() {
     const { decision } = await requireMutationAssurance();
     if (decision !== "satisfied") return SERVICE_ERROR;
-    const { data: authData } = await supabase.auth.getUser();
-    const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});
+    const azure = await createServerAzureClient();
+    const user = await azure.getUser();
+    const result = await azureUpdate("app_profiles", {}, []);
   }
 `;
 
@@ -252,16 +266,18 @@ const TASK7_PREFERENCES_ACTION = `
   export async function updatePreferences() {
     const { decision } = await requireMutationAssurance();
     if (decision !== "satisfied") return SERVICE_ERROR;
-    const { data: authData } = await supabase.auth.getUser();
-    const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});
+    const azure = await createServerAzureClient();
+    const user = await azure.getUser();
+    const result = await azureUpdate("app_profiles", {}, []);
   }
 `;
 
 const TASK7_LOGIN_ACTIONS = `
   export async function login() {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    const assurance = await resolveAssuranceState(supabase);
-    if (assurance.challengeRequired) return MFA_REQUIRED;
+    const azure = await createServerAzureClient();
+    const { data, error } = await azure.signInWithPassword(email, password);
+    if (!data?.session) return SERVICE_ERROR;
+    await registerCurrentAccountApiSession(azure);
     redirect(parsed.data.nextPath);
   }
 `;
@@ -313,22 +329,22 @@ const TASK7_LIFECYCLE_SOURCES = {
     ].join(",");
     export async function loadAccountSessions(client) {
       const userId = await currentVerifiedUserId(client);
-      const result = await client
-        .from("account_sessions")
+      const result = await azureFrom("account_sessions")
         .select(ACCOUNT_SESSION_COLUMNS)
         .eq("user_id", userId)
         .order("last_seen_at", { ascending: false })
-        .limit(ACCOUNT_SESSION_LIMIT);
+        .limit(ACCOUNT_SESSION_LIMIT)
+        .execute();
       return mapAccountSessions(userId, result.data);
     }
     export async function loadAccountActivityEvents(client) {
       const userId = await currentVerifiedUserId(client);
-      const result = await client
-        .from("auth_events")
+      const result = await azureFrom("auth_events")
         .select(ACCOUNT_ACTIVITY_COLUMNS)
         .eq("user_id", userId)
         .order("occurred_at", { ascending: false })
-        .limit(ACCOUNT_ACTIVITY_LIMIT);
+        .limit(ACCOUNT_ACTIVITY_LIMIT)
+        .execute();
       return mapAccountActivityEvents(userId, result.data);
     }
   `,
@@ -388,7 +404,7 @@ const TASK7_LIFECYCLE_SOURCES = {
       const headersList = await headers();
       const origin = headersList.get("origin");
       const referer = headersList.get("referer");
-      getSupabasePublicConfiguration();
+      process.env.NEXT_PUBLIC_SITE_URL;
       if (process.env.NODE_ENV !== "production") return;
       if (!origin && !referer) throw new SameOriginActionError();
     }
@@ -412,8 +428,6 @@ const completeSnapshot: RepositorySnapshot = {
   portalPackageJson: JSON.stringify({ dependencies: { next: "16.3.4" } }),
   portalEnvironmentExample: [
     "NEXT_PUBLIC_SITE_URL=https://account.example.invalid",
-    "NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co",
-    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=replace-with-publishable-key",
     "NEXT_PUBLIC_TURNSTILE_SITE_KEY=replace-with-site-key",
     "QT_ACCOUNT_API_URL=https://api.example.invalid",
     "QT_MARKETING_SITE_URL=https://www.example.invalid",
@@ -572,8 +586,6 @@ const completeSnapshot: RepositorySnapshot = {
 
 const validEnvironment = {
   NEXT_PUBLIC_SITE_URL: "https://console.quantifyterminal.com",
-  NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co",
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_safe_value",
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: "turnstile-public-value",
   QT_ACCOUNT_API_URL: "https://account-api.azurewebsites.net/api/v1",
 };
@@ -848,8 +860,8 @@ describe("preflight audit", () => {
       {
         securityActions: TASK7_SECURITY_ACTIONS.replace(
           `    const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);
-    await supabase.auth.updateUser({ password: parsed.data.password });`,
-          `    await supabase.auth.updateUser({ password: parsed.data.password });
+    await authClient.updatePassword(accessToken, parsed.data.password);`,
+          `    await authClient.updatePassword(accessToken, parsed.data.password);
     const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);`,
         ),
       },
@@ -869,9 +881,8 @@ describe("preflight audit", () => {
       "an enrollment that mints a factor without reauthentication",
       {
         securityActions: TASK7_SECURITY_ACTIONS.replace(
-          `    const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
-    await supabase.auth.mfa.enroll({ factorType: "totp" });`,
-          `    await supabase.auth.mfa.enroll({ factorType: "totp" });`,
+          `    return TOTP_SERVICE_ERROR; // Azure TOTP enrollment is source-locked.`,
+          `    await authClient.enroll({ factorType: "totp" });`,
         ),
       },
       "securityReauthenticatesBeforeMutation",
@@ -893,10 +904,11 @@ describe("preflight audit", () => {
         securityActions: TASK7_SECURITY_ACTIONS.replace(
           `    const { decision, assurance } = await requireMutationAssurance();
     if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
+    const azure = await createServerAzureClient();
     const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
-    await supabase.auth.mfa.unenroll({ factorId: submitted.data.factorId });`,
+    return TOTP_SERVICE_ERROR; // Azure TOTP removal is source-locked.`,
           `    const verification = await verifyCurrentPassword(caller.email, submitted.data.currentPassword);
-    await supabase.auth.mfa.unenroll({ factorId: submitted.data.factorId });
+    await authClient.unenroll({ factorId: submitted.data.factorId });
     const { decision, assurance } = await requireMutationAssurance();
     if (decision !== "satisfied") return TOTP_SERVICE_ERROR;`,
         ),
@@ -909,11 +921,13 @@ describe("preflight audit", () => {
         securityActions: TASK7_SECURITY_ACTIONS.replace(
           `    const { decision } = await requireMutationAssurance();
     if (decision !== "satisfied") return PASSWORD_SERVICE_ERROR;
+    const azure = await createServerAzureClient();
     const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);
-    await supabase.auth.updateUser({ password: parsed.data.password });`,
+    await authClient.updatePassword(accessToken, parsed.data.password);`,
           `    const { decision } = await requireMutationAssurance();
+    const azure = await createServerAzureClient();
     const verification = await verifyCurrentPassword(caller.email, parsed.data.currentPassword);
-    await supabase.auth.updateUser({ password: parsed.data.password });
+    await authClient.updatePassword(accessToken, parsed.data.password);
     if (decision !== "satisfied") return PASSWORD_SERVICE_ERROR;`,
         ),
       },
@@ -934,10 +948,12 @@ describe("preflight audit", () => {
       {
         profileAction: TASK7_PROFILE_ACTION.replace(
           `    if (decision !== "satisfied") return SERVICE_ERROR;
-    const { data: authData } = await supabase.auth.getUser();
-    const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});`,
-          `    const { data: authData } = await supabase.auth.getUser();
-    const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});
+    const azure = await createServerAzureClient();
+    const user = await azure.getUser();
+    const result = await azureUpdate("app_profiles", {}, []);`,
+          `    const azure = await createServerAzureClient();
+    const user = await azure.getUser();
+    const result = await azureUpdate("app_profiles", {}, []);
     if (decision !== "satisfied") return SERVICE_ERROR;`,
         ),
       },
@@ -968,8 +984,9 @@ describe("preflight audit", () => {
       {
         profileAction: `
           export async function updateProfile() {
-            const { data: authData } = await supabase.auth.getUser();
-            const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});
+            const azure = await createServerAzureClient();
+            const user = await azure.getUser();
+            const result = await azureUpdate("app_profiles", {}, []);
           }
         `,
       },
@@ -980,8 +997,9 @@ describe("preflight audit", () => {
       {
         preferencesAction: `
           export async function updatePreferences() {
-            const { data: authData } = await supabase.auth.getUser();
-            const { data, error } = await supabase.rpc(PROFILE_UPDATE_RPC, {});
+            const azure = await createServerAzureClient();
+            const user = await azure.getUser();
+            const result = await azureUpdate("app_profiles", {}, []);
             const { decision } = await requireMutationAssurance();
             if (decision !== "satisfied") return SERVICE_ERROR;
           }
@@ -1017,26 +1035,26 @@ describe("preflight audit", () => {
       "accountGuardEnforcesAssurance",
     ],
     [
-      "a login that redirects before resolving assurance",
+      "a login that redirects before recording lifecycle",
       {
         loginActions: `
           export async function login() {
-            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            const azure = await createServerAzureClient();
+            const { data, error } = await azure.signInWithPassword(email, password);
             redirect(parsed.data.nextPath);
-            const assurance = await resolveAssuranceState(supabase);
-            if (assurance.challengeRequired) return MFA_REQUIRED;
+            await registerCurrentAccountApiSession(azure);
           }
         `,
       },
       "loginRequiresSatisfiedAssurance",
     ],
     [
-      "a login that never checks the challenge requirement",
+      "a login that never records Account API lifecycle",
       {
         loginActions: `
           export async function login() {
-            const { error } = await supabase.auth.signInWithPassword({ email, password });
-            const assurance = await resolveAssuranceState(supabase);
+            const azure = await createServerAzureClient();
+            const { data, error } = await azure.signInWithPassword(email, password);
             redirect(parsed.data.nextPath);
           }
         `,
@@ -1169,7 +1187,7 @@ describe("preflight audit", () => {
           {
             key: "Content-Security-Policy",
             value:
-              "script-src 'self' https://challenges.cloudflare.com; connect-src 'self' https://*.supabase.co",
+              "script-src 'self' https://challenges.cloudflare.com; connect-src 'self' https://*.azurewebsites.net",
           },
         ],
       },

@@ -193,8 +193,8 @@ export async function changeEmail(
     if (verification === "rejected") return EMAIL_REAUTHENTICATION_ERROR;
     if (verification !== "verified") return EMAIL_SERVICE_ERROR;
 
-    // TODO: Implement Azure SQL email update
-    // For now, return service error
+    // Azure email-change confirmation is source-locked until the Account API owns the
+    // current/new-address confirmation state in Azure SQL.
     return EMAIL_SERVICE_ERROR;
   } catch {
     return EMAIL_SERVICE_ERROR;
@@ -238,7 +238,7 @@ export async function startTotpEnrollment(
 
   try {
     await requireSameOriginServerAction();
-    const { decision, assurance } = await requireMutationAssurance();
+    const { decision } = await requireMutationAssurance();
     if (decision === "challenge-required") return TOTP_CHALLENGE_ERROR;
     if (decision !== "satisfied") return TOTP_SERVICE_ERROR;
 
@@ -246,8 +246,8 @@ export async function startTotpEnrollment(
     const caller = await verifiedCaller(azure);
     if (!caller) return TOTP_SERVICE_ERROR;
 
-    // TODO: Implement Azure SQL TOTP enrollment
-    // For now, return service error
+    // Azure TOTP enrollment is source-locked until factor secret storage, verification
+    // windows, and AAL2 token issuance are reviewed together in the Account API.
     return TOTP_SERVICE_ERROR;
   } catch {
     return TOTP_SERVICE_ERROR;
@@ -289,8 +289,8 @@ export async function confirmTotpEnrollment(
     const caller = await verifiedCaller(azure);
     if (!caller) return TOTP_SERVICE_ERROR;
 
-    // TODO: Implement Azure SQL TOTP verification
-    // For now, return service error
+    // Azure TOTP verification is source-locked with enrollment; a portal-only verifier
+    // would create a second source of truth for AAL2.
     return TOTP_SERVICE_ERROR;
   } catch {
     return TOTP_SERVICE_ERROR;
@@ -349,8 +349,8 @@ export async function removeTotpFactor(
     if (verification === "rejected") return wrongPasswordForFactor(submitted.data.factorId);
     if (verification !== "verified") return TOTP_SERVICE_ERROR;
 
-    // TODO: Implement Azure SQL TOTP factor removal
-    // For now, return service error
+    // Azure TOTP removal is source-locked with enrollment so verified factors cannot
+    // diverge from the token assurance model.
     return TOTP_SERVICE_ERROR;
   } catch {
     return TOTP_SERVICE_ERROR;

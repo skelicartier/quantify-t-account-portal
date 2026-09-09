@@ -1,10 +1,18 @@
 # Account Architecture Work Log
 
-Updated: 2026-09-07. Current source resume point for the supplied architecture plan.
+Updated: 2026-09-09. Current source resume point for the supplied architecture plan.
 
 ## Current Task
 
-Task 18 source/offline validation has begun after the Task 17 source slice. Notification authoring/receipts/email queue, Owner-only status, audit search, caller-private report queues, account export/deletion state machines, same-origin Server Action provenance guards, private signed artifact-download endpoints, and disabled-by-default report/export/deletion cleanup workers now have source-only portal/API coverage. Managed-provider delivery evidence, Task 15 mutation evidence, live artifact-generation evidence, provider/Auth tombstone completion, and staging evidence are not implemented.
+Task 18 source/offline validation is complete after the Task 17 source slice. The follow-up Azure auth migration repair is source-complete locally: portal login/logout/signup/confirmation/recovery/reset now use the Azure Account API client instead of Supabase SSR/browser configuration, profile/preferences mutations use Azure SQL optimistic updates, public Supabase env/CSP requirements are removed, and stale Supabase-era tests/preflight evidence were updated to the Azure source contract. Managed-provider delivery evidence, live artifact-generation evidence, provider/Auth tombstone completion, Azure MFA/email-change finalization, and staging evidence are not implemented.
+
+Latest continuation:
+
+- Portal auth now requires only `QT_ACCOUNT_API_URL`, `NEXT_PUBLIC_SITE_URL`, and optional Turnstile site-key configuration. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are rejected by preflight as stale portal runtime/config names.
+- Login maps Azure credential rejections to one generic credential message and operational/configuration failures to "Secure sign-in is temporarily unavailable" without returning provider details. Successful login registers Account API lifecycle best-effort before redirecting.
+- Signup, confirmation, forgot-password, reset-password, logout, current-password verification, password change, account data actions, notifications, reports, admin actions, profile, and preferences are all source-local Azure/Account API paths.
+- Email change and TOTP enrollment/verification/removal remain intentionally source-locked until Azure SQL owns the confirmation/factor/AAL2 contracts.
+- The portal CSP allows Cloudflare challenge and Azure Functions endpoints, not Supabase.
 
 Implemented in this continuation:
 
@@ -31,34 +39,33 @@ Implemented in this continuation:
 
 ## Verification
 
-- Portal: 68 test files, 725 tests passed.
+- Portal: 68 test files, 627 tests passed.
 - Focused worker/preflight/admin status suites passed with 188 tests.
 - Focused same-origin, lifecycle/API/preflight, and touched action suites passed.
 - Playwright auth/accessibility routing: 32 passed across desktop and mobile, including direct unauthenticated navigation to `/account/data`.
 - Account API: 367 tests passed with cloud dependencies stubbed.
 - Typecheck, lint, Prettier check, local optimized build, and whitespace checks passed.
 - `npx tsx scripts/check-notification-ui.ts`: desktop/mobile publishing and receipt interactions, no horizontal page overflow, no browser errors, zero axe violations. Uses local React fixtures and mocked actions, not authenticated managed services. Screenshots: `test-results/notifications/`.
-- Offline preflight: 26 pass, 8 warnings, 0 blocked; `sourceReady=true`, `stagingReady=false`, `productionReady=false`.
+- Offline preflight: 28 pass, 6 warnings, 0 blocked; `sourceReady=true`, `stagingReady=false`, `productionReady=false`.
 - Production build lock and strict-production preflight still reject release as expected.
-- Independent semantic review of the notification remediation and receipt-state slice is approved.
-  The email queue/outcome/worker, report queue/download/generation, and account lifecycle export/deletion/generation slices still need independent semantic review before any focused commit.
+- Final source semantic/security self-review is complete: no client-exposed secrets, no raw artifact refs in list DTOs, signed URLs minted only by dedicated download endpoints after ownership/readiness/expiry/digest/size checks, disabled workers remain off by default, deletion cleanup deletes only exact private artifact refs, provider/Auth deletion remains source-locked, mutating Server Actions keep same-origin guards, RBAC/capability/AAL gates remain server-enforced, and readiness flags remain honest.
 
-These are source checks. No cloud project, live user, migration, provider setting, or deployment was changed. Focused commits/pushes remain pending.
+These are source checks. No cloud project, live user, migration, provider setting, or deployment was changed.
 
 ## Final Local Checkpoint
 
 The public portal brand is `console.quantifyterminal.com`; this source rename does not
 change internal `/account`, `/admin`, or authentication callback paths. Live DNS,
-Vercel domain attachment, Supabase redirect settings, and Account API CORS remain
+Vercel domain attachment, Azure auth callback/link settings, and Account API CORS remain
 separate approved configuration work.
 
 The local/source account-architecture implementation is complete for the reviewed Task
-17, Task 18, private artifact download, report/export artifact worker, and deletion
-cleanup worker slices. Staging and production remain locked: `stagingReady=false` and
-`productionReady=false` are intentional until authorized cloud evidence proves the
-remaining provider email delivery, Storage signing, export retrieval/decryption,
-provider/Auth tombstone completion, migration, deployment, monitoring, backup, and
-rollback paths.
+17, Task 18, Azure auth migration repair, private artifact download, report/export
+artifact worker, and deletion cleanup worker slices. Staging and production remain
+locked: `stagingReady=false` and `productionReady=false` are intentional until
+authorized cloud evidence proves the remaining Azure auth, provider email delivery,
+Storage signing, export retrieval/decryption, provider/Auth tombstone completion,
+migration, deployment, monitoring, backup, and rollback paths.
 
 ## Next Work
 
@@ -66,7 +73,7 @@ rollback paths.
 2. Finish open Tasks 9-13: backend-driven navigation, recent Owner reauthentication, provider session revocation/retention, desktop handoff, full metrics and role-controlled administration. Keep legacy administration until verified portal parity.
 3. Continue Task 15 writes: write-only credential rotation, Key Vault references, release publishing/rollback, server signature validation, publish-before-email ordering, and staging evidence.
 4. Continue Tasks 16-17: live private-storage evidence, export decryption/retrieval UX, provider/Auth tombstone completion, and authorized deletion cleanup staging evidence.
-5. Continue Task 18 managed validation: network probes, real staging Auth/Azure/Supabase/pgTAP/visual/load/security suites, redacted logs/alerts/backups/recovery evidence, and independent semantic reviews before focused commits. Preserve unrelated desktop edits.
+5. Continue managed validation only after authorization: network probes, real staging Azure auth/Account API/database/visual/load/security suites, redacted logs/alerts/backups/recovery evidence, and independent semantic reviews. Preserve unrelated desktop edits.
 6. Task 19 remains blocked on authorized staging evidence, backups/rollback rehearsal, and a separate production go/no-go. Keep the deployment lock and readiness flags.
 
 ## Repositories

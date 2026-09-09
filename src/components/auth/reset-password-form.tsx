@@ -1,21 +1,32 @@
 "use client";
 
 import { useActionState } from "react";
+import Link from "next/link";
 
 import { INITIAL_RESET_PASSWORD_STATE, type ResetPasswordAction } from "@/lib/auth/recovery";
 
 type ResetPasswordFormProps = {
   action: ResetPasswordAction;
+  token?: string | undefined;
 };
 
-export function ResetPasswordForm({ action }: ResetPasswordFormProps) {
+export function ResetPasswordForm({ action, token }: ResetPasswordFormProps) {
   const [state, formAction, isPending] = useActionState(action, INITIAL_RESET_PASSWORD_STATE);
   const passwordError = state.fieldErrors.password[0];
   const confirmationError = state.fieldErrors.passwordConfirmation[0];
 
+  if (state.status === "success") {
+    return (
+      <div className="auth-alert auth-alert--success" role="status">
+        {state.message} <Link href="/login?notice=password-updated">Sign in</Link>
+      </div>
+    );
+  }
+
   return (
     <>
       <form className="auth-form" action={formAction} noValidate>
+        {token && <input type="hidden" name="token" value={token} />}
         <div className="field-group">
           <div className="field-label-row">
             <label htmlFor="reset-password">New password</label>

@@ -2,9 +2,9 @@
 
 ## Current release boundary
 
-The portal source is suitable for GitHub CI and a Vercel **preview/staging** project. Website signup, trusted PKCE confirmation, non-enumerating recovery/reset, consent metadata, Supabase-managed Turnstile submission, account security settings, read-only account session/activity views, account data export/deletion controls, source-only Account API contracts, same-origin Server Action provenance checks, private signed artifact-download endpoints, and protected `/admin` dashboard plus `/admin/roles` reconciliation routes are implemented but have not been exercised against an authorized managed project. Recovery reset uses a five-minute HttpOnly browser marker bound to the exchanged UUID/access token and consumes it before mutation; without a separately approved server-held signing secret or atomic nonce store, that marker does not protect against a malicious bearer-token holder or concurrent replay. Session registration/heartbeat/revocation, privileged admin mutations, Account API deployment, desktop one-time handoff migration, and the checked-in Supabase migrations have not run against Azure, PostgreSQL, Storage, or staging.
+The portal source is suitable for GitHub CI and a Vercel **preview/staging** project. Azure Account API-backed login/logout/signup, token email confirmation, non-enumerating recovery/reset, consent metadata, source-locked account security settings, read-only account session/activity views, account data export/deletion controls, source-only Account API contracts, same-origin Server Action provenance checks, private signed artifact-download endpoints, and protected `/admin` dashboard plus `/admin/roles` reconciliation routes are implemented but have not been exercised against an authorized managed project. Session registration/heartbeat/revocation, privileged admin mutations, Account API deployment, desktop one-time handoff migration, and the checked-in legacy Supabase migrations have not run against Azure, PostgreSQL, Storage, or staging.
 
-Vercel builds must never migrate Supabase, seed roles, inspect desktop data, or deploy Azure resources.
+Vercel builds must never migrate Supabase, seed roles, inspect desktop data, deploy Azure resources, or mutate live provider settings.
 
 ## Vercel preview/staging setup
 
@@ -19,16 +19,14 @@ staging validation and must never use `*`.
 3. Enable Vercel Deployment Protection before supplying staging credentials, scope every staging value to Preview, and leave Production values unset. Do not attach the production account domain until the production gate below passes and the code lock is removed in the reviewed release task.
 4. Configure only these reviewed values in Vercel project settings:
 
-   | Variable                               | Scope                       | Rule                                                                                                                                                                    |
-   | -------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | `NEXT_PUBLIC_SITE_URL`                 | Browser-safe                | Exact staging portal origin, HTTPS outside localhost.                                                                                                                   |
-   | `NEXT_PUBLIC_SUPABASE_URL`             | Browser-safe                | Authorized staging Supabase URL, HTTPS.                                                                                                                                 |
-   | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe                | Publishable/anonymous staging key only.                                                                                                                                 |
-   | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`       | Browser-safe                | Staging site key. The portal submits responses as Supabase Auth `captchaToken`; the private verification secret belongs only in authorized Supabase Auth configuration. |
-   | `QT_ACCOUNT_API_URL`                   | Server-side public endpoint | Leave on the documented placeholder/omit from active use until the source-only Account API is deployed in authorized staging. Never place a credential in the URL.      |
+   | Variable                         | Scope                       | Rule                                                                                                  |
+   | -------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------- |
+   | `NEXT_PUBLIC_SITE_URL`           | Browser-safe                | Exact staging portal origin, HTTPS outside localhost.                                                 |
+   | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Browser-safe                | Optional staging site key when challenge enforcement is enabled outside the portal.                   |
+   | `QT_ACCOUNT_API_URL`             | Server-side public endpoint | Authorized staging Account API base URL, HTTPS outside localhost, no credentials, query, or fragment. |
 
-5. Never configure `SUPABASE_SERVICE_ROLE_KEY`, `AZURE_STORAGE_CONNECTION_STRING`, `BREVO_API_KEY`, `QT_AUTH_RESET_SECRET`, signing private keys, database passwords, or refresh/access tokens in this project.
-6. In an authorized, isolated staging Supabase project only, configure the exact site origin and callback URLs produced by the portal: `/auth/confirm?flow=signup` and `/auth/confirm?flow=recovery`. Enable managed Turnstile verification and approved SMTP/templates there. Do not change production Auth settings during preview setup. Dormant legacy desktop signup code expects an immediate Auth session, so mandatory email confirmation must not be enabled on the shared/live project before desktop compatibility is proven.
+5. Never configure `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `AZURE_STORAGE_CONNECTION_STRING`, `BREVO_API_KEY`, `QT_AUTH_RESET_SECRET`, signing private keys, database passwords, or refresh/access tokens in this project.
+6. In an authorized isolated staging Account API only, configure the exact site origin and callback URLs produced by the portal: `/auth/confirm?token=...` and `/reset-password?token=...`. Do not change production Auth, Supabase, Azure, Storage, DNS, or provider settings during preview setup.
 7. Require the GitHub `Portal CI` workflow to pass before promoting a preview.
 
 ## Validation commands
@@ -50,7 +48,7 @@ npm run preflight:strict
 
 The strict preflight is expected to fail while `productionReady` remains locked, including while any production warning is unresolved. It does not read `.env` files, touch any Storage service, or mutate cloud resources.
 
-`npm run validate` passes end to end in the integrated workspace and reports 26 pass, 8 warning, 0 blocked with `sourceReady` true. A `preflight:json` failure at the migration-integrity check is therefore never expected: it means the desktop migration bytes drifted from the reviewed pins and a human must review the migration change before repinning.
+`npm run validate` passes end to end in the integrated workspace and reports 28 pass, 6 warning, 0 blocked with `sourceReady` true. A `preflight:json` failure at the migration-integrity check is therefore never expected: it means the desktop migration bytes drifted from the reviewed pins and a human must review the migration change before repinning.
 
 Pin enforcement runs only where the desktop repository is present. `Portal CI` runs `validate:portal`, which stops at `next build` and never reaches preflight, and the focused real-bytes test skips when the sibling desktop checkout is absent. Treat the integrated `npm run validate` run and code review as the enforcement point for migration drift, not CI.
 
@@ -62,7 +60,7 @@ No Azure deployment should happen from Vercel, GitHub Actions, or this repositor
 
 ## User-data safety
 
-- Existing desktop/Supabase user records are read-only during portal preview preparation.
+- Existing desktop/Supabase user records are read-only during portal preview preparation and migration rehearsal.
 - Never replay the clean-local Supabase baseline over an existing project.
 - Never seed Owner/Admin/Support from email, metadata, local SQLite, or desktop flags.
 - Any migration application requires a backup, disposable staging clone, schema diff, pgTAP/RLS evidence, and explicit authorization.
@@ -80,4 +78,4 @@ authorized staging/cloud evidence covers migrations, provider email, Storage sig
 export retrieval/decryption, provider/Auth tombstone completion, monitoring, backups,
 rollback, and final go/no-go.
 
-A Vercel preview can be removed or rolled back to a prior deployment without changing Supabase/Azure data. Vercel production builds are also hard-blocked by `scripts/deployment-gate.ts`; the lock may be removed only in the reviewed release task. Production remains **NO-GO** until all of the following are recorded: successful staging Auth lifecycle evidence, PostgreSQL migration/pgTAP evidence, deployed Azure Account API RBAC parity, backup/restore rehearsal, exact-origin CORS, enforced credential-surface controls, DNS/TLS ownership, secret configuration review, and explicit human approval.
+A Vercel preview can be removed or rolled back to a prior deployment without changing Supabase/Azure data. Vercel production builds are also hard-blocked by `scripts/deployment-gate.ts`; the lock may be removed only in the reviewed release task. Production remains **NO-GO** until all of the following are recorded: successful staging Azure auth lifecycle evidence, migration/pgTAP or Azure SQL parity evidence as applicable, deployed Azure Account API RBAC parity, backup/restore rehearsal, exact-origin CORS, enforced credential-surface controls, DNS/TLS ownership, secret configuration review, and explicit human approval.

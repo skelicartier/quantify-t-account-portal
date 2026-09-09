@@ -33,7 +33,7 @@ test("a malformed confirmation link fails to one generic canonical notice", asyn
   await page.goto("/auth/confirm?flow=signup&next=https://evil.example/steal");
 
   await expect(page).toHaveURL((url) => {
-    return url.pathname === "/login" && url.searchParams.get("notice") === "invalid-auth-link";
+    return url.pathname === "/login" && url.searchParams.get("notice") === "invalid-confirm-link";
   });
   await expect(
     page.getByRole("status").filter({ hasText: /invalid or has expired/i }),

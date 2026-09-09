@@ -55,7 +55,7 @@ export const INITIAL_RECOVERY_REQUEST_STATE: RecoveryRequestActionState = {
 };
 
 export type ResetPasswordActionState = {
-  status: "idle" | "error";
+  status: "idle" | "error" | "success";
   message: string | null;
   fieldErrors: { password: string[]; passwordConfirmation: string[] };
 };

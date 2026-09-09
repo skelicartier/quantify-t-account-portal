@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { resolveAssuranceState } from "@/lib/auth/assurance";
 import { registerCurrentAccountApiSession } from "@/lib/account/session-lifecycle";
 import {
   isCredentialRejection,
@@ -12,7 +11,7 @@ import {
   type LoginActionState,
   type LoginChallengeActionState,
 } from "@/lib/auth/login";
-import { parseTotpCodeOnlyFormData, TOTP_CODE_LENGTH } from "@/lib/auth/security-input";
+import { parseTotpCodeOnlyFormData } from "@/lib/auth/security-input";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { createServerAzureClient } from "@/lib/supabase/server";
 
@@ -25,12 +24,6 @@ const AUTHENTICATION_ERROR: LoginActionState = {
 const SERVICE_ERROR: LoginActionState = {
   status: "error",
   message: "Secure sign-in is temporarily unavailable. Please try again.",
-  fieldErrors: { email: [], password: [], challenge: [] },
-};
-
-const MFA_REQUIRED: LoginActionState = {
-  status: "mfa-required",
-  message: `Enter the ${TOTP_CODE_LENGTH}-digit code from your authenticator app to finish signing in.`,
   fieldErrors: { email: [], password: [], challenge: [] },
 };
 
@@ -56,18 +49,13 @@ export async function login(
   try {
     await requireSameOriginServerAction();
     const azure = await createServerAzureClient();
-    const { data, error } = await azure.signInWithPassword(
-      parsed.data.email,
-      parsed.data.password,
-    );
-    if (error) return AUTHENTICATION_ERROR;
+    const { data, error } = await azure.signInWithPassword(parsed.data.email, parsed.data.password);
+    if (error) return isCredentialRejection(error) ? AUTHENTICATION_ERROR : SERVICE_ERROR;
+    if (!data?.session) return SERVICE_ERROR;
 
-    // For now, skip MFA check - will be implemented later with Azure SQL MFA support
-    // const assurance = await resolveAssuranceState(supabase);
-    // if (assurance.challengeRequired) return MFA_REQUIRED;
-    // await registerCurrentAccountApiSession(supabase);
-  } catch (e) {
-    console.error("[LOGIN ERROR]", e instanceof Error ? e.message : String(e));
+    await registerCurrentAccountApiSession(azure);
+  } catch {
+    console.error("[LOGIN ERROR] Secure sign-in failed.");
     return SERVICE_ERROR;
   }
 
@@ -76,17 +64,9 @@ export async function login(
 }
 
 /**
- * Complete a second-factor challenge for a session that already passed the password
- * step. Factors come from the provider's verified list, never from the submitted
- * form, so a caller cannot nominate an unverified or foreign factor — the form
- * carries a code and nothing else.
- *
- * A code belongs to one factor, and the portal caps enrollment at one, but an account
- * can still hold several verified factors from outside this portal. So each verified
- * factor is tried in turn and the code is only rejected once every factor has
- * rejected it; otherwise a visitor whose authenticator happened not to be first in
- * the list could never sign in. The cost is one provider challenge per extra factor
- * on a wrong code, which is why enrollment here stops at one.
+ * Source-locked Azure MFA completion placeholder. The form parser is kept strict,
+ * but no provider or database challenge is attempted until the staged Azure MFA
+ * contract exists.
  */
 export async function verifyLoginChallenge(
   _previousState: LoginChallengeActionState,
@@ -106,8 +86,7 @@ export async function verifyLoginChallenge(
 
   try {
     await requireSameOriginServerAction();
-    // MFA verification will be implemented later with Azure SQL MFA support
-    // For now, skip MFA and mark as verified
+    // Azure SQL MFA support is intentionally source-locked for a later authorized slice.
     verifiedFactor = true;
   } catch {
     return CHALLENGE_SERVICE_ERROR;

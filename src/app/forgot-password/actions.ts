@@ -2,6 +2,8 @@
 
 import { parseRecoveryRequestFormData, type RecoveryRequestActionState } from "@/lib/auth/recovery";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
+import { AzureAuthClient } from "@/lib/azure-auth-client";
+import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
 const EMPTY_FIELD_ERRORS: RecoveryRequestActionState["fieldErrors"] = {
   email: [],
@@ -10,7 +12,7 @@ const EMPTY_FIELD_ERRORS: RecoveryRequestActionState["fieldErrors"] = {
 
 const ACCEPTED_RECOVERY_STATE: RecoveryRequestActionState = {
   status: "accepted",
-  message: "If an account can use recovery, check that inbox for the next step.",
+  message: "If an account exists with that email, check your inbox for a recovery link.",
   fieldErrors: EMPTY_FIELD_ERRORS,
 };
 
@@ -29,8 +31,9 @@ export async function requestPasswordRecovery(
 
   try {
     await requireSameOriginServerAction();
-    // TODO: Implement Azure SQL password recovery with email
-    // For now, return success to not reveal whether account exists
+    const config = getAzureAuthConfig();
+    const client = new AzureAuthClient(config.apiUrl);
+    await client.forgotPassword(parsed.data.email);
     return ACCEPTED_RECOVERY_STATE;
   } catch {
     return SERVICE_ERROR_STATE;
