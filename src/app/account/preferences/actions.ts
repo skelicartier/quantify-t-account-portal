@@ -1,13 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 
 import {
   INITIAL_PREFERENCES_ACTION_STATE,
   parsePreferencesFormData,
   type PreferencesActionState,
 } from "@/lib/account/profile-input";
-import { azureFrom, azureUpdate } from "@/lib/dal/azure-sql-client";
+import { AccountApiRequestError, updateAccountApiProfile } from "@/lib/admin/account-api";
 import { requireMutationAssurance } from "@/lib/dal/assurance-guard";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { createServerAzureClient } from "@/lib/supabase/server";
@@ -42,31 +43,6 @@ function refreshPreferenceRoutes(): void {
   revalidatePath("/account/preferences");
 }
 
-async function readCommittedProfileVersion(userId: string): Promise<number | null> {
-  try {
-    const result = await azureFrom<{ profile_version: number }>("app_profiles")
-      .select("profile_version")
-      .eq("user_id", userId)
-      .single()
-      .execute();
-    const version = result.data?.profile_version;
-    return !result.error &&
-      typeof version === "number" &&
-      Number.isSafeInteger(version) &&
-      version > 0
-      ? version
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function rowMatchesVersion(row: unknown, userId: string, profileVersion: number): boolean {
-  if (!row || typeof row !== "object") return false;
-  const data = row as { user_id?: unknown; profile_version?: unknown };
-  return data.user_id === userId && data.profile_version === profileVersion;
-}
-
 export async function updatePreferences(
   _previousState: PreferencesActionState,
   formData: FormData,
@@ -86,31 +62,26 @@ export async function updatePreferences(
     const azure = await createServerAzureClient();
     const user = await azure.getUser();
     if (!user) return AUTH_ERROR;
+    const accessToken = azure.getAccessToken();
+    if (!accessToken) return AUTH_ERROR;
 
     const nextVersion = parsed.data.profileVersion + 1;
-    const result = await azureUpdate(
-      "app_profiles",
+    const result = await updateAccountApiProfile(
+      accessToken,
       {
+        expected_profile_version: parsed.data.profileVersion,
         timezone: parsed.data.timezone,
         default_currency: parsed.data.defaultCurrency,
         notify_price_alerts: parsed.data.notifyPriceAlerts,
         notify_portfolio_moves: parsed.data.notifyPortfolioMoves,
         notify_news_digest: parsed.data.notifyNewsDigest,
-        profile_version: nextVersion,
-        updated_at: new Date().toISOString(),
       },
-      [
-        { column: "user_id", value: user.id },
-        { column: "profile_version", value: parsed.data.profileVersion },
-      ],
+      { idempotencyKey: randomUUID() },
     );
 
-    if (result.error) return SERVICE_ERROR;
-    if (!result.data) {
-      refreshPreferenceRoutes();
-      return { ...STALE_ERROR, profileVersion: await readCommittedProfileVersion(user.id) };
+    if (result.profile.user_id !== user.id || result.profile.profile_version !== nextVersion) {
+      return SERVICE_ERROR;
     }
-    if (!rowMatchesVersion(result.data, user.id, nextVersion)) return SERVICE_ERROR;
 
     refreshPreferenceRoutes();
     return {
@@ -119,7 +90,18 @@ export async function updatePreferences(
       message: "Preferences saved.",
       profileVersion: nextVersion,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof AccountApiRequestError && error.code === "revision_conflict") {
+      refreshPreferenceRoutes();
+      const version = error.details.profile_version;
+      return {
+        ...STALE_ERROR,
+        profileVersion:
+          typeof version === "number" && Number.isSafeInteger(version) && version > 0
+            ? version
+            : null,
+      };
+    }
     return SERVICE_ERROR;
   }
 }

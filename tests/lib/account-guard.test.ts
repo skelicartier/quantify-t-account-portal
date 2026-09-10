@@ -4,7 +4,7 @@ const USER_ID = "860aac31-73fb-4e10-8f3f-bfcf22a71c11";
 
 const mocks = vi.hoisted(() => ({
   createServerAzureClient: vi.fn(),
-  azureFrom: vi.fn(),
+  fetchAccountApiProfile: vi.fn(),
   requireSatisfiedAssurance: vi.fn(),
   heartbeatCurrentAccountApiSession: vi.fn(),
   redirect: vi.fn((destination: string) => {
@@ -15,8 +15,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/server", () => ({
   createServerAzureClient: mocks.createServerAzureClient,
 }));
-vi.mock("@/lib/dal/azure-sql-client", () => ({
-  azureFrom: mocks.azureFrom,
+vi.mock("@/lib/admin/account-api", () => ({
+  fetchAccountApiProfile: mocks.fetchAccountApiProfile,
 }));
 vi.mock("@/lib/dal/assurance-guard", () => ({
   requireSatisfiedAssurance: mocks.requireSatisfiedAssurance,
@@ -43,20 +43,30 @@ function installClient(options: ClientOptions = {}) {
   }
 
   const authenticated = options.authenticated ?? true;
-  const execute = vi.fn().mockResolvedValue({
-    data: {
+  mocks.fetchAccountApiProfile.mockResolvedValue({
+    profile: {
       user_id: USER_ID,
       first_name: "Avery",
       last_name: "Stone",
+      email: "user@example.com",
+      phone: "",
+      country: "United States",
+      is_admin: false,
       is_active: true,
+      timezone: "UTC",
+      default_currency: "USD",
       subscription_tier: "free",
+      two_factor_enabled: false,
+      notify_price_alerts: true,
+      notify_portfolio_moves: true,
+      notify_news_digest: false,
+      data_refresh_rate: "15m",
+      theme_preference: "system",
+      profile_version: 2,
       created_at: "2024-01-03T03:04:05.000Z",
-      last_login_at: null,
+      last_login_at: "",
+      updated_at: "2026-09-02T08:00:00.000Z",
     },
-    error: null,
-  });
-  mocks.azureFrom.mockReturnValue({
-    select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn(() => ({ execute })) })) })),
   });
   mocks.createServerAzureClient.mockResolvedValue({
     getUser: vi.fn(async () => {

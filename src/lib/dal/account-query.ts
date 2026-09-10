@@ -3,17 +3,9 @@ import {
   type AccountOverviewDto,
   type AccountProfileState,
 } from "@/lib/dto/account";
-import { azureFrom } from "@/lib/dal/azure-sql-client";
+import { fetchAccountApiProfile } from "@/lib/admin/account-api";
 
-export const ACCOUNT_PROFILE_COLUMNS = [
-  "user_id",
-  "first_name",
-  "last_name",
-  "is_active",
-  "subscription_tier",
-  "created_at",
-  "last_login_at",
-].join(",");
+export const ACCOUNT_PROFILE_ENDPOINT = "auth/user/profile";
 
 type AzureUserResult = { id: string; email: string; [key: string]: unknown } | null;
 
@@ -32,6 +24,7 @@ export class AccountOverviewUnavailableError extends Error {
 
 export type AccountDataClient = {
   getUser: () => Promise<AzureUserResult>;
+  getAccessToken: () => string | null;
 };
 
 /**
@@ -56,23 +49,27 @@ export async function loadAccountOverview(
 
   if (!identity?.id) return null;
 
+  const accessToken = client.getAccessToken();
+  if (!accessToken) throw new AccountOverviewUnavailableError();
+
   let profile: unknown = null;
   let profileState: AccountProfileState = "missing";
   try {
-    const result = await azureFrom("app_profiles")
-      .select(ACCOUNT_PROFILE_COLUMNS)
-      .eq("user_id", identity.id)
-      .single()
-      .execute();
-
-    profile = result.data;
-    profileState = result.error ? "unavailable" : result.data ? "ready" : "missing";
+    profile = (await fetchAccountApiProfile(accessToken)).profile;
+    profileState = profile ? "ready" : "missing";
   } catch {
     profileState = "unavailable";
   }
 
   try {
-    return mapAccountOverview({ identity, profile, profileState });
+    return mapAccountOverview({
+      identity: {
+        ...identity,
+        email_confirmed_at: identity.email_confirmed === true ? new Date(0).toISOString() : null,
+      },
+      profile,
+      profileState,
+    });
   } catch {
     throw new AccountOverviewUnavailableError();
   }

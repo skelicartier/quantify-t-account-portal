@@ -1,8 +1,8 @@
 import {
-  ACCOUNT_ACTIVITY_COLUMNS,
+  ACCOUNT_ACTIVITY_ENDPOINT,
   ACCOUNT_ACTIVITY_LIMIT,
   ACCOUNT_ACTIVITY_UNAVAILABLE_MESSAGE,
-  ACCOUNT_SESSION_COLUMNS,
+  ACCOUNT_SESSIONS_ENDPOINT,
   ACCOUNT_SESSION_LIMIT,
   ACCOUNT_SESSIONS_UNAVAILABLE_MESSAGE,
   loadAccountActivityEvents,
@@ -42,11 +42,13 @@ const eventRow = {
 };
 
 const mocks = vi.hoisted(() => ({
-  azureFrom: vi.fn(),
+  fetchAccountApiActivity: vi.fn(),
+  fetchAccountApiSessions: vi.fn(),
 }));
 
-vi.mock("@/lib/dal/azure-sql-client", () => ({
-  azureFrom: mocks.azureFrom,
+vi.mock("@/lib/admin/account-api", () => ({
+  fetchAccountApiActivity: mocks.fetchAccountApiActivity,
+  fetchAccountApiSessions: mocks.fetchAccountApiSessions,
 }));
 
 function createClient(options?: {
@@ -56,27 +58,16 @@ function createClient(options?: {
   queryError?: boolean;
   authThrows?: boolean;
   malformedIdentity?: boolean;
+  accessToken?: string | null;
 }) {
   const authenticated = options?.authenticated ?? true;
-  const sessionExecute = vi.fn().mockResolvedValue({
-    data: options?.sessionRows ?? [sessionRow],
-    error: options?.queryError ? { message: "provider detail" } : null,
+  mocks.fetchAccountApiSessions.mockImplementation(async () => {
+    if (options?.queryError) throw new Error("provider detail");
+    return { sessions: options?.sessionRows ?? [sessionRow] };
   });
-  const activityExecute = vi.fn().mockResolvedValue({
-    data: options?.activityRows ?? [eventRow],
-    error: options?.queryError ? { message: "provider detail" } : null,
-  });
-  const sessionLimit = vi.fn(() => ({ execute: sessionExecute }));
-  const activityLimit = vi.fn(() => ({ execute: activityExecute }));
-  const sessionOrder = vi.fn(() => ({ limit: sessionLimit }));
-  const activityOrder = vi.fn(() => ({ limit: activityLimit }));
-  const sessionEq = vi.fn(() => ({ order: sessionOrder }));
-  const activityEq = vi.fn(() => ({ order: activityOrder }));
-  const sessionSelect = vi.fn(() => ({ eq: sessionEq }));
-  const activitySelect = vi.fn(() => ({ eq: activityEq }));
-  mocks.azureFrom.mockImplementation((table: "account_sessions" | "auth_events") => {
-    if (table === "account_sessions") return { select: sessionSelect };
-    return { select: activitySelect };
+  mocks.fetchAccountApiActivity.mockImplementation(async () => {
+    if (options?.queryError) throw new Error("provider detail");
+    return { events: options?.activityRows ?? [eventRow] };
   });
   const getUser = vi.fn().mockImplementation(async () => {
     if (options?.authThrows) throw new Error("auth transport");
@@ -87,20 +78,12 @@ function createClient(options?: {
         }
       : null;
   });
+  const getAccessToken = vi.fn(() =>
+    options && "accessToken" in options ? options.accessToken : "bearer-token",
+  );
 
   return {
-    client: { getUser } as unknown as AccountSessionDataClient,
-    from: mocks.azureFrom,
-    sessionSelect,
-    sessionEq,
-    sessionOrder,
-    sessionLimit,
-    sessionExecute,
-    activitySelect,
-    activityEq,
-    activityOrder,
-    activityLimit,
-    activityExecute,
+    client: { getUser, getAccessToken } as unknown as AccountSessionDataClient,
   };
 }
 
@@ -144,38 +127,36 @@ describe("session DTO mapping", () => {
 });
 
 describe("account session query", () => {
-  it("loads account sessions through an explicit owner-scoped column query", async () => {
-    const { client, from, sessionSelect, sessionEq, sessionOrder, sessionLimit } = createClient();
+  it("loads account sessions through the Account API after verifying the user", async () => {
+    const { client } = createClient();
 
     const sessions = await loadAccountSessions(client, {
       now: new Date("2026-09-03T09:00:00.000Z"),
     });
 
     expect(sessions?.[0]?.id).toBe(SESSION_ID);
-    expect(from).toHaveBeenCalledWith("account_sessions");
-    expect(sessionSelect).toHaveBeenCalledWith(ACCOUNT_SESSION_COLUMNS);
-    expect(ACCOUNT_SESSION_COLUMNS).not.toContain("*");
-    expect(ACCOUNT_SESSION_COLUMNS).not.toContain("metadata");
-    expect(ACCOUNT_SESSION_COLUMNS).not.toContain("provider_session_id");
-    expect(ACCOUNT_SESSION_COLUMNS).not.toContain("user_agent");
-    expect(ACCOUNT_SESSION_COLUMNS).not.toContain("ip_address");
-    expect(ACCOUNT_SESSION_COLUMNS).not.toContain("passcode");
-    expect(sessionEq).toHaveBeenCalledWith("user_id", USER_ID);
-    expect(sessionOrder).toHaveBeenCalledWith("last_seen_at", { ascending: false });
-    expect(sessionLimit).toHaveBeenCalledWith(ACCOUNT_SESSION_LIMIT);
+    expect(mocks.fetchAccountApiSessions).toHaveBeenCalledWith("bearer-token");
+    expect(ACCOUNT_SESSIONS_ENDPOINT).toBe("sessions");
+    expect(ACCOUNT_SESSION_LIMIT).toBe(50);
+    expect(JSON.stringify(sessions)).not.toContain("metadata");
+    expect(JSON.stringify(sessions)).not.toContain("provider_session_id");
+    expect(JSON.stringify(sessions)).not.toContain("user_agent");
+    expect(JSON.stringify(sessions)).not.toContain("ip_address");
+    expect(JSON.stringify(sessions)).not.toContain("passcode");
   });
 
   it("does not query sessions without a verified user", async () => {
-    const { client, from } = createClient({ authenticated: false });
+    const { client } = createClient({ authenticated: false });
 
     await expect(loadAccountSessions(client)).resolves.toBeNull();
-    expect(from).not.toHaveBeenCalled();
+    expect(mocks.fetchAccountApiSessions).not.toHaveBeenCalled();
   });
 
   it.each([
     ["a thrown Auth transport", { authThrows: true }],
     ["an unusable identity", { malformedIdentity: true }],
     ["a provider query error", { queryError: true }],
+    ["a missing bearer token", { accessToken: null }],
     ["malformed session rows", { sessionRows: [{ ...sessionRow, created_at: "not-a-date" }] }],
   ])("raises a generic session unavailable error for %s", async (_label, options) => {
     const { client } = createClient(options);
@@ -187,37 +168,34 @@ describe("account session query", () => {
 });
 
 describe("account activity query", () => {
-  it("loads auth events through an explicit owner-scoped column query", async () => {
-    const { client, from, activitySelect, activityEq, activityOrder, activityLimit } =
-      createClient();
+  it("loads auth events through the Account API after verifying the user", async () => {
+    const { client } = createClient();
 
     const events = await loadAccountActivityEvents(client);
 
     expect(events?.[0]?.id).toBe(EVENT_ID);
-    expect(from).toHaveBeenCalledWith("auth_events");
-    expect(activitySelect).toHaveBeenCalledWith(ACCOUNT_ACTIVITY_COLUMNS);
-    expect(ACCOUNT_ACTIVITY_COLUMNS).not.toContain("*");
-    expect(ACCOUNT_ACTIVITY_COLUMNS).not.toContain("metadata");
-    expect(ACCOUNT_ACTIVITY_COLUMNS).not.toContain("request_id");
-    expect(ACCOUNT_ACTIVITY_COLUMNS).not.toContain("user_agent");
-    expect(ACCOUNT_ACTIVITY_COLUMNS).not.toContain("ip_address");
-    expect(ACCOUNT_ACTIVITY_COLUMNS).not.toContain("passcode");
-    expect(activityEq).toHaveBeenCalledWith("user_id", USER_ID);
-    expect(activityOrder).toHaveBeenCalledWith("occurred_at", { ascending: false });
-    expect(activityLimit).toHaveBeenCalledWith(ACCOUNT_ACTIVITY_LIMIT);
+    expect(mocks.fetchAccountApiActivity).toHaveBeenCalledWith("bearer-token");
+    expect(ACCOUNT_ACTIVITY_ENDPOINT).toBe("activity");
+    expect(ACCOUNT_ACTIVITY_LIMIT).toBe(100);
+    expect(JSON.stringify(events)).not.toContain("metadata");
+    expect(JSON.stringify(events)).not.toContain("request_id");
+    expect(JSON.stringify(events)).not.toContain("user_agent");
+    expect(JSON.stringify(events)).not.toContain("ip_address");
+    expect(JSON.stringify(events)).not.toContain("passcode");
   });
 
   it("does not query activity without a verified user", async () => {
-    const { client, from } = createClient({ authenticated: false });
+    const { client } = createClient({ authenticated: false });
 
     await expect(loadAccountActivityEvents(client)).resolves.toBeNull();
-    expect(from).not.toHaveBeenCalled();
+    expect(mocks.fetchAccountApiActivity).not.toHaveBeenCalled();
   });
 
   it.each([
     ["a thrown Auth transport", { authThrows: true }],
     ["an unusable identity", { malformedIdentity: true }],
     ["a provider query error", { queryError: true }],
+    ["a missing bearer token", { accessToken: null }],
     ["malformed activity rows", { activityRows: [{ ...eventRow, outcome: "maybe" }] }],
   ])("raises a generic activity unavailable error for %s", async (_label, options) => {
     const { client } = createClient(options);

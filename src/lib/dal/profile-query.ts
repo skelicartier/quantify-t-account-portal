@@ -1,27 +1,13 @@
 import { mapAccountProfile, type AccountProfileDto } from "@/lib/dto/profile";
-import { azureFrom } from "@/lib/dal/azure-sql-client";
+import { fetchAccountApiProfile } from "@/lib/admin/account-api";
 
-export const ACCOUNT_PROFILE_DETAIL_COLUMNS = [
-  "user_id",
-  "first_name",
-  "last_name",
-  "phone",
-  "country",
-  "timezone",
-  "default_currency",
-  "notify_price_alerts",
-  "notify_portfolio_moves",
-  "notify_news_digest",
-  "profile_version",
-  "updated_at",
-].join(",");
+export const ACCOUNT_PROFILE_ENDPOINT = "auth/user/profile";
 
 type AzureUserResult = { id: string; email: string; [key: string]: unknown } | null;
 
-type ProfileResult = { data: unknown; error: unknown };
-
 export type ProfileDataClient = {
   getUser: () => Promise<AzureUserResult>;
+  getAccessToken: () => string | null;
 };
 
 export const PROFILE_UNAVAILABLE_MESSAGE = "Account profile is temporarily unavailable.";
@@ -58,20 +44,17 @@ export async function loadAccountProfile(
 
   if (!identity?.id) return null;
 
-  let result: ProfileResult;
+  const accessToken = client.getAccessToken();
+  if (!accessToken) throw new AccountProfileUnavailableError();
+
+  let profile: unknown;
   try {
-    result = await azureFrom("app_profiles")
-      .select(ACCOUNT_PROFILE_DETAIL_COLUMNS)
-      .eq("user_id", identity.id)
-      .single()
-      .execute();
+    profile = (await fetchAccountApiProfile(accessToken)).profile;
   } catch {
     throw new AccountProfileUnavailableError();
   }
 
-  if (result.error || !result.data) throw new AccountProfileUnavailableError();
-
-  const profile = mapAccountProfile(identity, result.data);
-  if (!profile) throw new AccountProfileUnavailableError();
-  return profile;
+  const dto = mapAccountProfile(identity, profile);
+  if (!dto) throw new AccountProfileUnavailableError();
+  return dto;
 }

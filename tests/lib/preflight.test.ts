@@ -258,7 +258,7 @@ const TASK7_PROFILE_ACTION = `
     if (decision !== "satisfied") return SERVICE_ERROR;
     const azure = await createServerAzureClient();
     const user = await azure.getUser();
-    const result = await azureUpdate("app_profiles", {}, []);
+    const result = await updateAccountApiProfile(accessToken, {}, { idempotencyKey });
   }
 `;
 
@@ -268,7 +268,7 @@ const TASK7_PREFERENCES_ACTION = `
     if (decision !== "satisfied") return SERVICE_ERROR;
     const azure = await createServerAzureClient();
     const user = await azure.getUser();
-    const result = await azureUpdate("app_profiles", {}, []);
+    const result = await updateAccountApiProfile(accessToken, {}, { idempotencyKey });
   }
 `;
 
@@ -304,48 +304,19 @@ const TASK7_LIFECYCLE_SOURCES = {
   profileAction: TASK7_PROFILE_ACTION,
   preferencesAction: TASK7_PREFERENCES_ACTION,
   sessionQuery: `
-    export const ACCOUNT_SESSION_COLUMNS = [
-      "id",
-      "user_id",
-      "source",
-      "provider",
-      "client_instance_id",
-      "device_name",
-      "created_at",
-      "last_seen_at",
-      "expires_at",
-      "revoked_at",
-      "revoke_reason",
-    ].join(",");
-    export const ACCOUNT_ACTIVITY_COLUMNS = [
-      "id",
-      "user_id",
-      "session_id",
-      "event_type",
-      "outcome",
-      "source",
-      "occurred_at",
-      "created_at",
-    ].join(",");
+    export const ACCOUNT_SESSIONS_ENDPOINT = "sessions";
+    export const ACCOUNT_ACTIVITY_ENDPOINT = "activity";
     export async function loadAccountSessions(client) {
       const userId = await currentVerifiedUserId(client);
-      const result = await azureFrom("account_sessions")
-        .select(ACCOUNT_SESSION_COLUMNS)
-        .eq("user_id", userId)
-        .order("last_seen_at", { ascending: false })
-        .limit(ACCOUNT_SESSION_LIMIT)
-        .execute();
-      return mapAccountSessions(userId, result.data);
+      const accessToken = client.getAccessToken();
+      const rows = (await fetchAccountApiSessions(accessToken)).sessions;
+      return mapAccountSessions(userId, rows, options);
     }
     export async function loadAccountActivityEvents(client) {
       const userId = await currentVerifiedUserId(client);
-      const result = await azureFrom("auth_events")
-        .select(ACCOUNT_ACTIVITY_COLUMNS)
-        .eq("user_id", userId)
-        .order("occurred_at", { ascending: false })
-        .limit(ACCOUNT_ACTIVITY_LIMIT)
-        .execute();
-      return mapAccountActivityEvents(userId, result.data);
+      const accessToken = client.getAccessToken();
+      const rows = (await fetchAccountApiActivity(accessToken)).events;
+      return mapAccountActivityEvents(userId, rows);
     }
   `,
   sessionLifecycle: `
@@ -950,10 +921,10 @@ describe("preflight audit", () => {
           `    if (decision !== "satisfied") return SERVICE_ERROR;
     const azure = await createServerAzureClient();
     const user = await azure.getUser();
-    const result = await azureUpdate("app_profiles", {}, []);`,
+    const result = await updateAccountApiProfile(accessToken, {}, { idempotencyKey });`,
           `    const azure = await createServerAzureClient();
     const user = await azure.getUser();
-    const result = await azureUpdate("app_profiles", {}, []);
+    const result = await updateAccountApiProfile(accessToken, {}, { idempotencyKey });
     if (decision !== "satisfied") return SERVICE_ERROR;`,
         ),
       },
@@ -986,7 +957,7 @@ describe("preflight audit", () => {
           export async function updateProfile() {
             const azure = await createServerAzureClient();
             const user = await azure.getUser();
-            const result = await azureUpdate("app_profiles", {}, []);
+            const result = await updateAccountApiProfile(accessToken, {}, { idempotencyKey });
           }
         `,
       },
@@ -999,7 +970,7 @@ describe("preflight audit", () => {
           export async function updatePreferences() {
             const azure = await createServerAzureClient();
             const user = await azure.getUser();
-            const result = await azureUpdate("app_profiles", {}, []);
+            const result = await updateAccountApiProfile(accessToken, {}, { idempotencyKey });
             const { decision } = await requireMutationAssurance();
             if (decision !== "satisfied") return SERVICE_ERROR;
           }
@@ -1081,8 +1052,8 @@ describe("preflight audit", () => {
       "session reads that include sensitive provider fields",
       {
         sessionQuery: TASK7_LIFECYCLE_SOURCES.sessionQuery.replace(
-          '"device_name"',
-          '"provider_session_id"',
+          "return mapAccountSessions(userId, rows, options);",
+          'const provider_session_id = "leak"; return mapAccountSessions(userId, rows, options);',
         ),
       },
       "sessionQueriesUseSafeReadColumns",

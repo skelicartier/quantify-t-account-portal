@@ -2,7 +2,7 @@ const USER_ID = "860aac31-73fb-4e10-8f3f-bfcf22a71c11";
 
 const mocks = vi.hoisted(() => ({
   createServerAzureClient: vi.fn(),
-  azureFrom: vi.fn(),
+  fetchAccountApiProfile: vi.fn(),
   heartbeatCurrentAccountApiSession: vi.fn(),
   redirect: vi.fn((destination: string) => {
     throw new Error(`NEXT_REDIRECT:${destination}`);
@@ -12,8 +12,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/server", () => ({
   createServerAzureClient: mocks.createServerAzureClient,
 }));
-vi.mock("@/lib/dal/azure-sql-client", () => ({
-  azureFrom: mocks.azureFrom,
+vi.mock("@/lib/admin/account-api", () => ({
+  fetchAccountApiProfile: mocks.fetchAccountApiProfile,
 }));
 vi.mock("@/lib/account/session-lifecycle", () => ({
   heartbeatCurrentAccountApiSession: mocks.heartbeatCurrentAccountApiSession,
@@ -30,8 +30,11 @@ function profileRow() {
     last_name: "Stone",
     phone: "",
     country: "United States",
+    email: "user@example.com",
+    is_admin: false,
     is_active: true,
     subscription_tier: "free",
+    two_factor_enabled: false,
     timezone: "UTC",
     default_currency: "USD",
     notify_price_alerts: true,
@@ -39,7 +42,9 @@ function profileRow() {
     notify_news_digest: false,
     profile_version: 3,
     created_at: "2024-01-03T03:04:05.000Z",
-    last_login_at: null,
+    last_login_at: "",
+    data_refresh_rate: "15m",
+    theme_preference: "system",
     updated_at: "2026-09-02T08:00:00.000Z",
   };
 }
@@ -67,15 +72,7 @@ function installClient(options: { authenticated?: boolean; clientThrows?: boolea
     getAccessToken: vi.fn(() => "access-token"),
   };
   mocks.createServerAzureClient.mockResolvedValue(azure);
-  mocks.azureFrom.mockReturnValue({
-    select: vi.fn(() => ({
-      eq: vi.fn(() => ({
-        single: vi.fn(() => ({
-          execute: vi.fn(async () => ({ data: profileRow(), error: null })),
-        })),
-      })),
-    })),
-  });
+  mocks.fetchAccountApiProfile.mockResolvedValue({ profile: profileRow() });
 }
 
 beforeEach(() => {

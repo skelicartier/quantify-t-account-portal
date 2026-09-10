@@ -190,20 +190,18 @@ function hasSafeSessionActivityReads(source: string): boolean {
 
   return (
     includesEvery(source, [
-      "ACCOUNT_SESSION_COLUMNS",
-      "ACCOUNT_ACTIVITY_COLUMNS",
-      '"account_sessions"',
-      '"auth_events"',
+      "ACCOUNT_SESSIONS_ENDPOINT",
+      "ACCOUNT_ACTIVITY_ENDPOINT",
+      "fetchAccountApiSessions",
+      "fetchAccountApiActivity",
       "mapAccountSessions",
       "mapAccountActivityEvents",
+      "getAccessToken",
     ]) &&
-    compactSource.includes('azureFrom("account_sessions").select(ACCOUNT_SESSION_COLUMNS)') &&
-    compactSource.includes('azureFrom("auth_events").select(ACCOUNT_ACTIVITY_COLUMNS)') &&
-    compactSource.includes('.eq("user_id",userId)') &&
-    compactSource.includes('.order("last_seen_at",{ascending:false})') &&
-    compactSource.includes('.order("occurred_at",{ascending:false})') &&
-    compactSource.includes(`.limit(ACCOUNT_SESSION_LIMIT).execute()`) &&
-    compactSource.includes(`.limit(ACCOUNT_ACTIVITY_LIMIT).execute()`) &&
+    compactSource.includes("fetchAccountApiSessions(accessToken)") &&
+    compactSource.includes("fetchAccountApiActivity(accessToken)") &&
+    compactSource.includes("mapAccountSessions(userId,rows,options)") &&
+    compactSource.includes("mapAccountActivityEvents(userId,rows)") &&
     !forbiddenColumns.some((column) => source.includes(column))
   );
 }
@@ -462,12 +460,15 @@ export function analyzePortalAuthLifecycle({
       ]),
     // The same requirement on the two profile mutations behind the account pages.
     accountActionsRequireAssurance:
-      refusesUnsatisfiedDecision(updateProfileBody, ["getUser", "azureUpdate"]) &&
-      refusesUnsatisfiedDecision(updatePreferencesBody, ["getUser", "azureUpdate"]) &&
-      callPrecedesAll(updateProfileCalls, "requireMutationAssurance", ["getUser", "azureUpdate"]) &&
+      refusesUnsatisfiedDecision(updateProfileBody, ["getUser", "updateAccountApiProfile"]) &&
+      refusesUnsatisfiedDecision(updatePreferencesBody, ["getUser", "updateAccountApiProfile"]) &&
+      callPrecedesAll(updateProfileCalls, "requireMutationAssurance", [
+        "getUser",
+        "updateAccountApiProfile",
+      ]) &&
       callPrecedesAll(updatePreferencesCalls, "requireMutationAssurance", [
         "getUser",
-        "azureUpdate",
+        "updateAccountApiProfile",
       ]),
     // A submitted factor id is only ever challenged after the provider confirms it is
     // this caller's own pending enrollment.

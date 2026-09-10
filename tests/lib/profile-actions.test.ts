@@ -7,8 +7,7 @@ const USER_ID = "860aac31-73fb-4e10-8f3f-bfcf22a71c11";
 
 const mocks = vi.hoisted(() => ({
   createServerAzureClient: vi.fn(),
-  azureFrom: vi.fn(),
-  azureUpdate: vi.fn(),
+  updateAccountApiProfile: vi.fn(),
   requireMutationAssurance: vi.fn(),
   requireSameOriginServerAction: vi.fn(),
   revalidatePath: vi.fn(),
@@ -17,9 +16,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/server", () => ({
   createServerAzureClient: mocks.createServerAzureClient,
 }));
-vi.mock("@/lib/dal/azure-sql-client", () => ({
-  azureFrom: mocks.azureFrom,
-  azureUpdate: mocks.azureUpdate,
+vi.mock("@/lib/admin/account-api", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/admin/account-api")>("@/lib/admin/account-api")),
+  updateAccountApiProfile: mocks.updateAccountApiProfile,
 }));
 vi.mock("@/lib/dal/assurance-guard", () => ({
   requireMutationAssurance: mocks.requireMutationAssurance,
@@ -31,6 +30,7 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
 import { updatePreferences } from "@/app/account/preferences/actions";
 import { updateProfile } from "@/app/account/profile/actions";
+import { AccountApiRequestError } from "@/lib/admin/account-api";
 
 function profileForm(): FormData {
   const form = new FormData();
@@ -54,50 +54,40 @@ function preferencesForm(): FormData {
 
 function installClient(options?: {
   authenticated?: boolean;
-  updateData?: unknown;
-  updateError?: unknown;
+  updateProfileVersion?: number;
+  updateUserId?: string;
+  updateError?: Error;
   updateThrows?: boolean;
-  committedVersion?: number | null;
   assuranceDecision?: "satisfied" | "challenge-required" | "unavailable";
+  accessToken?: string | null;
 }) {
   const authenticated = options?.authenticated ?? true;
-  const execute = vi.fn().mockResolvedValue({
-    data:
-      options && "committedVersion" in options
-        ? { profile_version: options.committedVersion }
-        : { profile_version: 9 },
-    error: null,
-  });
-  const single = vi.fn(() => ({ execute }));
-  const eq = vi.fn(() => ({ single }));
-  const select = vi.fn(() => ({ eq }));
-  mocks.azureFrom.mockReturnValue({ select });
-  mocks.azureUpdate.mockImplementation(async (_table, values, conditions) => {
+  const accessToken = options && "accessToken" in options ? options.accessToken : "bearer-token";
+  mocks.updateAccountApiProfile.mockImplementation(async (_accessToken, body) => {
     if (options?.updateThrows) throw new Error("provider transport failed");
-    if (options?.updateError !== undefined) return { data: null, error: options.updateError };
-    if (options && "updateData" in options) return { data: options.updateData, error: null };
+    if (options?.updateError) throw options.updateError;
     return {
-      data: {
-        user_id: conditions[0].value,
-        profile_version: values.profile_version,
+      profile: {
+        user_id: options?.updateUserId ?? USER_ID,
+        profile_version: options?.updateProfileVersion ?? body.expected_profile_version + 1,
+        updated_at: "2026-09-09T10:00:00Z",
       },
-      error: null,
     };
   });
   mocks.createServerAzureClient.mockResolvedValue({
     getUser: vi.fn().mockResolvedValue(authenticated ? { id: USER_ID } : null),
+    getAccessToken: vi.fn(() => accessToken),
   });
   mocks.requireMutationAssurance.mockResolvedValue({
     decision: options?.assuranceDecision ?? "satisfied",
   });
   mocks.requireSameOriginServerAction.mockResolvedValue(undefined);
-  return { execute, select, eq };
 }
 
 describe("profile Server Actions", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("updates profile fields through an owner and version scoped Azure SQL mutation", async () => {
+  it("updates profile fields through an owner and version scoped Account API mutation", async () => {
     installClient();
 
     const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
@@ -107,21 +97,18 @@ describe("profile Server Actions", () => {
       message: "Profile saved.",
       profileVersion: 5,
     });
-    expect(mocks.azureUpdate).toHaveBeenCalledWith(
-      "app_profiles",
-      expect.objectContaining({
+    expect(mocks.updateAccountApiProfile).toHaveBeenCalledWith(
+      "bearer-token",
+      {
+        expected_profile_version: 4,
         first_name: "Avery",
         last_name: "Stone",
         phone: "+1 415 555 0100",
         country: "United States",
-        profile_version: 5,
-      }),
-      [
-        { column: "user_id", value: USER_ID },
-        { column: "profile_version", value: 4 },
-      ],
+      },
+      { idempotencyKey: expect.any(String) },
     );
-    expect(JSON.stringify(mocks.azureUpdate.mock.calls)).not.toContain("p_user_id");
+    expect(JSON.stringify(mocks.updateAccountApiProfile.mock.calls)).not.toContain("p_user_id");
     expect(mocks.revalidatePath.mock.calls.flat()).toEqual([
       "/account",
       "/account/profile",
@@ -135,39 +122,47 @@ describe("profile Server Actions", () => {
     const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
 
     expect(result).toMatchObject({ status: "success", profileVersion: 6 });
-    expect(mocks.azureUpdate).toHaveBeenCalledWith(
-      "app_profiles",
-      expect.objectContaining({
+    expect(mocks.updateAccountApiProfile).toHaveBeenCalledWith(
+      "bearer-token",
+      {
+        expected_profile_version: 5,
         timezone: "America/New_York",
         default_currency: "USD",
         notify_price_alerts: true,
         notify_portfolio_moves: false,
         notify_news_digest: true,
-        profile_version: 6,
-      }),
-      [
-        { column: "user_id", value: USER_ID },
-        { column: "profile_version", value: 5 },
-      ],
+      },
+      { idempotencyKey: expect.any(String) },
     );
-    expect(JSON.stringify(mocks.azureUpdate.mock.calls)).not.toContain("photo");
-    expect(JSON.stringify(mocks.azureUpdate.mock.calls)).not.toContain("passcode");
+    expect(JSON.stringify(mocks.updateAccountApiProfile.mock.calls)).not.toContain("photo");
+    expect(JSON.stringify(mocks.updateAccountApiProfile.mock.calls)).not.toContain("passcode");
   });
 
-  it("returns a stale state and committed version when the exact version update matches no row", async () => {
-    const { select, eq, execute } = installClient({ updateData: null, committedVersion: 11 });
+  it("returns a stale state and committed version when the Account API reports a conflict", async () => {
+    installClient({
+      updateError: new AccountApiRequestError({
+        status: 409,
+        code: "revision_conflict",
+        message: "stale",
+        correlationId: "qt-test",
+        details: { profile_version: 11 },
+      }),
+    });
 
     const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
 
     expect(result).toMatchObject({ status: "stale", profileVersion: 11 });
-    expect(mocks.azureFrom).toHaveBeenCalledWith("app_profiles");
-    expect(select).toHaveBeenCalledWith("profile_version");
-    expect(eq).toHaveBeenCalledWith("user_id", USER_ID);
-    expect(execute).toHaveBeenCalled();
   });
 
   it("keeps stale retry safe when the committed version read is unavailable", async () => {
-    installClient({ updateData: null, committedVersion: null });
+    installClient({
+      updateError: new AccountApiRequestError({
+        status: 409,
+        code: "revision_conflict",
+        message: "stale",
+        correlationId: "qt-test",
+      }),
+    });
 
     const result = await updatePreferences(INITIAL_PREFERENCES_ACTION_STATE, preferencesForm());
 
@@ -181,7 +176,17 @@ describe("profile Server Actions", () => {
 
     expect(result.status).toBe("error");
     expect(result.message).toContain("session");
-    expect(mocks.azureUpdate).not.toHaveBeenCalled();
+    expect(mocks.updateAccountApiProfile).not.toHaveBeenCalled();
+  });
+
+  it("does not mutate without a bearer token", async () => {
+    installClient({ accessToken: null });
+
+    const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
+
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("session");
+    expect(mocks.updateAccountApiProfile).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -194,19 +199,15 @@ describe("profile Server Actions", () => {
 
     expect(result.status).toBe("error");
     expect(result.message).toContain(message);
-    expect(mocks.azureUpdate).not.toHaveBeenCalled();
+    expect(mocks.updateAccountApiProfile).not.toHaveBeenCalled();
   });
 
   it.each([
-    [
-      "wrong owner",
-      { user_id: "7e5f9c11-2a3b-4c5d-8e9f-0a1b2c3d4e66", profile_version: 5 },
-      undefined,
-    ],
-    ["wrong version", { user_id: USER_ID, profile_version: 4 }, undefined],
-    ["provider error", null, { code: "57014" }],
-  ] as const)("fails closed for a %s update result", async (_label, updateData, updateError) => {
-    installClient({ updateData, updateError });
+    ["wrong owner", { updateUserId: "7e5f9c11-2a3b-4c5d-8e9f-0a1b2c3d4e66" }],
+    ["wrong version", { updateProfileVersion: 4 }],
+    ["provider error", { updateThrows: true }],
+  ] as const)("fails closed for a %s update result", async (_label, options) => {
+    installClient(options);
 
     const result = await updateProfile(INITIAL_PROFILE_ACTION_STATE, profileForm());
 

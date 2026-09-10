@@ -922,7 +922,7 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
       "azure",
       accountApiComplete ? "pass" : "blocked",
       accountApiComplete
-        ? "Account API package is modular with a versioned prefix, exact-origin CORS, canonical Owner-aware RBAC, typed errors, correlated audit, idempotent mutations, source-only session lifecycle/admin metrics/audit/report/account lifecycle/user administration/session revocation/notification/owner-status routes, private signed artifact downloads, disabled-by-default report/export/deletion cleanup workers, allow-listed responses, and dual-read roles with no cutover."
+        ? "Account API package is modular with a versioned prefix, exact-origin CORS, canonical Owner-aware RBAC, typed errors, correlated audit, idempotent mutations, source-only profile read/update, session lifecycle/admin metrics/audit/report/account lifecycle/user administration/session revocation/notification/owner-status routes, private signed artifact downloads, disabled-by-default report/export/deletion cleanup workers, allow-listed responses, and dual-read roles with no cutover."
         : "Account API package structure is missing or incomplete.",
       accountApi
         ? [

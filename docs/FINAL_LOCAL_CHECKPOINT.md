@@ -8,6 +8,12 @@ work, Task 18 same-origin Server Action guard coverage, private signed artifact
 download endpoints, disabled-by-default report/export workers, and disabled-by-default
 deletion cleanup worker.
 
+Follow-up source cleanup on 2026-09-10 moved portal profile, preferences, overview,
+session, and activity reads/writes behind the Account API and removed the portal Azure
+SQL client/dependencies. The portal runtime should still be configured only with
+`QT_ACCOUNT_API_URL`, browser-safe site settings, and HttpOnly cookies; Azure SQL secrets
+belong to the Account API environment, not Vercel.
+
 Final validation passed locally: Account API tests, Python compileall, portal
 format/lint/typecheck/unit tests/build, Playwright, `preflight:json`, and whitespace
 checks. `preflight:strict` fails only because production remains intentionally locked.

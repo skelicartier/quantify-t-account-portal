@@ -26,23 +26,27 @@ export class AccountApiRequestError extends Error {
   readonly status: number;
   readonly code: string;
   readonly correlationId: string | null;
+  readonly details: Readonly<Record<string, unknown>>;
 
   constructor({
     status,
     code,
     message,
     correlationId,
+    details = {},
   }: {
     status: number;
     code: string;
     message: string;
     correlationId: string | null;
+    details?: Readonly<Record<string, unknown>>;
   }) {
     super(message);
     this.name = "AccountApiRequestError";
     this.status = status;
     this.code = code;
     this.correlationId = correlationId;
+    this.details = details;
   }
 }
 
@@ -85,6 +89,56 @@ export const accountApiMeSchema = z
       .strict(),
     capabilities: z.array(z.string().min(1).max(96)).max(64),
     environment: z.string().min(1).max(64),
+  })
+  .strict();
+
+const accountProfileSchema = z
+  .object({
+    user_id: z.string().uuid(),
+    first_name: z.string().max(80),
+    last_name: z.string().max(80),
+    email: z.string().max(254),
+    phone: z.string().max(32),
+    country: z.string().max(80),
+    is_admin: z.boolean(),
+    is_active: z.boolean(),
+    timezone: z.string().max(80),
+    default_currency: z.string().max(3),
+    subscription_tier: z.string().max(64),
+    two_factor_enabled: z.boolean(),
+    notify_price_alerts: z.boolean(),
+    notify_portfolio_moves: z.boolean(),
+    notify_news_digest: z.boolean(),
+    data_refresh_rate: z.string().max(64),
+    theme_preference: z.string().max(64),
+    profile_version: z.number().int().positive(),
+    created_at: z.string().max(64),
+    last_login_at: z.string().max(64),
+    updated_at: z.string().max(64),
+  })
+  .strict();
+
+const accountProfileMutationReceiptSchema = z
+  .object({
+    user_id: z.string().uuid(),
+    profile_version: z.number().int().positive(),
+    updated_at: z.string().max(64),
+  })
+  .strict();
+
+export const accountApiProfileSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    profile: accountProfileSchema,
+  })
+  .strict();
+
+export const accountApiProfileUpdateSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    profile: accountProfileMutationReceiptSchema,
   })
   .strict();
 
@@ -177,6 +231,28 @@ const adminActivitySchema = z
     source: z.string().min(1).max(32),
     occurred_at: z.string().max(64).nullable(),
     created_at: z.string().max(64).nullable(),
+  })
+  .strict();
+
+const accountActivitySchema = adminActivitySchema
+  .extend({
+    user_id: z.string().uuid(),
+  })
+  .strict();
+
+export const accountApiSessionsSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    sessions: z.array(adminSessionSchema).max(50),
+  })
+  .strict();
+
+export const accountApiActivitySchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    events: z.array(accountActivitySchema).max(100),
   })
   .strict();
 
@@ -810,6 +886,10 @@ export const accountApiNotificationStateSchema = z
   .strict();
 
 export type AccountApiMe = z.infer<typeof accountApiMeSchema>;
+export type AccountApiProfile = z.infer<typeof accountApiProfileSchema>;
+export type AccountApiProfileUpdate = z.infer<typeof accountApiProfileUpdateSchema>;
+export type AccountApiSessions = z.infer<typeof accountApiSessionsSchema>;
+export type AccountApiActivity = z.infer<typeof accountApiActivitySchema>;
 export type AccountApiRoleReport = z.infer<typeof accountApiRoleReportSchema>;
 export type AccountApiAdminMetrics = z.infer<typeof accountApiAdminMetricsSchema>;
 export type AccountApiAdminConfiguration = z.infer<typeof accountApiAdminConfigurationSchema>;
@@ -892,6 +972,19 @@ type AccountApiAccountDeletionBody = {
 
 type AccountApiAccountDeletionCancelBody = AccountApiAccountDeletionBody & {
   request_id: string;
+};
+
+export type AccountApiProfileUpdateBody = {
+  expected_profile_version: number;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  country?: string;
+  timezone?: string;
+  default_currency?: string;
+  notify_price_alerts?: boolean;
+  notify_portfolio_moves?: boolean;
+  notify_news_digest?: boolean;
 };
 
 type AccountApiJsonRequestOptions = AccountApiFetchOptions & {
@@ -996,6 +1089,12 @@ async function fetchAccountApiJson(
       code: parsed.data.error.code,
       message: parsed.data.error.message,
       correlationId: parsed.data.correlation_id ?? null,
+      details:
+        "details" in parsed.data.error &&
+        parsed.data.error.details &&
+        typeof parsed.data.error.details === "object"
+          ? (parsed.data.error.details as Record<string, unknown>)
+          : {},
     });
   }
 
@@ -1021,6 +1120,47 @@ export async function fetchAccountApiMe(
 ): Promise<AccountApiMe> {
   const payload = await fetchAccountApiJson("me", accessToken, options);
   const parsed = accountApiMeSchema.safeParse(payload);
+  if (!parsed.success) throw new AccountApiUnavailableError();
+  return parsed.data;
+}
+
+export async function fetchAccountApiProfile(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiProfile> {
+  const payload = await fetchAccountApiJson("auth/user/profile", accessToken, options);
+  const parsed = accountApiProfileSchema.safeParse(payload);
+  if (!parsed.success) throw new AccountApiUnavailableError();
+  return parsed.data;
+}
+
+export async function updateAccountApiProfile(
+  accessToken: string,
+  body: AccountApiProfileUpdateBody,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiProfileUpdate> {
+  const payload = await postAccountApiJson("auth/user/profile/update", accessToken, body, options);
+  const parsed = accountApiProfileUpdateSchema.safeParse(payload);
+  if (!parsed.success) throw new AccountApiUnavailableError();
+  return parsed.data;
+}
+
+export async function fetchAccountApiSessions(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiSessions> {
+  const payload = await fetchAccountApiJson("sessions", accessToken, options);
+  const parsed = accountApiSessionsSchema.safeParse(payload);
+  if (!parsed.success) throw new AccountApiUnavailableError();
+  return parsed.data;
+}
+
+export async function fetchAccountApiActivity(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiActivity> {
+  const payload = await fetchAccountApiJson("activity", accessToken, options);
+  const parsed = accountApiActivitySchema.safeParse(payload);
   if (!parsed.success) throw new AccountApiUnavailableError();
   return parsed.data;
 }

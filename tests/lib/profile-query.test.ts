@@ -1,18 +1,19 @@
 import {
-  ACCOUNT_PROFILE_DETAIL_COLUMNS,
+  ACCOUNT_PROFILE_ENDPOINT,
   loadAccountProfile,
   PROFILE_UNAVAILABLE_MESSAGE,
   type ProfileDataClient,
 } from "@/lib/dal/profile-query";
 
 const USER_ID = "860aac31-73fb-4e10-8f3f-bfcf22a71c11";
+const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
 
 const mocks = vi.hoisted(() => ({
-  azureFrom: vi.fn(),
+  fetchAccountApiProfile: vi.fn(),
 }));
 
-vi.mock("@/lib/dal/azure-sql-client", () => ({
-  azureFrom: mocks.azureFrom,
+vi.mock("@/lib/admin/account-api", () => ({
+  fetchAccountApiProfile: mocks.fetchAccountApiProfile,
 }));
 
 type ClientOptions = {
@@ -22,6 +23,7 @@ type ClientOptions = {
   queryError?: unknown;
   authThrows?: boolean;
   queryThrows?: boolean;
+  accessToken?: string | null;
 };
 
 function profileRow(ownerId: string) {
@@ -29,14 +31,23 @@ function profileRow(ownerId: string) {
     user_id: ownerId,
     first_name: "Avery",
     last_name: "Stone",
+    email: "user@example.com",
     phone: "",
     country: "United States",
+    is_admin: false,
+    is_active: true,
     timezone: "UTC",
     default_currency: "USD",
+    subscription_tier: "free",
+    two_factor_enabled: false,
     notify_price_alerts: true,
     notify_portfolio_moves: true,
     notify_news_digest: false,
+    data_refresh_rate: "15m",
+    theme_preference: "system",
     profile_version: 2,
+    created_at: "2024-01-03T03:04:05.000Z",
+    last_login_at: "",
     updated_at: "2026-09-02T08:00:00.000Z",
     app_passcode_hash: "must-not-be-selected",
     profile_photo_path: "/Users/person/Pictures/avatar.png",
@@ -46,26 +57,22 @@ function profileRow(ownerId: string) {
 function createClient(options?: ClientOptions) {
   const authenticated = options?.authenticated ?? true;
   const row = options && "row" in options ? options.row : profileRow(options?.ownerId ?? USER_ID);
-  const execute = vi.fn(async () => {
+  mocks.fetchAccountApiProfile.mockImplementation(async () => {
     if (options?.queryThrows) throw new Error("provider transport failed");
-    return { data: row, error: options?.queryError ?? null };
+    if (options?.queryError) throw new Error("permission denied for relation app_profiles");
+    return { profile: row };
   });
-  const single = vi.fn(() => ({ execute }));
-  const eq = vi.fn(() => ({ single }));
-  const select = vi.fn(() => ({ eq }));
-  mocks.azureFrom.mockReturnValue({ select });
   const getUser = vi.fn(async () => {
     if (options?.authThrows) throw new Error("auth transport failed");
     return authenticated ? { id: USER_ID, email: "user@example.com" } : null;
   });
+  const getAccessToken = vi.fn(() =>
+    options && "accessToken" in options ? options.accessToken : "bearer-token",
+  );
   return {
-    client: { getUser } as unknown as ProfileDataClient,
+    client: { getUser, getAccessToken } as unknown as ProfileDataClient,
     getUser,
-    from: mocks.azureFrom,
-    select,
-    eq,
-    single,
-    execute,
+    getAccessToken,
   };
 }
 
@@ -74,48 +81,40 @@ describe("profile DAL query", () => {
     vi.clearAllMocks();
   });
 
-  it("verifies Azure auth before an explicit UUID-owner query", async () => {
-    const { client, getUser, from, select, eq } = createClient();
+  it("verifies Azure auth before reading the caller profile through the Account API", async () => {
+    const { client, getUser, getAccessToken } = createClient();
 
     const result = await loadAccountProfile(client);
 
     expect(result).toMatchObject({ userId: USER_ID, profileVersion: 2 });
-    expect(getUser).toHaveBeenCalledBefore(from);
-    expect(from).toHaveBeenCalledWith("app_profiles");
-    expect(select).toHaveBeenCalledWith(ACCOUNT_PROFILE_DETAIL_COLUMNS);
-    expect(ACCOUNT_PROFILE_DETAIL_COLUMNS).not.toContain("*");
-    expect(ACCOUNT_PROFILE_DETAIL_COLUMNS).not.toContain("passcode");
-    expect(ACCOUNT_PROFILE_DETAIL_COLUMNS).not.toContain("role");
-    expect(eq).toHaveBeenCalledWith("user_id", USER_ID);
+    expect(getUser).toHaveBeenCalledBefore(getAccessToken);
+    expect(mocks.fetchAccountApiProfile).toHaveBeenCalledWith("bearer-token");
+    expect(ACCOUNT_PROFILE_ENDPOINT).toBe("auth/user/profile");
   });
 
-  it("never selects or projects the legacy desktop-owned photo column", async () => {
-    const { client, select } = createClient();
+  it("never projects the legacy desktop-owned photo column", async () => {
+    const { client } = createClient();
 
     const result = await loadAccountProfile(client);
 
-    expect(ACCOUNT_PROFILE_DETAIL_COLUMNS).not.toContain("photo");
-    expect(select).toHaveBeenCalledWith(ACCOUNT_PROFILE_DETAIL_COLUMNS);
     expect(JSON.stringify(result)).not.toContain("photo");
     expect(JSON.stringify(result)).not.toContain("avatar.png");
   });
 
   it("returns null only for an unauthenticated session and never queries", async () => {
-    const { client, from } = createClient({ authenticated: false });
+    const { client } = createClient({ authenticated: false });
     await expect(loadAccountProfile(client)).resolves.toBeNull();
-    expect(from).not.toHaveBeenCalled();
+    expect(mocks.fetchAccountApiProfile).not.toHaveBeenCalled();
   });
 
   it.each([
-    [
-      "a provider row owned by another UUID",
-      { ownerId: "22222222-2222-4222-8222-222222222222" } satisfies ClientOptions,
-    ],
+    ["a provider row owned by another UUID", { ownerId: OTHER_USER_ID } satisfies ClientOptions],
     ["a provider query error", { queryError: { code: "57014" } } satisfies ClientOptions],
     ["an absent profile row", { row: null } satisfies ClientOptions],
     ["a malformed profile row", { row: { user_id: USER_ID } } satisfies ClientOptions],
     ["a thrown Auth transport", { authThrows: true } satisfies ClientOptions],
     ["a thrown query transport", { queryThrows: true } satisfies ClientOptions],
+    ["a missing bearer token", { accessToken: null } satisfies ClientOptions],
   ])("raises a generic unavailable error for %s", async (_label, options) => {
     const { client } = createClient(options);
 

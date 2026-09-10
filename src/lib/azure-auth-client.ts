@@ -1,7 +1,7 @@
 /**
- * Azure SQL Auth Client
+ * Azure Account API Auth Client
  *
- * Replaces @supabase/ssr with custom auth using Azure SQL + JWT.
+ * Replaces browser/SSR Supabase auth with the dedicated Account API.
  * Stores JWT in httpOnly cookies and provides user/session management.
  */
 

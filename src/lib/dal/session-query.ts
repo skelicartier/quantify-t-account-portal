@@ -6,45 +6,19 @@ import {
   type AccountActivityEventDto,
   type AccountSessionDto,
 } from "@/lib/dto/session";
-import { azureFrom } from "@/lib/dal/azure-sql-client";
+import { fetchAccountApiActivity, fetchAccountApiSessions } from "@/lib/admin/account-api";
 
-export const ACCOUNT_SESSION_COLUMNS = [
-  "id",
-  "user_id",
-  "source",
-  "provider",
-  "client_instance_id",
-  "device_name",
-  "created_at",
-  "last_seen_at",
-  "expires_at",
-  "revoked_at",
-  "revoke_reason",
-].join(",");
-
-export const ACCOUNT_ACTIVITY_COLUMNS = [
-  "id",
-  "user_id",
-  "session_id",
-  "event_type",
-  "outcome",
-  "source",
-  "occurred_at",
-  "created_at",
-].join(",");
+export const ACCOUNT_SESSIONS_ENDPOINT = "sessions";
+export const ACCOUNT_ACTIVITY_ENDPOINT = "activity";
 
 export const ACCOUNT_SESSION_LIMIT = 50;
 export const ACCOUNT_ACTIVITY_LIMIT = 100;
 
 type AzureUserResult = { id: string; email: string; [key: string]: unknown } | null;
 
-type QueryResult = {
-  data: unknown;
-  error: unknown;
-};
-
 export type AccountSessionDataClient = {
   getUser: () => Promise<AzureUserResult>;
+  getAccessToken: () => string | null;
 };
 
 export const ACCOUNT_SESSIONS_UNAVAILABLE_MESSAGE = "Account sessions are temporarily unavailable.";
@@ -88,22 +62,18 @@ export async function loadAccountSessions(
   const userId = await currentVerifiedUserId(client, () => new AccountSessionsUnavailableError());
   if (!userId) return null;
 
-  let result: QueryResult;
+  const accessToken = client.getAccessToken();
+  if (!accessToken) throw new AccountSessionsUnavailableError();
+
+  let rows: unknown;
   try {
-    result = await azureFrom("account_sessions")
-      .select(ACCOUNT_SESSION_COLUMNS)
-      .eq("user_id", userId)
-      .order("last_seen_at", { ascending: false })
-      .limit(ACCOUNT_SESSION_LIMIT)
-      .execute();
+    rows = (await fetchAccountApiSessions(accessToken)).sessions;
   } catch {
     throw new AccountSessionsUnavailableError();
   }
 
-  if (result.error) throw new AccountSessionsUnavailableError();
-
   try {
-    return mapAccountSessions(userId, result.data, options);
+    return mapAccountSessions(userId, rows, options);
   } catch {
     throw new AccountSessionsUnavailableError();
   }
@@ -115,22 +85,18 @@ export async function loadAccountActivityEvents(
   const userId = await currentVerifiedUserId(client, () => new AccountActivityUnavailableError());
   if (!userId) return null;
 
-  let result: QueryResult;
+  const accessToken = client.getAccessToken();
+  if (!accessToken) throw new AccountActivityUnavailableError();
+
+  let rows: unknown;
   try {
-    result = await azureFrom("auth_events")
-      .select(ACCOUNT_ACTIVITY_COLUMNS)
-      .eq("user_id", userId)
-      .order("occurred_at", { ascending: false })
-      .limit(ACCOUNT_ACTIVITY_LIMIT)
-      .execute();
+    rows = (await fetchAccountApiActivity(accessToken)).events;
   } catch {
     throw new AccountActivityUnavailableError();
   }
 
-  if (result.error) throw new AccountActivityUnavailableError();
-
   try {
-    return mapAccountActivityEvents(userId, result.data);
+    return mapAccountActivityEvents(userId, rows);
   } catch {
     throw new AccountActivityUnavailableError();
   }

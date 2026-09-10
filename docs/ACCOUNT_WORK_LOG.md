@@ -1,10 +1,10 @@
 # Account Architecture Work Log
 
-Updated: 2026-09-09. Current source resume point for the supplied architecture plan.
+Updated: 2026-09-10. Current source resume point for the supplied architecture plan.
 
 ## Current Task
 
-Task 18 source/offline validation is complete after the Task 17 source slice. The follow-up Azure auth migration repair is source-complete locally: portal login/logout/signup/confirmation/recovery/reset now use the Azure Account API client instead of Supabase SSR/browser configuration, profile/preferences mutations use Azure SQL optimistic updates, public Supabase env/CSP requirements are removed, and stale Supabase-era tests/preflight evidence were updated to the Azure source contract. Managed-provider delivery evidence, live artifact-generation evidence, provider/Auth tombstone completion, Azure MFA/email-change finalization, and staging evidence are not implemented.
+Task 18 source/offline validation is complete after the Task 17 source slice. The follow-up Azure auth migration repair is source-complete locally: portal login/logout/signup/confirmation/recovery/reset now use the Azure Account API client instead of Supabase SSR/browser configuration, profile/preferences reads and mutations go through the Account API instead of portal-side SQL, public Supabase env/CSP requirements are removed, and stale Supabase-era tests/preflight evidence were updated to the Azure source contract. Managed-provider delivery evidence, live artifact-generation evidence, provider/Auth tombstone completion, Azure MFA/email-change finalization, and staging evidence are not implemented.
 
 Latest continuation:
 
@@ -13,6 +13,7 @@ Latest continuation:
 - Signup, confirmation, forgot-password, reset-password, logout, current-password verification, password change, account data actions, notifications, reports, admin actions, profile, and preferences are all source-local Azure/Account API paths.
 - Email change and TOTP enrollment/verification/removal remain intentionally source-locked until Azure SQL owns the confirmation/factor/AAL2 contracts.
 - The portal CSP allows Cloudflare challenge and Azure Functions endpoints, not Supabase.
+- The portal no longer depends on `mssql` or `AZURE_SQL_*` runtime settings. Overview, profile, session, activity, profile-save, and preference-save flows use Account API endpoints with caller bearer tokens; the Account API owns Azure SQL access and optimistic `profile_version` checks.
 
 Implemented in this continuation:
 
@@ -36,14 +37,15 @@ Implemented in this continuation:
 - Admin notification updates reject stored documents that cannot round-trip through the current authoring contract without data loss. The API returns `notification_document_incompatible`; no write or audit event is produced.
 - Tests cover authorization, MFA, stale edits, duplicate fields, unsafe content/links, schedules/targets, record preservation, storage races, and receipt authorization.
 - Preflight pins the same-origin helper shape, confirms every exported async action in the reviewed action-file allow-list calls `requireSameOriginServerAction` directly, and now requires private artifact downloads to be signed only after server-side digest/size checks.
+- The final local Azure cleanup removes the portal Azure SQL DAL, removes `mssql`/`@types/mssql`, adds Account API `/auth/user/profile/update`, and updates local tests/preflight so profile/preferences saves fail closed on owner/version receipt mismatches or `revision_conflict`.
 
 ## Verification
 
-- Portal: 68 test files, 627 tests passed.
+- Portal: 68 test files, 632 tests passed.
 - Focused worker/preflight/admin status suites passed with 188 tests.
 - Focused same-origin, lifecycle/API/preflight, and touched action suites passed.
 - Playwright auth/accessibility routing: 32 passed across desktop and mobile, including direct unauthenticated navigation to `/account/data`.
-- Account API: 367 tests passed with cloud dependencies stubbed.
+- Account API: 371 tests passed with cloud dependencies stubbed.
 - Typecheck, lint, Prettier check, local optimized build, and whitespace checks passed.
 - `npx tsx scripts/check-notification-ui.ts`: desktop/mobile publishing and receipt interactions, no horizontal page overflow, no browser errors, zero axe violations. Uses local React fixtures and mocked actions, not authenticated managed services. Screenshots: `test-results/notifications/`.
 - Offline preflight: 28 pass, 6 warnings, 0 blocked; `sourceReady=true`, `stagingReady=false`, `productionReady=false`.

@@ -1,5 +1,5 @@
 /**
- * Azure SQL Server Client
+ * Azure Account API Server Auth Client
  *
  * Replaces Supabase server client for auth in server components/actions.
  */
