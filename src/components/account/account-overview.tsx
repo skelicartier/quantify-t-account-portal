@@ -108,6 +108,9 @@ export function AccountOverview({ account }: AccountOverviewProps) {
           <Link className="button button--primary" href="/account/profile">
             Edit profile
           </Link>
+          <Link className="button" href="/admin">
+            Admin panel
+          </Link>
           <Link className="button" href="/account/preferences">
             Preferences
           </Link>

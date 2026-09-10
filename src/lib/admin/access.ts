@@ -244,7 +244,11 @@ export function hasPrivilegedRole(me: AccountApiMe): boolean {
 }
 
 export function hasSatisfiedPrivilegedAssurance(assurance: AssuranceState): boolean {
-  return assurance.levelReadable && assurance.currentLevel === "aal2";
+  if (!assurance.levelReadable || !assurance.factorsReadable) return false;
+  if (assurance.requiredLevel === "aal1") {
+    return assurance.currentLevel === "aal1" || assurance.currentLevel === "aal2";
+  }
+  return assurance.requiredLevel === "aal2" && assurance.currentLevel === "aal2";
 }
 
 function isAccountApiNotFound(error: unknown): boolean {

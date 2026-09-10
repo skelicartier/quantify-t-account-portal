@@ -1,4 +1,5 @@
 import { AccountApiRequestError } from "@/lib/admin/account-api";
+import type { AssuranceState } from "@/lib/auth/assurance";
 import { INITIAL_NOTIFICATION_STATE } from "@/lib/notifications/input";
 import { notification, notificationDocument } from "../fixtures/notifications";
 
@@ -42,6 +43,17 @@ import { acknowledgeNotification } from "@/app/account/notifications/actions";
 
 const INITIAL_ADMIN_REPORT_STATE = { status: "idle" as const, message: "" };
 
+const satisfiedAssurance: AssuranceState = {
+  verifiedTotpFactors: [],
+  unverifiedTotpFactorIds: [],
+  currentLevel: "aal2",
+  requiredLevel: "aal2",
+  mfaEnrolled: true,
+  challengeRequired: false,
+  levelReadable: true,
+  factorsReadable: true,
+};
+
 function form(value: unknown = notification) {
   const data = new FormData();
   data.set("revision", notificationDocument.revision);
@@ -80,7 +92,7 @@ beforeEach(() => {
   mocks.fetchAccountApiMe.mockResolvedValue({
     capabilities: ["account:read-any", "notifications:write"],
   });
-  mocks.getCurrentAssurance.mockResolvedValue({ levelReadable: true, currentLevel: "aal2" });
+  mocks.getCurrentAssurance.mockResolvedValue(satisfiedAssurance);
   mocks.requireMutationAssurance.mockResolvedValue({ decision: "satisfied" });
   mocks.fetchAccountApiAdminNotifications.mockResolvedValue(notificationDocument);
   mocks.updateAccountApiAdminNotifications.mockResolvedValue({ ok: true });
@@ -175,7 +187,11 @@ it.each(["capability", "mfa", "session", "stale", "missing-revision", "duplicate
     if (scenario === "capability")
       mocks.fetchAccountApiMe.mockResolvedValue({ capabilities: ["account:read-any"] });
     if (scenario === "mfa")
-      mocks.getCurrentAssurance.mockResolvedValue({ currentLevel: "aal1", levelReadable: true });
+      mocks.getCurrentAssurance.mockResolvedValue({
+        ...satisfiedAssurance,
+        currentLevel: "aal1",
+        challengeRequired: true,
+      });
     if (scenario === "session")
       mocks.createServerAzureClient.mockResolvedValue({
         getAccessToken: () => null,
@@ -367,7 +383,11 @@ it.each(["capability", "mfa", "stale", "duplicate-field", "quota"])(
       mocks.fetchAccountApiMe.mockResolvedValue({ capabilities: ["account:read-any"] });
     }
     if (scenario === "mfa") {
-      mocks.getCurrentAssurance.mockResolvedValue({ currentLevel: "aal1", levelReadable: true });
+      mocks.getCurrentAssurance.mockResolvedValue({
+        ...satisfiedAssurance,
+        currentLevel: "aal1",
+        challengeRequired: true,
+      });
     }
     if (scenario === "stale") data.set("revision", "old-revision");
     if (scenario === "duplicate-field") data.append("event_type", "account.viewed");

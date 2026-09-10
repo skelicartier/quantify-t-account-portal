@@ -29,6 +29,7 @@ describe("AccountOverview", () => {
       "href",
       "/account/profile",
     );
+    expect(screen.getByRole("link", { name: /admin panel/i })).toHaveAttribute("href", "/admin");
     expect(screen.getByRole("link", { name: /preferences/i })).toHaveAttribute(
       "href",
       "/account/preferences",

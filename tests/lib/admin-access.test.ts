@@ -346,6 +346,25 @@ afterEach(() => {
 });
 
 describe("admin access gates", () => {
+  it("allows a privileged Azure password session when no verified factor requires AAL2", async () => {
+    const { access, fetchAccountApiAdminMetrics } = await loadAccessHarness({
+      assurancePayload: {
+        ...assurance,
+        verifiedTotpFactors: [],
+        currentLevel: "aal1",
+        requiredLevel: "aal1",
+        mfaEnrolled: false,
+        challengeRequired: false,
+      },
+    });
+
+    await expect(access.getAdminDashboardAccess()).resolves.toMatchObject({
+      status: "authorized",
+      metrics: { correlation_id: "qt-metrics" },
+    });
+    expect(fetchAccountApiAdminMetrics).toHaveBeenCalledWith("bearer-token");
+  });
+
   it("loads notifications only with the notification capability and AAL2", async () => {
     const { access, fetchAccountApiAdminNotifications } = await loadAccessHarness({
       mePayload: { ...me, capabilities: [...me.capabilities, "notifications:write"] },
