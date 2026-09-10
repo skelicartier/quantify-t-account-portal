@@ -15,13 +15,13 @@ export default function RootError({ reset }: { error: Error; reset: () => void }
     <main className="auth-shell" id="main-content">
       <section className="auth-card" aria-labelledby="root-error-heading">
         <p className="eyebrow">Quantify Terminal</p>
-        <h1 id="root-error-heading">Something went wrong</h1>
+        <h1 id="root-error-heading">This secure view could not load</h1>
         <p>
-          The service could not be reached, so nothing was changed. If you were signed in, your
-          session is still valid.
+          The account service did not finish the request, so no changes were applied. Your current
+          session remains protected.
         </p>
         <button type="button" className="button button--primary" onClick={reset}>
-          Try again
+          Refresh
         </button>
       </section>
     </main>

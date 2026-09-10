@@ -9,15 +9,15 @@ const providerDetail = new Error(
 
 describe("account error boundaries", () => {
   it.each([
-    ["root", RootError, "Something went wrong"],
-    ["account segment", AccountError, "Account data is temporarily unavailable"],
+    ["root", RootError, "This secure view could not load"],
+    ["account segment", AccountError, "We could not refresh this account view"],
   ])("renders generic %s copy with a retry control", (_label, Boundary, heading) => {
     const reset = vi.fn();
 
     render(<Boundary error={providerDetail} reset={reset} />);
 
     expect(screen.getByRole("heading", { level: 1, name: new RegExp(heading, "i") })).toBeVisible();
-    expect(screen.getByRole("button", { name: /try again/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /refresh/i })).toBeEnabled();
   });
 
   it.each([
@@ -38,7 +38,7 @@ describe("account error boundaries", () => {
     const reset = vi.fn();
 
     render(<AccountError error={providerDetail} reset={reset} />);
-    await userEvent.click(screen.getByRole("button", { name: /try again/i }));
+    await userEvent.click(screen.getByRole("button", { name: /refresh/i }));
 
     expect(reset).toHaveBeenCalledOnce();
   });

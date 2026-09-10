@@ -15,21 +15,21 @@ export default function AccountError({ reset }: { error: Error; reset: () => voi
   return (
     <main className="account-main" id="main-content">
       <section className="account-page-heading" aria-labelledby="account-error-heading">
-        <p className="eyebrow">Shared account</p>
-        <h1 id="account-error-heading">Account data is temporarily unavailable</h1>
+        <p className="eyebrow">Account console</p>
+        <h1 id="account-error-heading">We could not refresh this account view</h1>
         <p>
-          Your session is still signed in. The account service could not be reached, so nothing was
-          changed. Try again in a moment.
+          Your session remains protected, and no account changes were applied. Refresh the secure
+          account data when the service is ready.
         </p>
       </section>
       <section className="account-form-panel" aria-labelledby="account-error-actions-heading">
         <div>
-          <p className="account-card__label">Next step</p>
-          <h2 id="account-error-actions-heading">Retry this page</h2>
-          <p>If the problem continues, sign out and sign back in, or contact support.</p>
+          <p className="account-card__label">Recovery</p>
+          <h2 id="account-error-actions-heading">Refresh secure data</h2>
+          <p>If this repeats, sign in again on a trusted device or contact support.</p>
         </div>
         <button type="button" className="button button--primary" onClick={reset}>
-          Try again
+          Refresh
         </button>
       </section>
     </main>
