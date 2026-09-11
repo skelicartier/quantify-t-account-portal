@@ -2,9 +2,9 @@
 
 ## Current release boundary
 
-The portal source is suitable for GitHub CI and a Vercel **preview/staging** project. Azure Account API-backed login/logout/signup, token email confirmation, non-enumerating recovery/reset, consent metadata, source-locked account security settings, read-only account session/activity views, account data export/deletion controls, source-only Account API contracts, same-origin Server Action provenance checks, private signed artifact-download endpoints, and protected `/admin` dashboard plus `/admin/roles` reconciliation routes are implemented but have not been exercised against an authorized managed project. Session registration/heartbeat/revocation, privileged admin mutations, Account API deployment, desktop one-time handoff migration, and the checked-in legacy Supabase migrations have not run against Azure, PostgreSQL, Storage, or staging.
+The portal source is suitable for GitHub CI and a Vercel **preview/staging** project. Azure Account API-backed login/logout/signup, token email confirmation, non-enumerating recovery/reset, consent metadata, source-locked account security settings, read-only account session/activity views, account data export/deletion controls, source-only Account API contracts, same-origin Server Action provenance checks, private signed artifact-download endpoints, and protected `/admin` dashboard plus `/admin/roles` reconciliation routes are implemented but have not been exercised against an authorized managed project. Session registration/heartbeat/revocation, privileged admin mutations and the desktop one-time handoff have not been exercised against an isolated staging Account API. Supabase was decommissioned on 2026-09-11; the desktop's data now lives in Azure SQL.
 
-Vercel builds must never migrate Supabase, seed roles, inspect desktop data, deploy Azure resources, or mutate live provider settings.
+Vercel builds must never migrate databases, seed roles, inspect desktop data, deploy Azure resources, or mutate live provider settings.
 
 ## Vercel preview/staging setup
 
@@ -26,7 +26,7 @@ staging validation and must never use `*`.
    | `QT_ACCOUNT_API_URL`             | Server-side public endpoint | Authorized staging Account API base URL **including the `/api/v1` route prefix** (e.g. `https://<app>.azurewebsites.net/api/v1`), HTTPS outside localhost, no credentials, query, or fragment. The portal appends `/api/v1` when it is missing, but configure the versioned form so logs and health probes match. |
 
 5. Never configure `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `AZURE_STORAGE_CONNECTION_STRING`, `BREVO_API_KEY`, `QT_AUTH_RESET_SECRET`, signing private keys, database passwords, or refresh/access tokens in this project.
-6. In an authorized isolated staging Account API only, configure the exact site origin and callback URLs produced by the portal: `/auth/confirm?token=...` and `/reset-password?token=...`. Do not change production Auth, Supabase, Azure, Storage, DNS, or provider settings during preview setup.
+6. In an authorized isolated staging Account API only, configure the exact site origin and callback URLs produced by the portal: `/auth/confirm?token=...` and `/reset-password?token=...`. Do not change production Auth, Azure, Storage, DNS, or provider settings during preview setup.
 7. Require the GitHub `Portal CI` workflow to pass before promoting a preview.
 
 ## Validation commands
@@ -60,8 +60,7 @@ No Azure deployment should happen from Vercel, GitHub Actions, or this repositor
 
 ## User-data safety
 
-- Existing desktop/Supabase user records are read-only during portal preview preparation and migration rehearsal.
-- Never replay the clean-local Supabase baseline over an existing project.
+- Existing Azure SQL user records are read-only during portal preview preparation.
 - Never seed Owner/Admin/Support from email, metadata, local SQLite, or desktop flags.
 - Any migration application requires a backup, disposable staging clone, schema diff, pgTAP/RLS evidence, and explicit authorization.
 - Authenticated smoke tests use disposable staging identities only.
@@ -78,4 +77,4 @@ authorized staging/cloud evidence covers migrations, provider email, Storage sig
 export retrieval/decryption, provider/Auth tombstone completion, monitoring, backups,
 rollback, and final go/no-go.
 
-A Vercel preview can be removed or rolled back to a prior deployment without changing Supabase/Azure data. Vercel production builds are also hard-blocked by `scripts/deployment-gate.ts`; the lock may be removed only in the reviewed release task. Production remains **NO-GO** until all of the following are recorded: successful staging Azure auth lifecycle evidence, migration/pgTAP or Azure SQL parity evidence as applicable, deployed Azure Account API RBAC parity, backup/restore rehearsal, exact-origin CORS, enforced credential-surface controls, DNS/TLS ownership, secret configuration review, and explicit human approval.
+A Vercel preview can be removed or rolled back to a prior deployment without changing Azure data. Vercel production builds are also hard-blocked by `scripts/deployment-gate.ts`; the lock may be removed only in the reviewed release task. Production remains **NO-GO** until all of the following are recorded: successful staging Azure auth lifecycle evidence, Azure SQL parity evidence, deployed Azure Account API RBAC parity, backup/restore rehearsal, exact-origin CORS, enforced credential-surface controls, DNS/TLS ownership, secret configuration review, and explicit human approval.

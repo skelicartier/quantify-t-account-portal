@@ -488,13 +488,12 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         "def activity_dto",
       ]) &&
       includesAll(modules.gateways, [
-        "/rest/v1/account_sessions",
-        "/rest/v1/auth_events",
-        "user_id=eq.",
-        "provider_session_id=eq.",
-        "order=last_seen_at.desc",
-        "order=occurred_at.desc",
-        '"session_id": event.session_id',
+        "FROM dbo.account_sessions WHERE user_id = %s ",
+        "ORDER BY last_seen_at DESC OFFSET 0 ROWS FETCH NEXT %s ROWS ONLY",
+        "WHERE user_id = %s AND provider = %s AND provider_session_id = %s",
+        "FROM dbo.auth_events WHERE user_id = %s ",
+        "ORDER BY occurred_at DESC OFFSET 0 ROWS FETCH NEXT %s ROWS ONLY",
+        "INSERT INTO dbo.auth_events",
       ]),
     adminMetricsRoute:
       includesAll(modules.app, [
@@ -515,12 +514,9 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
       includesAll(modules.gateways, [
         "ADMIN_METRICS_ROW_LIMIT = 10000",
         "def read_admin_metrics",
-        "/rest/v1/app_profiles",
-        "/rest/v1/account_sessions",
-        "/rest/v1/auth_events",
-        "select=user_id,is_active,created_at,last_login_at",
-        "select=id,user_id,source,expires_at,revoked_at,last_seen_at",
-        "occurred_at=gte.",
+        "FROM dbo.account_sessions ORDER BY last_seen_at DESC",
+        "FROM dbo.auth_events WHERE occurred_at >= %s ORDER BY occurred_at DESC",
+        "GROUP BY CAST(occurred_at AS date), outcome",
       ]),
     adminAuditExplorerRoute:
       includesAll(modules.app, [
@@ -546,9 +542,8 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
       ]) &&
       includesAll(modules.gateways, [
         "def read_admin_audit_events",
-        "/rest/v1/auth_events?",
-        "select={ADMIN_AUDIT_SELECT_COLUMNS}",
-        "order=occurred_at.desc,id.asc",
+        "FROM dbo.auth_events AS e ",
+        "ORDER BY occurred_at DESC, id ASC",
         "metadata",
       ]) &&
       includesAll(modules.capabilities, ['READ_AUDIT_EVENTS = "audit:read"']),
@@ -579,13 +574,12 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         '"activity"',
       ]) &&
       includesAll(modules.gateways, [
-        "ADMIN_USER_SELECT_COLUMNS",
         "def read_admin_user_profiles",
         "def read_admin_user_profile",
-        "select={ADMIN_USER_SELECT_COLUMNS}",
-        "order=created_at.desc,user_id.asc",
-        "offset=",
-        "limit=1",
+        "def _admin_user_filter",
+        "FROM dbo.app_profiles",
+        "ORDER BY created_at DESC, user_id ASC",
+        "OFFSET %s ROWS FETCH NEXT %s ROWS ONLY",
       ]),
     adminUserActivationRoute:
       includesAll(modules.app, [
@@ -618,9 +612,7 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
       ]) &&
       includesAll(modules.gateways, [
         "def set_admin_user_active",
-        '"PATCH"',
-        '"is_active"',
-        '"return=representation"',
+        "UPDATE dbo.app_profiles SET is_active = %s",
         "LAST_OWNER_PROTECTED",
         "def set_database_role",
         "UPDATE dbo.app_roles SET role",
@@ -651,10 +643,9 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
       ]) &&
       includesAll(modules.gateways, [
         "def revoke_account_session",
-        '"revoked_at"',
-        '"revoked_by"',
-        '"revoke_reason"',
-        '"return=representation"',
+        "UPDATE dbo.account_sessions ",
+        "SET revoked_at = %s, revoked_by = %s, revoke_reason = %s ",
+        "WHERE id = %s AND user_id = %s",
       ]) &&
       includesAll(modules.sessions, ["def clean_revoke_reason", "REVOKE_ALLOWED_FIELDS"]) &&
       includesAll(modules.capabilities, ['MANAGE_USER_SESSIONS = "sessions:revoke-any"']) &&
@@ -753,8 +744,8 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         "def write_notification_document",
         "def read_notification_email_queue_document",
         "def write_notification_email_queue_document",
-        "event_type=eq.",
-        "source=eq.account-api",
+        "WHERE user_id = %s AND event_type = %s AND actor_user_id = %s ",
+        '"success", "account-api", min(limit, 500)',
         "upload_blob",
         "app-config/notifications.json",
         "app-config/notification-email-queue.json",
@@ -1066,7 +1057,7 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         "def delete_artifacts",
         "delete_blob",
         'delete_snapshots="include"',
-        "revoked_at=is.null",
+        "WHERE user_id = %s AND revoked_at IS NULL",
       ]),
     // Dual read, and the report can never certify a cutover it could not evidence.
     dualReadRolesWithoutCutover:

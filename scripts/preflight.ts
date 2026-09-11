@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { buildPreflightReport, preflightExitCode } from "@/lib/preflight/audit";
-import { collectDesktopSupabaseEvidence } from "@/lib/preflight/migration-evidence";
 import { type NetworkProbe, type RepositorySnapshot } from "@/lib/preflight/model";
 import { ACCOUNT_API_MODULES, analyzeAccountApi } from "@/lib/preflight/account-api-analysis";
 import { resolveDesktopRoot } from "@/lib/preflight/desktop-root";
@@ -79,7 +78,6 @@ async function collectSnapshot(): Promise<RepositorySnapshot> {
     resolve(accountApiRoot, "infra/main.bicep"),
   );
   const headerRules = await nextConfig.headers?.();
-  const desktopSupabase = await collectDesktopSupabaseEvidence(desktopRoot);
 
   return {
     portalPackageJson: await readKnownFile(resolve(portalRoot, "package.json")),
@@ -102,8 +100,9 @@ async function collectSnapshot(): Promise<RepositorySnapshot> {
     }),
     portalSecurityEvidence: analyzePortalSecurityHeaders(headerRules ?? null),
     desktopEnvironmentExample: await readKnownFile(resolve(desktopRoot, ".env.example")),
-    desktopSupabaseSchema: desktopSupabase.schema,
-    desktopSupabaseMigrations: desktopSupabase.migrations,
+    azureSqlSchema: await readKnownFile(
+      resolve(desktopRoot, "cloud/azure/account_function/schema/azure_sql_schema.sql"),
+    ),
     desktopAuthService: await readKnownFile(resolve(desktopRoot, "src/services/auth_service.py")),
     desktopSupabaseService: await readKnownFile(
       resolve(desktopRoot, "src/services/supabase_service.py"),

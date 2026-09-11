@@ -1,7 +1,5 @@
 import {
-  DESKTOP_SUPABASE_MIGRATION_ARTIFACTS,
   type EnvironmentPresence,
-  type MigrationArtifact,
   type NetworkProbe,
   type PreflightCheck,
   type PreflightReport,
@@ -26,6 +24,9 @@ const FORBIDDEN_PORTAL_ENVIRONMENT = [
   "QT_RELEASE_SIGNING_PRIVATE_KEY",
 ] as const;
 
+// The legacy update function after the Supabase decommission: shared configuration,
+// notifications, credential telemetry, releases and admin email. Accounts, roles,
+// activation and passwords are the Account API's.
 const CURRENT_AZURE_ROUTES = [
   "deploy_update",
   "set_app_config",
@@ -37,22 +38,19 @@ const CURRENT_AZURE_ROUTES = [
   "credential_status",
   "reset_credential_usage",
   "management_me",
-  "management_users",
-  "management_user_profile",
-  "management_create_user",
-  "management_update_user",
-  "management_set_user_active",
-  "management_reset_user_password",
   "management_send_email",
-  "auth_request_password_reset",
-  "auth_confirm_password_reset",
-  "auth_send_otp",
 ] as const;
 
+// Azure SQL tables the Account API and the desktop rely on (schema snapshot in the
+// desktop repository, cloud/azure/account_function/schema/azure_sql_schema.sql).
 const REQUIRED_SCHEMA_OBJECTS = [
+  "app_users",
   "app_profiles",
-  "app_user_profiles",
   "app_roles",
+  "account_sessions",
+  "auth_events",
+  "app_states",
+  "app_user_profiles",
   "watchlists",
   "admin_activity_logs",
 ] as const;
@@ -95,9 +93,8 @@ function pythonMethodSource(source: string | null, methodName: string): string {
 
 function hasDesktopCloudPasswordLock(source: string | null): boolean {
   const helper = pythonMethodSource(source, "_hash_cloud_local_password_lock");
-  const upsert = pythonMethodSource(source, "_upsert_local_user_from_supabase");
+  const upsert = pythonMethodSource(source, "_upsert_local_cloud_user");
   const changePassword = pythonMethodSource(source, "change_password");
-  const resetPassword = pythonMethodSource(source, "reset_password");
 
   return (
     includesEvery(helper, [
@@ -105,21 +102,15 @@ function hasDesktopCloudPasswordLock(source: string | null): boolean {
       "return self.hash_password(secrets.token_urlsafe(48))",
     ]) &&
     includesEvery(upsert, [
-      "def _upsert_local_user_from_supabase(",
+      "def _upsert_local_cloud_user(",
       "password_hash = self._hash_cloud_local_password_lock()",
       "user.password_hash = password_hash",
     ]) &&
     !upsert.includes("self.hash_password(password)") &&
-    includesEvery(changePassword, [
-      "self.supabase_service.update_current_user_password",
-      "user.password_hash = self._hash_cloud_local_password_lock()",
-      "user.password_hash = self.hash_password(new_password)",
-    ]) &&
-    includesEvery(resetPassword, [
-      "if str(getattr(user, 'cloud_user_id', '') or '').strip():",
-      "user.password_hash = self._hash_cloud_local_password_lock()",
-      "user.password_hash = self.hash_password(new_password)",
-    ])
+    // Passwords belong to the console: the desktop never hashes or stores one.
+    includesEvery(changePassword, ["def change_password(", "account console"]) &&
+    !changePassword.includes("hash_password(") &&
+    !(source ?? "").includes("def reset_password(")
   );
 }
 
@@ -136,7 +127,7 @@ function hasDesktopRevokedSessionRuntimeGuard(source: string | null): boolean {
       "def _mark_account_session_revoked(self, user_id: int)",
       "self._account_session_revoked_user_ids.add(int(user_id))",
       "self.clear_session_file()",
-      "self.clear_supabase_session_file()",
+      "self.clear_cloud_session_files()",
     ]) &&
     includesEvery(sendEvent, [
       "if self._account_session_denied_text(str(exc)):",
@@ -154,20 +145,44 @@ function hasDesktopRevokedSessionRuntimeGuard(source: string | null): boolean {
 
 function hasDesktopVersionedProfileWriter(source: string | null): boolean {
   if (source === null) return false;
+  const writer = pythonMethodSource(source, "_account_api_update_profile");
+  const push = pythonMethodSource(source, "_push_cloud_profile_changes");
   return (
-    includesEvery(source, [
-      "def upsert_app_profile(",
-      "/rest/v1/rpc/update_my_app_profile_v2",
-      "fetch_app_profile(token, cloud_user_id)",
-      "p_expected_profile_version",
-      "_validate_versioned_profile_receipt",
-      'set(row) != {"user_id", "profile_version", "updated_at"}',
-      "expected_version + 1",
+    includesEvery(writer, [
+      "def _account_api_update_profile(",
+      "'auth/user/profile/update'",
+      "expected_profile_version",
+      "ACCOUNT_PROFILE_UPDATE_FIELDS",
+      "idempotency_key",
     ]) &&
-    !source.includes('"/rest/v1/rpc/update_my_app_profile",') &&
-    !source.includes('"profile_photo_path": "p_profile_photo_path"') &&
-    !source.includes('"app_passcode_hash"')
+    push.includes("return self._account_api_update_profile(access_token, changes)") &&
+    !source.includes("update_my_app_profile") &&
+    !source.includes("upsert_app_profile(")
   );
+}
+
+/** Anything that would mean the desktop still talks to, stores or configures Supabase. */
+function desktopSupabaseTraces(snapshot: RepositorySnapshot): string[] {
+  const traces: string[] = [];
+  if (snapshot.desktopSupabaseService !== null) {
+    traces.push("src/services/supabase_service.py still exists.");
+  }
+  for (const marker of [
+    "supabase_service.",
+    "SupabaseService",
+    "SupabaseServiceError",
+    "_supabase_context_for_user",
+    "/rest/v1/",
+    "/auth/v1/",
+  ]) {
+    if (snapshot.desktopAuthService?.includes(marker)) {
+      traces.push(`auth_service.py references ${marker}`);
+    }
+  }
+  if (snapshot.desktopEnvironmentExample?.includes("SUPABASE_")) {
+    traces.push(".env.example still lists SUPABASE_* keys.");
+  }
+  return traces;
 }
 
 function environmentExampleIsAllowListed(source: string | null): boolean {
@@ -194,387 +209,9 @@ function hasSchemaTable(schema: string | null, table: string): boolean {
   if (schema === null) return false;
   const normalized = schema.replace(/\s+/g, " ").toLowerCase();
   const escapedTable = table.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\bcreate table (?:if not exists )?public\\.${escapedTable}\\s*\\(`).test(
-    normalized,
-  );
-}
-
-/**
- * Legacy desktop-owned v1 signature, reproduced verbatim. The portal never calls
- * it and never reads or writes app_profiles.profile_photo_path, but the column
- * and this argument list are pre-existing desktop data contracts: the check only
- * confirms the legacy function is still retained unchanged.
- */
-const PROFILE_V1_ARGUMENT_CONTRACT = [
-  "p_first_name text default null",
-  "p_last_name text default null",
-  "p_phone text default null",
-  "p_country text default null",
-  "p_timezone text default null",
-  "p_default_currency text default null",
-  "p_profile_photo_path text default null",
-  "p_notify_price_alerts boolean default null",
-  "p_notify_portfolio_moves boolean default null",
-  "p_notify_news_digest boolean default null",
-  "p_data_refresh_rate text default null",
-  "p_theme_preference text default null",
-  "p_two_factor_enabled boolean default null",
-].join(",");
-
-const PROFILE_V2_ARGUMENT_CONTRACT = [
-  "p_expected_profile_version bigint",
-  "p_first_name text default null",
-  "p_last_name text default null",
-  "p_phone text default null",
-  "p_country text default null",
-  "p_timezone text default null",
-  "p_default_currency text default null",
-  "p_notify_price_alerts boolean default null",
-  "p_notify_portfolio_moves boolean default null",
-  "p_notify_news_digest boolean default null",
-  "p_data_refresh_rate text default null",
-  "p_theme_preference text default null",
-  "p_two_factor_enabled boolean default null",
-].join(",");
-
-const PROFILE_V2_TYPE_SIGNATURE = [
-  "bigint",
-  "text",
-  "text",
-  "text",
-  "text",
-  "text",
-  "text",
-  "boolean",
-  "boolean",
-  "boolean",
-  "text",
-  "text",
-  "boolean",
-].join(",");
-
-const PROFILE_V2_RECEIPT_CONTRACT = [
-  "user_id uuid",
-  "profile_version bigint",
-  "updated_at timestamp with time zone",
-].join(",");
-
-const PROFILE_V2_FIELD_MUTATION_CONTRACT = [
-  "first_name = case when p_first_name is null then profile.first_name else pg_catalog.btrim(p_first_name) end",
-  "last_name = case when p_last_name is null then profile.last_name else pg_catalog.btrim(p_last_name) end",
-  "phone = case when p_phone is null then profile.phone else pg_catalog.btrim(p_phone) end",
-  "country = case when p_country is null then profile.country else pg_catalog.btrim(p_country) end",
-  "timezone = case when p_timezone is null then profile.timezone else pg_catalog.btrim(p_timezone) end",
-  "default_currency = case when p_default_currency is null then profile.default_currency else pg_catalog.upper(pg_catalog.btrim(p_default_currency)) end",
-  "notify_price_alerts = coalesce(p_notify_price_alerts, profile.notify_price_alerts)",
-  "notify_portfolio_moves = coalesce(p_notify_portfolio_moves, profile.notify_portfolio_moves)",
-  "notify_news_digest = coalesce(p_notify_news_digest, profile.notify_news_digest)",
-  "data_refresh_rate = case when p_data_refresh_rate is null then profile.data_refresh_rate else pg_catalog.btrim(p_data_refresh_rate) end",
-  "theme_preference = case when p_theme_preference is null then profile.theme_preference else pg_catalog.lower(pg_catalog.btrim(p_theme_preference)) end",
-  "two_factor_enabled = coalesce(p_two_factor_enabled, profile.two_factor_enabled)",
-  "updated_at = pg_catalog.now()",
-] as const;
-
-function stripSqlComments(source: string): string {
-  let result = "";
-  let index = 0;
-  let quote: "single" | "double" | null = null;
-
-  while (index < source.length) {
-    const current = source[index] ?? "";
-    const next = source[index + 1] ?? "";
-
-    if (quote === "single") {
-      result += current;
-      if (current === "'" && next === "'") {
-        result += next;
-        index += 2;
-        continue;
-      }
-      if (current === "'") quote = null;
-      index += 1;
-      continue;
-    }
-    if (quote === "double") {
-      result += current;
-      if (current === '"' && next === '"') {
-        result += next;
-        index += 2;
-        continue;
-      }
-      if (current === '"') quote = null;
-      index += 1;
-      continue;
-    }
-    if (current === "'") {
-      quote = "single";
-      result += current;
-      index += 1;
-      continue;
-    }
-    if (current === '"') {
-      quote = "double";
-      result += current;
-      index += 1;
-      continue;
-    }
-    if (current === "-" && next === "-") {
-      index += 2;
-      while (index < source.length && source[index] !== "\n") index += 1;
-      result += " ";
-      continue;
-    }
-    if (current === "/" && next === "*") {
-      index += 2;
-      let depth = 1;
-      while (index < source.length && depth > 0) {
-        if (source[index] === "/" && source[index + 1] === "*") {
-          depth += 1;
-          index += 2;
-        } else if (source[index] === "*" && source[index + 1] === "/") {
-          depth -= 1;
-          index += 2;
-        } else {
-          index += 1;
-        }
-      }
-      result += " ";
-      continue;
-    }
-    result += current;
-    index += 1;
-  }
-
-  return result;
-}
-
-function normalizeSql(source: string): string {
-  return stripSqlComments(source).toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function normalizeSqlList(source: string): string {
-  return normalizeSql(source).replace(/\s*,\s*/g, ",");
-}
-
-function compactSql(source: string): string {
-  return normalizeSql(source).replace(/\s+/g, "");
-}
-
-type ProfileV2Definition = {
-  argumentsSource: string;
-  receiptSource: string;
-  body: string;
-};
-
-function extractProfileV2Definitions(source: string): ProfileV2Definition[] {
-  const pattern =
-    /\bcreate\s+(?:or\s+replace\s+)?function\s+public\.update_my_app_profile_v2\s*\(([\s\S]*?)\)\s*returns\s+table\s*\(([\s\S]*?)\)\s*language\s+plpgsql\s+security\s+definer\s+set\s+search_path\s*=\s*''\s+as\s+(\$[a-z0-9_]*\$)([\s\S]*?)\3\s*;/g;
-  return [...source.matchAll(pattern)].map((match) => ({
-    argumentsSource: match[1] ?? "",
-    receiptSource: match[2] ?? "",
-    body: match[4] ?? "",
-  }));
-}
-
-/**
- * Compare observed migration evidence to the exact reviewed manifest. The gate is
- * fail-closed: absent evidence, a different count, a reordered or renamed file, a
- * duplicate entry, and any digest mismatch all block the source gate. No partial
- * or normalized comparison is accepted.
- */
-function migrationIntegrityViolations(observed: readonly MigrationArtifact[] | null): string[] {
-  const expected = DESKTOP_SUPABASE_MIGRATION_ARTIFACTS;
-  if (observed === null) {
-    return ["Desktop migration artifact evidence is unavailable or incomplete."];
-  }
-
-  const violations: string[] = [];
-  if (observed.length !== expected.length) {
-    violations.push(
-      `Expected exactly ${expected.length} migration artifacts, observed ${observed.length}.`,
-    );
-  }
-
-  const seen = new Set<string>();
-  for (const artifact of observed) {
-    if (seen.has(artifact.filename)) {
-      violations.push(`Duplicate migration artifact: ${artifact.filename}`);
-    }
-    seen.add(artifact.filename);
-  }
-
-  expected.forEach((expectedArtifact, index) => {
-    const actual = observed[index];
-    if (!actual) {
-      violations.push(
-        `Missing migration artifact at position ${index + 1}: ${expectedArtifact.filename}`,
-      );
-      return;
-    }
-    if (actual.filename !== expectedArtifact.filename) {
-      violations.push(
-        `Migration order mismatch at position ${index + 1}: expected ${expectedArtifact.filename}, observed ${actual.filename}`,
-      );
-      return;
-    }
-    if (actual.sha256 !== expectedArtifact.sha256) {
-      violations.push(
-        `Migration digest mismatch for ${expectedArtifact.filename}: expected ${expectedArtifact.sha256}, observed ${actual.sha256}`,
-      );
-    }
-  });
-
-  for (const artifact of observed) {
-    if (!expected.some((expectedArtifact) => expectedArtifact.filename === artifact.filename)) {
-      violations.push(`Unexpected migration artifact: ${artifact.filename}`);
-    }
-  }
-
-  return violations;
-}
-
-/**
- * Untrusted defense-in-depth structure checks. These regular expressions can
- * only show that reviewed constructs are present; they are not evidence that
- * arbitrary later SQL is safe. Authoritative source integrity comes from the
- * exact per-migration digests in supabase.migration-integrity.
- */
-function profileContractMissingEvidence(schema: string | null): string[] {
-  if (schema === null) return ["Desktop Supabase contract source is unavailable."];
-
-  const source = normalizeSql(schema);
-  const missing: string[] = [];
-
-  if (
-    !/\balter\s+table\s+public\.app_profiles\s+add\s+column\s+profile_version\s+bigint\s+not\s+null\s+default\s+1\s*;/.test(
-      source,
-    )
-  ) {
-    missing.push("Missing additive profile_version bigint NOT NULL DEFAULT 1 column.");
-  }
-  if (
-    !/\balter\s+table\s+public\.app_profiles\s+add\s+constraint\s+app_profiles_profile_version_check\s+check\s*\(\s*profile_version\s*>\s*0\s*\)\s*;/.test(
-      source,
-    )
-  ) {
-    missing.push("Missing positive app_profiles_profile_version_check constraint.");
-  }
-
-  const incrementFunction =
-    /\bcreate\s+function\s+public\.increment_app_profile_version\s*\(\s*\)\s*returns\s+trigger\s+language\s+plpgsql\s+set\s+search_path\s*=\s*''\s+as\s+(\$[a-z0-9_]*\$)([\s\S]*?)\1\s*;/.exec(
-      source,
-    );
-  if (
-    !incrementFunction ||
-    !/\bnew\.profile_version\s*:=\s*old\.profile_version\s*\+\s*1\s*;/.test(
-      incrementFunction[2] ?? "",
-    ) ||
-    !/\breturn\s+new\s*;/.test(incrementFunction[2] ?? "")
-  ) {
-    missing.push("Missing exact increment_app_profile_version old-plus-one trigger function.");
-  }
-  if (
-    !/\bcreate\s+trigger\s+trg_app_profiles_increment_version\s+before\s+update\s+on\s+public\.app_profiles\s+for\s+each\s+row\s+execute\s+function\s+public\.increment_app_profile_version\s*\(\s*\)\s*;/.test(
-      source,
-    )
-  ) {
-    missing.push("Missing unconditional every-UPDATE profile version trigger.");
-  }
-
-  const v1Definitions = [
-    ...source.matchAll(
-      /\bcreate\s+(?:or\s+replace\s+)?function\s+public\.update_my_app_profile\s*\(([\s\S]*?)\)\s*returns\s+public\.app_profiles\b/g,
-    ),
-  ];
-  if (
-    !v1Definitions.some(
-      (definition) => normalizeSqlList(definition[1] ?? "") === PROFILE_V1_ARGUMENT_CONTRACT,
-    )
-  ) {
-    missing.push("Missing retained 13-argument update_my_app_profile v1 function signal.");
-  }
-
-  const v2Definitions = extractProfileV2Definitions(source);
-  const v2 = v2Definitions.length === 1 ? v2Definitions[0] : null;
-  if (
-    !v2 ||
-    normalizeSqlList(v2.argumentsSource) !== PROFILE_V2_ARGUMENT_CONTRACT ||
-    normalizeSqlList(v2.receiptSource) !== PROFILE_V2_RECEIPT_CONTRACT
-  ) {
-    missing.push(
-      "Missing exact security-definer update_my_app_profile_v2 identity and minimal three-column receipt.",
-    );
-  }
-
-  const v2Body = v2 ? normalizeSql(v2.body) : "";
-  const compactV2Body = compactSql(v2Body);
-  if (
-    !/\bcaller_user_id\s*:=\s*auth\.uid\s*\(\s*\)\s*;/.test(v2Body) ||
-    !/\bif\s+caller_user_id\s+is\s+null\s+then\s+raise\s+exception\s+'authentication required'\s+using\s+errcode\s*=\s*'42501'\s*;\s+end\s+if\s*;/.test(
-      v2Body,
-    ) ||
-    !/\bif\s+not\s+public\.app_is_active\s*\(\s*\)\s+then\s+raise\s+exception\s+'active account required'\s+using\s+errcode\s*=\s*'42501'\s*;\s+end\s+if\s*;/.test(
-      v2Body,
-    ) ||
-    !/\bwhere\s+profile\.user_id\s*=\s*caller_user_id\s+and\s+profile\.is_active\s+is\s+true\b/.test(
-      v2Body,
-    )
-  ) {
-    missing.push("Missing v2 caller identity, active-account, or owner-bound UPDATE predicate.");
-  }
-  if (
-    !/\bprofile\.profile_version\s*=\s*p_expected_profile_version\b/.test(v2Body) ||
-    !/\bp_expected_profile_version\s+is\s+null\s+or\s+p_expected_profile_version\s*<=\s*0\b/.test(
-      v2Body,
-    ) ||
-    !/\bget\s+diagnostics\s+affected_rows\s*=\s*row_count\s*;/.test(v2Body) ||
-    !/\bif\s+affected_rows\s*=\s*0\s+then\b/.test(v2Body) ||
-    !/\bif\s+not\s+exists\s*\(\s*select\s+1\s+from\s+public\.app_profiles\s+profiles\s+where\s+profiles\.user_id\s*=\s*caller_user_id\s+and\s+profiles\.is_active\s+is\s+true\s*\)\s+then\s+raise\s+exception\s+'active account required'\s+using\s+errcode\s*=\s*'42501'\s*;\s+end\s+if\s*;/.test(
-      v2Body,
-    ) ||
-    !/\braise\s+exception\s+'profile version is stale'\s+using\s+errcode\s*=\s*'40001'\s*;/.test(
-      v2Body,
-    )
-  ) {
-    missing.push("Missing v2 positive-token CAS and exact SQLSTATE 40001 stale contract.");
-  }
-  if (
-    PROFILE_V2_FIELD_MUTATION_CONTRACT.some(
-      (fieldMutation) => !compactV2Body.includes(compactSql(fieldMutation)),
-    )
-  ) {
-    missing.push("Missing exact v2 profile and preference field mutation mappings.");
-  }
-  if (
-    !/\breturning\s+profile\.user_id\s*,\s*profile\.profile_version\s*,\s*profile\.updated_at\s*;/.test(
-      v2Body,
-    )
-  ) {
-    missing.push("Missing v2 minimal committed profile mutation receipt.");
-  }
-
-  const exactRevoke = compactSql(
-    `revoke all on function public.update_my_app_profile_v2(${PROFILE_V2_TYPE_SIGNATURE}) from public, anon, authenticated, service_role;`,
-  );
-  const exactGrant = compactSql(
-    `grant execute on function public.update_my_app_profile_v2(${PROFILE_V2_TYPE_SIGNATURE}) to authenticated;`,
-  );
-  const v2AclStatements = [
-    ...source.matchAll(
-      /\b(?:grant|revoke)\s+(?:all(?:\s+privileges)?|execute)\s+on\s+function\s+public\.update_my_app_profile_v2\s*\(([^)]*)\)\s+(?:to|from)\s+[^;]+;/g,
-    ),
-  ]
-    .filter((statement) => normalizeSqlList(statement[1] ?? "") === PROFILE_V2_TYPE_SIGNATURE)
-    .map((statement) => compactSql(statement[0]));
-  if (
-    v2AclStatements.length !== 2 ||
-    !v2AclStatements.includes(exactRevoke) ||
-    !v2AclStatements.includes(exactGrant)
-  ) {
-    missing.push("Missing exact authenticated-only v2 EXECUTE ACL statement set.");
-  }
-
-  return missing;
+  return new RegExp(
+    `\\bcreate table (?:if not exists )?(?:dbo|public)\\.${escapedTable}\\s*\\(`,
+  ).test(normalized);
 }
 
 export function extractAzureRoutes(source: string | null): string[] {
@@ -703,18 +340,31 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
     ),
   );
 
+  const desktopEnvironment = snapshot.desktopEnvironmentExample;
   checks.push(
     check(
       "desktop.public-cloud-contract",
       "desktop",
-      includesEvery(snapshot.desktopEnvironmentExample, [
-        "SUPABASE_URL",
-        "SUPABASE_ANON_KEY",
+      includesEvery(desktopEnvironment, [
+        "QT_ACCOUNT_API_URL",
+        "QT_ACCOUNT_PORTAL_URL",
         "QT_AUTH_API_ENDPOINT",
-      ])
+      ]) && !desktopEnvironment?.includes("SUPABASE_")
         ? "pass"
         : "blocked",
-      "Desktop documents its public Supabase and Azure endpoint contract.",
+      "Desktop documents its public Azure endpoint contract (Account API, console, update function) and nothing from Supabase.",
+    ),
+  );
+  const supabaseTraces = desktopSupabaseTraces(snapshot);
+  checks.push(
+    check(
+      "desktop.no-supabase",
+      "desktop",
+      supabaseTraces.length === 0 ? "pass" : "blocked",
+      supabaseTraces.length === 0
+        ? "The desktop carries no Supabase client, session store or configuration."
+        : "Supabase code or configuration is still present in the desktop.",
+      supabaseTraces,
     ),
   );
   checks.push(
@@ -722,8 +372,7 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
       "desktop.legacy-pin-metadata",
       "desktop",
       includesAny(snapshot.desktopAuthService, ["app_passcode_hash"]) ||
-        includesAny(snapshot.desktopAzureFunction, ["app_passcode_hash"]) ||
-        includesAny(snapshot.desktopSupabaseSchema, ["app_passcode_hash"])
+        includesAny(snapshot.desktopAzureFunction, ["app_passcode_hash"])
         ? "warning"
         : "pass",
       "Legacy cloud PIN metadata must remain blocked from portal contracts and be removed only after desktop migration.",
@@ -733,10 +382,10 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
     check(
       "desktop.versioned-profile-writer",
       "desktop",
-      hasDesktopVersionedProfileWriter(snapshot.desktopSupabaseService) ? "pass" : "blocked",
-      hasDesktopVersionedProfileWriter(snapshot.desktopSupabaseService)
-        ? "Desktop profile and preference writes use the versioned profile RPC and exact minimal receipts."
-        : "Desktop profile and preference writes must migrate from the retained v1 profile RPC before it can be revoked.",
+      hasDesktopVersionedProfileWriter(snapshot.desktopAuthService) ? "pass" : "blocked",
+      hasDesktopVersionedProfileWriter(snapshot.desktopAuthService)
+        ? "Desktop profile and preference writes go through the Account API's versioned profile update."
+        : "Desktop profile and preference writes must use the Account API's versioned profile update.",
     ),
   );
   checks.push(
@@ -745,8 +394,8 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
       "desktop",
       hasDesktopCloudPasswordLock(snapshot.desktopAuthService) ? "pass" : "blocked",
       hasDesktopCloudPasswordLock(snapshot.desktopAuthService)
-        ? "Desktop cloud-auth password writes fill the local password column with a random lock hash, not the reusable cloud password."
-        : "Desktop cloud-auth paths must stop storing reusable cloud-password verifiers locally.",
+        ? "Desktop cloud-auth writes fill the local password column with a random lock hash and never handle a console password."
+        : "Desktop cloud-auth paths must stop storing reusable password verifiers locally.",
     ),
   );
   checks.push(
@@ -760,81 +409,31 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
     ),
   );
 
-  const missingSchemaObjects = REQUIRED_SCHEMA_OBJECTS.filter(
-    (table) => !hasSchemaTable(snapshot.desktopSupabaseSchema, table),
-  );
+  const schemaSource = (snapshot.azureSqlSchema ?? "").replace(/\s+/g, " ").toLowerCase();
+  const schemaFindings = REQUIRED_SCHEMA_OBJECTS.filter(
+    (table) => !hasSchemaTable(snapshot.azureSqlSchema, table),
+  ).map((table) => `Missing table: ${table}`);
+  if (!/\[profile_version\] bigint not null/.test(schemaSource)) {
+    schemaFindings.push("Missing profile_version bigint NOT NULL column on app_profiles.");
+  }
+  if (!/\[role\]='owner'/.test(schemaSource)) {
+    schemaFindings.push("Missing canonical role constraint including Owner.");
+  }
   checks.push(
     check(
-      "supabase.current-schema",
-      "supabase",
-      missingSchemaObjects.length === 0 ? "pass" : "blocked",
-      missingSchemaObjects.length === 0
-        ? "Current identity, profile, role, watchlist, and audit tables are represented in source control."
-        : "Required current Supabase tables are missing from the checked-in schema.",
-      missingSchemaObjects.map((table) => `Missing table: ${table}`),
-    ),
-  );
-
-  const futureTables = ["account_sessions", "auth_events"];
-  const missingFutureTables = futureTables.filter(
-    (table) => !hasSchemaTable(snapshot.desktopSupabaseSchema, table),
-  );
-  checks.push(
-    check(
-      "supabase.unified-sessions",
-      "supabase",
-      missingFutureTables.length === 0 ? "pass" : "warning",
-      missingFutureTables.length === 0
-        ? "Unified session and authentication event tables are represented in source control."
-        : "Unified session and authentication event migrations are not implemented yet.",
-      missingFutureTables.map((table) => `Planned table absent: ${table}`),
-    ),
-  );
-
-  const hasOwnerRole = /role\s+in\s*\([^)]*['"]owner['"]/i.test(
-    snapshot.desktopSupabaseSchema ?? "",
-  );
-  checks.push(
-    check(
-      "supabase.owner-role",
-      "supabase",
-      hasOwnerRole ? "pass" : "warning",
-      hasOwnerRole
-        ? "Canonical role constraint includes Owner."
-        : "Current canonical role constraint does not include Owner.",
-    ),
-  );
-
-  const migrationIntegrityFindings = migrationIntegrityViolations(
-    snapshot.desktopSupabaseMigrations,
-  );
-  checks.push(
-    check(
-      "supabase.migration-integrity",
-      "supabase",
-      migrationIntegrityFindings.length === 0 ? "pass" : "blocked",
-      migrationIntegrityFindings.length === 0
-        ? `All ${DESKTOP_SUPABASE_MIGRATION_ARTIFACTS.length} desktop migrations match their exact reviewed SHA-256 digests in applied order.`
-        : "Desktop migration artifacts do not match the exact reviewed digests and require manual review.",
-      migrationIntegrityFindings.length === 0
+      "azure.sql-schema",
+      "azure",
+      snapshot.azureSqlSchema !== null && schemaFindings.length === 0 ? "pass" : "blocked",
+      snapshot.azureSqlSchema === null
+        ? "The Azure SQL schema snapshot is unavailable."
+        : schemaFindings.length === 0
+          ? "Identity, profile, role, session, event, app-state and audit tables are represented in the Azure SQL schema snapshot."
+          : "Required Azure SQL tables or constraints are missing from the checked-in schema snapshot.",
+      snapshot.azureSqlSchema === null
         ? [
-            "Digests are computed over raw migration bytes; any byte drift blocks this gate.",
-            "Structural SQL checks are untrusted defense-in-depth only.",
+            "Expected cloud/azure/account_function/schema/azure_sql_schema.sql in the desktop repository.",
           ]
-        : migrationIntegrityFindings,
-    ),
-  );
-
-  const missingProfileContract = profileContractMissingEvidence(snapshot.desktopSupabaseSchema);
-  checks.push(
-    check(
-      "supabase.profile-contract",
-      "supabase",
-      missingProfileContract.length === 0 ? "pass" : "blocked",
-      missingProfileContract.length === 0
-        ? "Profile versioning and the v1/v2 profile mutation contracts are structurally represented in source control."
-        : "Profile mutation source contracts are missing or structurally incomplete.",
-      missingProfileContract,
+        : schemaFindings,
     ),
   );
 
