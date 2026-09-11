@@ -1,5 +1,16 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(sed -n '/^h2 {/,/^}/p' style.css)",
+      "Bash(sed -n '/^\\\\.minimal h2 {/,/^}/p' style.css)",
+      "Bash(python3 __TRACKED_VAR__/check_site.py)",
+      "Bash(echo \"exit=$? \\(1 = none found\\)\")",
+      "Bash(curl -s -o /dev/null -w \"server %{http_code}\\\\n\" http://127.0.0.1:8123/)",
+      "Bash(node /private/tmp/claude-501/-Users-aaryansaroha-Documents-Projects-Quantify-Terminal-Account-Portal/0ab00ee8-153d-4142-8167-31a62562eec1/scratchpad/shoot.js /private/tmp/claude-501/-Users-aaryansaroha-Documents-Projects-Quantify-Terminal-Account-Portal/0ab00ee8-153d-4142-8167-31a62562eec1/scratchpad/shots)",
+      "Bash(export NODE_PATH=\"/Users/aaryansaroha/Documents/Projects/Quantify Terminal Account Portal/node_modules\")",
+      "Bash(grep -v ':0$')",
+      "Bash(pkill -f \"serve.py 8123\")"
+    ],
     "additionalDirectories": [
       "/Users/aaryansaroha/Documents/Projects/Quantify Terminal Website"
     ]

@@ -145,10 +145,10 @@ export async function createServerAzureClient({
     /**
      * Sign up with email/password
      */
-    async signUp(email: string, password: string) {
+    async signUp(email: string, password: string, firstName = "", lastName = "") {
       const client = new AzureAuthClient(config.apiUrl);
       try {
-        const result = await client.signUp(email, password);
+        const result = await client.signUp(email, password, firstName, lastName);
         return { data: result, error: null };
       } catch (e) {
         return {

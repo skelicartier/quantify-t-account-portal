@@ -192,7 +192,7 @@ export function AdminUsers({ access, now }: AdminUsersProps) {
                     name="q"
                     type="search"
                     defaultValue={filters.q ?? ""}
-                    placeholder="Email or name"
+                    placeholder="Email, name or account ID"
                     maxLength={120}
                     autoComplete="off"
                   />
@@ -237,7 +237,9 @@ export function AdminUsers({ access, now }: AdminUsersProps) {
                     <tr key={user.user_id}>
                       <td>
                         <span className="data-table__primary">{accountName(user)}</span>
-                        <span className="data-table__secondary">{user.email || "No email"}</span>
+                        <span className="data-table__secondary">
+                          {user.display_name ? user.email || "No email" : "No name on file"}
+                        </span>
                       </td>
                       <td>
                         <StatusPill value={user.is_active ? "active" : "inactive"} />

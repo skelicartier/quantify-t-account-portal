@@ -5,6 +5,7 @@ import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { createServerAzureClient } from "@/lib/supabase/server";
 
 const EMPTY_FIELD_ERRORS: SignupActionState["fieldErrors"] = {
+  fullName: [],
   email: [],
   password: [],
   passwordConfirmation: [],
@@ -34,7 +35,12 @@ export async function signup(
   try {
     await requireSameOriginServerAction();
     const azure = await createServerAzureClient();
-    const result = await azure.signUp(parsed.data.email, parsed.data.password);
+    const result = await azure.signUp(
+      parsed.data.email,
+      parsed.data.password,
+      parsed.data.firstName,
+      parsed.data.lastName,
+    );
 
     if (result.error) return SERVICE_ERROR_STATE;
     return ACCEPTED_SIGNUP_STATE;

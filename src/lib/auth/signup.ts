@@ -7,8 +7,19 @@ import {
 } from "@/lib/auth/challenge";
 import { LEGAL_CONSENT_FIELD_NAME, isLegalConsentAccepted } from "@/lib/auth/consent";
 
+const NAME_PATTERN = /^[\p{L}\p{M}][\p{L}\p{M}\s'’.-]*$/u;
+
 const signupSchema = z
   .object({
+    fullName: z
+      .string()
+      .trim()
+      .max(160, "Name is too long.")
+      .refine((value) => value === "" || NAME_PATTERN.test(value), {
+        message: "Use letters only in your name.",
+      })
+      .optional()
+      .or(z.literal("")),
     email: z
       .string({ error: "Enter your email address." })
       .trim()
@@ -44,6 +55,7 @@ export type SignupActionState = {
   status: "idle" | "error" | "accepted";
   message: string | null;
   fieldErrors: {
+    fullName: string[];
     email: string[];
     password: string[];
     passwordConfirmation: string[];
@@ -61,6 +73,7 @@ export const INITIAL_SIGNUP_STATE: SignupActionState = {
   status: "idle",
   message: null,
   fieldErrors: {
+    fullName: [],
     email: [],
     password: [],
     passwordConfirmation: [],
@@ -72,12 +85,19 @@ export const INITIAL_SIGNUP_STATE: SignupActionState = {
 export type ParsedSignupForm =
   | {
       success: true;
-      data: { email: string; password: string; captchaToken: string };
+      data: {
+        email: string;
+        password: string;
+        captchaToken: string;
+        firstName: string;
+        lastName: string;
+      };
     }
   | { success: false; state: SignupActionState };
 
 export function parseSignupFormData(formData: FormData): ParsedSignupForm {
   const result = signupSchema.safeParse({
+    fullName: formData.get("fullName") ?? "",
     email: formData.get("email"),
     password: formData.get("password"),
     passwordConfirmation: formData.get("passwordConfirmation"),
@@ -93,6 +113,7 @@ export function parseSignupFormData(formData: FormData): ParsedSignupForm {
         status: "error",
         message: "Check the highlighted fields and try again.",
         fieldErrors: {
+          fullName: errors.fullName ?? [],
           email: errors.email ?? [],
           password: errors.password ?? [],
           passwordConfirmation: errors.passwordConfirmation ?? [],
@@ -103,12 +124,15 @@ export function parseSignupFormData(formData: FormData): ParsedSignupForm {
     };
   }
 
+  const [firstName = "", ...rest] = (result.data.fullName ?? "").split(/\s+/u).filter(Boolean);
   return {
     success: true,
     data: {
       email: result.data.email,
       password: result.data.password,
       captchaToken: result.data.challenge ?? "",
+      firstName,
+      lastName: rest.join(" "),
     },
   };
 }

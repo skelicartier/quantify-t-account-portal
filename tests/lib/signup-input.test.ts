@@ -20,6 +20,8 @@ describe("signup input policy", () => {
         email: "new.user@example.com",
         password: "  twelve+ chars  ",
         captchaToken: "turnstile-response",
+        firstName: "",
+        lastName: "",
       },
     });
   });
@@ -62,5 +64,23 @@ describe("signup input policy", () => {
 
     expect(result.success).toBe(false);
     expect(JSON.stringify(result)).not.toContain(submittedSecret);
+  });
+
+  it("splits an optional full name into first and last names and rejects symbols", () => {
+    const formData = validFormData();
+    formData.set("fullName", "  Jaswinder   Singh Gill ");
+    const parsed = parseSignupFormData(formData);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.firstName).toBe("Jaswinder");
+      expect(parsed.data.lastName).toBe("Singh Gill");
+    }
+
+    formData.set("fullName", "<script>");
+    const rejected = parseSignupFormData(formData);
+    expect(rejected.success).toBe(false);
+    if (!rejected.success) {
+      expect(rejected.state.fieldErrors.fullName).toEqual(["Use letters only in your name."]);
+    }
   });
 });

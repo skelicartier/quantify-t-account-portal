@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { AdminGate } from "@/components/admin/admin-gate";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -31,6 +33,22 @@ const COLUMNS = [
 
 function Identifier({ value }: { value: string | null }) {
   return value ? <ShortId value={value} /> : <span className="quiet">—</span>;
+}
+
+/** A person: their email when the API resolved it, the account id underneath either way. */
+function Person({ userId, email }: { userId: string; email: string | null | undefined }) {
+  const href = `/admin/users/${userId}`;
+  if (!email) return <ShortId value={userId} href={href} />;
+  return (
+    <>
+      <Link className="row-link data-table__primary" href={href}>
+        {email}
+      </Link>
+      <span className="data-table__secondary">
+        <ShortId value={userId} />
+      </span>
+    </>
+  );
 }
 
 export function AdminAuditEvents({ access, now }: AdminAuditEventsProps) {
@@ -141,10 +159,7 @@ export function AdminAuditEvents({ access, now }: AdminAuditEventsProps) {
                       </td>
                       <td>
                         {event.actor_user_id ? (
-                          <ShortId
-                            value={event.actor_user_id}
-                            href={`/admin/users/${event.actor_user_id}`}
-                          />
+                          <Person userId={event.actor_user_id} email={event.actor_email} />
                         ) : (
                           <span className="quiet">
                             {formatLabel(event.summary.actor_role || "unknown")}
@@ -153,10 +168,7 @@ export function AdminAuditEvents({ access, now }: AdminAuditEventsProps) {
                       </td>
                       <td>
                         {event.subject_user_id ? (
-                          <ShortId
-                            value={event.subject_user_id}
-                            href={`/admin/users/${event.subject_user_id}`}
-                          />
+                          <Person userId={event.subject_user_id} email={event.subject_email} />
                         ) : (
                           <span className="quiet">—</span>
                         )}

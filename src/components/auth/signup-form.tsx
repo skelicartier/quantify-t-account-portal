@@ -27,6 +27,7 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
     );
   }
 
+  const nameError = state.fieldErrors.fullName[0];
   const emailError = state.fieldErrors.email[0];
   const passwordError = state.fieldErrors.password[0];
   const confirmationError = state.fieldErrors.passwordConfirmation[0];
@@ -36,6 +37,20 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
   return (
     <>
       <form className="auth-form" action={formAction} noValidate>
+        <Field id="signup-name" label="Full name" note="Optional" error={nameError}>
+          <Input
+            id="signup-name"
+            name="fullName"
+            type="text"
+            autoComplete="name"
+            placeholder="How you'd like to be addressed"
+            maxLength={160}
+            disabled={isPending}
+            invalid={Boolean(nameError)}
+            aria-describedby={describedBy("signup-name", { error: nameError })}
+          />
+        </Field>
+
         <Field id="signup-email" label="Email address" error={emailError}>
           <Input
             id="signup-email"

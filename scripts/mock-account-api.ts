@@ -694,7 +694,9 @@ const server = createServer(async (request, response) => {
         .map((event, position) => ({
           id: randomUUID(),
           subject_user_id: p.id,
+          subject_email: p.email,
           actor_user_id: position === 0 ? PEOPLE[0]!.id : null,
+          actor_email: position === 0 ? PEOPLE[0]!.email : null,
           session_id: event.session_id,
           event_type: event.event_type,
           outcome: event.outcome,

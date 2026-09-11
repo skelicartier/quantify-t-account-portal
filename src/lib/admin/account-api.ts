@@ -545,7 +545,9 @@ const adminAuditEventSchema = z
   .object({
     id: z.string().max(64),
     subject_user_id: z.guid().nullable(),
+    subject_email: z.string().max(254).nullable().optional(),
     actor_user_id: z.guid().nullable(),
+    actor_email: z.string().max(254).nullable().optional(),
     session_id: z.guid().nullable(),
     event_type: z.string().min(1).max(96),
     outcome: z.enum(["success", "failure", "blocked", "unknown"]),

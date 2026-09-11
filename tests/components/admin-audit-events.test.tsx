@@ -105,4 +105,42 @@ describe("AdminAuditEvents", () => {
     expect(screen.getByRole("heading", { name: /audit is not available/i })).toBeVisible();
     expect(screen.queryByText("Session Revoked")).not.toBeInTheDocument();
   });
+
+  it("names the subject and actor by email when the service resolved them", () => {
+    render(
+      <AdminAuditEvents
+        access={
+          {
+            status: "authorized",
+            me,
+            assurance,
+            auditEvents: {
+              ...auditEvents,
+              events: [
+                {
+                  ...auditEvents.events[0]!,
+                  subject_email: "user@example.test",
+                  actor_user_id: "4c7715ea-9ae3-4abd-b2f7-2d2c9a037d9b",
+                  actor_email: "owner@example.test",
+                },
+              ],
+            },
+            filters: {},
+            limit: 25,
+            offset: 0,
+          } satisfies AdminAuditEventsAccess
+        }
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "user@example.test" })).toHaveAttribute(
+      "href",
+      `/admin/users/${USER_ID}`,
+    );
+    expect(screen.getByRole("link", { name: "owner@example.test" })).toHaveAttribute(
+      "href",
+      "/admin/users/4c7715ea-9ae3-4abd-b2f7-2d2c9a037d9b",
+    );
+    expect(screen.getByText(USER_ID)).toBeInTheDocument();
+  });
 });

@@ -18,6 +18,7 @@ describe("SignupForm", () => {
       status: "accepted",
       message: "If this address can be registered, check your email for the next step.",
       fieldErrors: {
+        fullName: [],
         email: [],
         password: [],
         passwordConfirmation: [],
