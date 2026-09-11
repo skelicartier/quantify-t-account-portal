@@ -5,6 +5,8 @@ import { BrandMark } from "@/components/brand/brand-mark";
 type AuthShellProps = {
   title: string;
   description: string;
+  /** Follow the signed-in console's theme instead of the always-dark sign-in canvas. */
+  themed?: boolean;
   children: ReactNode;
 };
 
@@ -14,9 +16,9 @@ const MARKETING_SITE = "https://www.quantifyterminal.com";
  * The credential surface: one narrow column on the dark canvas — mark, heading, form —
  * and a single legal line at the foot. No chrome competes with the form.
  */
-export function AuthShell({ title, description, children }: AuthShellProps) {
+export function AuthShell({ title, description, themed = false, children }: AuthShellProps) {
   return (
-    <main className="auth" id="main-content">
+    <main className={themed ? "auth auth--console" : "auth"} id="main-content">
       <section className="auth__panel" aria-labelledby="auth-heading">
         <div className="auth__brand">
           <BrandMark />

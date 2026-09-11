@@ -47,6 +47,7 @@ import {
   ROLE_REPORT_CAPABILITY,
   setAccountApiAdminUserActive,
   setAccountApiAdminUserRole,
+  startAccountApiHandoff,
   enqueueAccountApiAdminNotificationEmail,
   enqueueAccountApiAdminReport,
   updateAccountApiAdminNotifications,
@@ -1184,6 +1185,53 @@ describe("Account API client", () => {
       "Idempotency-Key": "portal-abcdef123456",
     });
     expect(url.toString()).not.toMatch(/token|password|passcode|pin/iu);
+  });
+
+  it("starts a desktop handoff bound to the app's challenge", async () => {
+    const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+    const fetcher = vi.fn<TestFetcher>(async () =>
+      jsonResponse({
+        ok: true,
+        correlation_id: "qt-handoff",
+        code: "one-time-code-1234567890",
+        expires_at: "2026-09-11T10:02:00Z",
+      }),
+    );
+
+    const result = await startAccountApiHandoff(
+      "bearer-token",
+      { challenge },
+      {
+        environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+        fetcher,
+        idempotencyKey: "portal-handoff-1",
+      },
+    );
+
+    expect(result.code).toBe("one-time-code-1234567890");
+    const [url, init] = firstFetchCall(fetcher);
+    expect(url.toString()).toBe(`${ACCOUNT_API_URL}/auth/handoff/start`);
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(JSON.stringify({ challenge, client: "desktop" }));
+    expect(init.headers).toMatchObject({ Authorization: "Bearer bearer-token" });
+  });
+
+  it("fails closed when the handoff answer carries no code", async () => {
+    const fetcher = vi.fn<TestFetcher>(async () =>
+      jsonResponse({ ok: true, correlation_id: "qt-handoff", expires_at: "2026-09-11T10:02:00Z" }),
+    );
+
+    await expect(
+      startAccountApiHandoff(
+        "bearer-token",
+        { challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM" },
+        {
+          environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+          fetcher,
+          idempotencyKey: "portal-handoff-2",
+        },
+      ),
+    ).rejects.toBeInstanceOf(AccountApiUnavailableError);
   });
 
   it("posts JSON with a generated idempotency key supplied by server code", async () => {

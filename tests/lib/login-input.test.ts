@@ -1,5 +1,9 @@
 import { parseLoginFormData, sanitizeNextPath } from "@/lib/auth/login";
 
+const STATE = "c2VjcmV0LXN0YXRlLWZyb20tdGhlLWFwcA";
+const CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+const CONNECT_PATH = `/connect/desktop?state=${STATE}&port=53321&challenge=${CHALLENGE}`;
+
 describe("login input policy", () => {
   it("normalizes email without transforming the password", () => {
     const formData = new FormData();
@@ -46,6 +50,12 @@ describe("login input policy", () => {
     ["//evil.example/account", "/account"],
     ["/account/%2e%2e/admin", "/account"],
     [null, "/account"],
+    // The desktop handoff is a destination only with a complete, well-formed handoff.
+    [CONNECT_PATH, CONNECT_PATH],
+    [`/connect/desktop?challenge=${CHALLENGE}&port=53321&state=${STATE}&x=1`, CONNECT_PATH],
+    ["/connect/desktop", "/account"],
+    [`/connect/desktop?state=${STATE}&port=80&challenge=${CHALLENGE}`, "/account"],
+    [`/connect/other?state=${STATE}&port=53321&challenge=${CHALLENGE}`, "/account"],
   ])("sanitizes the post-login destination %s", (input, expected) => {
     expect(sanitizeNextPath(input)).toBe(expected);
   });

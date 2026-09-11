@@ -432,6 +432,7 @@ const completeSnapshot: RepositorySnapshot = {
       "/account/:path*",
       "/admin/:path*",
       "/auth/:path*",
+      "/connect/:path*",
     ],
   },
   desktopEnvironmentExample: "SUPABASE_URL SUPABASE_ANON_KEY QT_AUTH_API_ENDPOINT",

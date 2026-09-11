@@ -310,6 +310,17 @@ async function currentAccountApiIdentity(nextPath: string): Promise<{
 }
 
 /**
+ * The signed-in caller for the desktop handoff page. A signed-out visitor is sent to
+ * sign in and comes back to the same handoff afterwards.
+ */
+export async function getDesktopConnectIdentity(nextPath: string): Promise<{
+  accessToken: string;
+  me: AccountApiMe;
+}> {
+  return currentAccountApiIdentity(nextPath);
+}
+
+/**
  * The signed-in caller's Account API identity, for the console shell.
  *
  * Fails closed to `null` on every problem — no token, a 401, an outage — because the

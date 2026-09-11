@@ -1,5 +1,23 @@
+import { desktopConnectReturnCookie, readDesktopConnectReturn } from "@/lib/auth/desktop-connect";
 import { AzureAuthClient } from "@/lib/azure-auth-client";
 import { getAzureAuthConfig } from "@/lib/azure-auth-config";
+
+/**
+ * Back to sign-in. A desktop handoff remembered at sign-up rides along as `next` and the
+ * cookie that carried it is spent, so the app the visitor started from gets its code.
+ */
+function confirmedRedirect(request: Request, destination: URL): Response {
+  const returnTo = readDesktopConnectReturn(request.headers.get("cookie"));
+  if (!returnTo) return Response.redirect(destination, 303);
+  destination.searchParams.set("next", returnTo);
+  return new Response(null, {
+    status: 303,
+    headers: {
+      Location: destination.toString(),
+      "Set-Cookie": desktopConnectReturnCookie(null, { secure: destination.protocol === "https:" }),
+    },
+  });
+}
 
 export async function GET(request: Request): Promise<Response> {
   const tokens = new URL(request.url).searchParams.getAll("token");
@@ -13,7 +31,7 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const config = getAzureAuthConfig();
     await new AzureAuthClient(config.apiUrl).confirmEmail(token);
-    return Response.redirect(new URL("/login?notice=email-confirmed", siteUrl), 303);
+    return confirmedRedirect(request, new URL("/login?notice=email-confirmed", siteUrl));
   } catch {}
 
   return Response.redirect(new URL("/login?notice=invalid-confirm-link", siteUrl), 303);

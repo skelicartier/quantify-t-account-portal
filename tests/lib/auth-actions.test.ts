@@ -139,3 +139,70 @@ describe("authentication Server Actions", () => {
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
 });
+
+describe("desktop handoff through sign-in and sign-out", () => {
+  const HANDOFF_PATH =
+    "/connect/desktop?state=c2VjcmV0LXN0YXRlLWZyb20tdGhlLWFwcA&port=53321&challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+  const HANDOFF_QUERY = new URLSearchParams({ next: HANDOFF_PATH }).toString();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.clearPortalAzureAuthCookies.mockResolvedValue(undefined);
+    mocks.endCurrentAccountApiSession.mockResolvedValue(false);
+    mocks.registerCurrentAccountApiSession.mockResolvedValue(false);
+  });
+
+  it("returns a successful login to the desktop handoff it was asked for", async () => {
+    mocks.createServerAzureClient.mockResolvedValue({
+      signInWithPassword: vi.fn().mockResolvedValue({
+        data: {
+          user: { id: "verified-user" },
+          session: { access_token: "t", refresh_token: "r", expires_in: 3600 },
+        },
+        error: null,
+      }),
+      getAccessToken: vi.fn(() => "t"),
+    });
+    const formData = loginForm();
+    formData.set("next", HANDOFF_PATH);
+
+    await expect(login(INITIAL_LOGIN_STATE, formData)).rejects.toThrow(
+      `NEXT_REDIRECT:${HANDOFF_PATH}`,
+    );
+  });
+
+  it("keeps the handoff across sign-out so the visitor can switch accounts", async () => {
+    mocks.createServerAzureClient.mockResolvedValue({
+      signOut: vi.fn().mockResolvedValue({ error: null }),
+      getAccessToken: vi.fn(),
+    });
+    const formData = new FormData();
+    formData.set("next", HANDOFF_PATH);
+
+    await expect(logout(formData)).rejects.toThrow(`NEXT_REDIRECT:/login?${HANDOFF_QUERY}`);
+  });
+
+  it("drops any other sign-out destination", async () => {
+    mocks.createServerAzureClient.mockResolvedValue({
+      signOut: vi.fn().mockResolvedValue({ error: null }),
+      getAccessToken: vi.fn(),
+    });
+    const formData = new FormData();
+    formData.set("next", "/admin");
+
+    await expect(logout(formData)).rejects.toThrow("NEXT_REDIRECT:/login");
+    expect(mocks.redirect).toHaveBeenCalledWith("/login");
+  });
+
+  it("reports an incomplete sign-out without losing the handoff", async () => {
+    mocks.createServerAzureClient.mockResolvedValue({
+      signOut: vi.fn().mockRejectedValue(new Error("provider unavailable")),
+    });
+    const formData = new FormData();
+    formData.set("next", HANDOFF_PATH);
+
+    await expect(logout(formData)).rejects.toThrow(
+      `NEXT_REDIRECT:/login?notice=logout-incomplete&${HANDOFF_QUERY}`,
+    );
+  });
+});

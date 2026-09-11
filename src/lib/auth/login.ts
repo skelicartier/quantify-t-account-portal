@@ -5,6 +5,11 @@ import {
   CHALLENGE_FIELD_NAME,
   MAX_CHALLENGE_TOKEN_LENGTH,
 } from "@/lib/auth/challenge";
+import {
+  desktopConnectPath,
+  isDesktopConnectPath,
+  parseDesktopConnectParams,
+} from "@/lib/auth/desktop-connect";
 import { isProtectedAdminPath, isProtectedAccountPath } from "@/lib/auth/route-policy";
 
 const loginSchema = z.object({
@@ -78,10 +83,16 @@ export function sanitizeNextPath(value: unknown): string {
 
     const base = new URL("https://account.quantifyterminal.invalid");
     const destination = new URL(value, base);
+    if (destination.origin !== base.origin) return "/account";
 
+    if (isDesktopConnectPath(destination.pathname)) {
+      // The desktop handoff is a destination only with a well-formed handoff in its query.
+      const handoff = parseDesktopConnectParams(destination.searchParams);
+      return handoff ? desktopConnectPath(handoff) : "/account";
+    }
     if (
-      destination.origin !== base.origin ||
-      (!isProtectedAccountPath(destination.pathname) && !isProtectedAdminPath(destination.pathname))
+      !isProtectedAccountPath(destination.pathname) &&
+      !isProtectedAdminPath(destination.pathname)
     ) {
       return "/account";
     }

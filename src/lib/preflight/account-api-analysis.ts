@@ -457,7 +457,8 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         // A reservation lease and a replay window are separate lifetimes.
         "lease_seconds",
       ]) &&
-      occursAtLeast(modules.app, "require_key(request)", 13) &&
+      // Every mutating route, the desktop app-state upsert included, claims the key first.
+      occursAtLeast(modules.app, "require_key(request)", 14) &&
       includesAll(modules.app, ["replay_or_reserve", "scope_for("]) &&
       // The reservation must precede the side effect. Recording afterwards misses the case
       // the module exists for: a request killed between the write and the record.

@@ -1256,6 +1256,42 @@ export async function fetchAccountApiMe(
   return parseAccountApiPayload(accountApiMeSchema, payload, "me", "GET");
 }
 
+export const DESKTOP_HANDOFF_CLIENT = "desktop";
+
+export const accountApiHandoffStartSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    code: z.string().min(16).max(128),
+    expires_at: z.string().min(1).max(64),
+  })
+  .strict();
+
+export type AccountApiHandoffStart = z.infer<typeof accountApiHandoffStartSchema>;
+
+/**
+ * Mints the one-time code the desktop app redeems, together with its PKCE verifier, for
+ * a session of its own. The code is bound to the caller's account and to the challenge.
+ */
+export async function startAccountApiHandoff(
+  accessToken: string,
+  input: { challenge: string },
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiHandoffStart> {
+  const payload = await postAccountApiJson(
+    "auth/handoff/start",
+    accessToken,
+    { challenge: input.challenge, client: DESKTOP_HANDOFF_CLIENT },
+    options,
+  );
+  return parseAccountApiPayload(
+    accountApiHandoffStartSchema,
+    payload,
+    "auth/handoff/start",
+    "POST",
+  );
+}
+
 export async function fetchAccountApiProfile(
   accessToken: string,
   options: AccountApiFetchOptions = {},

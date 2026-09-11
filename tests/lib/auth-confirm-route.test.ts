@@ -70,3 +70,61 @@ describe("authentication confirmation route", () => {
     expect(JSON.stringify([...response.headers])).not.toContain("Sensitive provider detail");
   });
 });
+
+describe("email confirmation for a desktop sign-up", () => {
+  const HANDOFF_PATH =
+    "/connect/desktop?state=c2VjcmV0LXN0YXRlLWZyb20tdGhlLWFwcA&port=53321&challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+  const confirmUrl = "https://console.quantifyterminal.com/auth/confirm?token=confirm-token";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NEXT_PUBLIC_SITE_URL = "https://console.quantifyterminal.com";
+    mocks.AzureAuthClient.mockImplementation(function (this: Record<string, unknown>) {
+      this.confirmEmail = vi.fn().mockResolvedValue(undefined);
+    });
+  });
+
+  it("returns to the waiting app after confirmation and spends the cookie", async () => {
+    const response = await GET(
+      new Request(confirmUrl, {
+        headers: { cookie: `theme=dark; qt-connect-return=${encodeURIComponent(HANDOFF_PATH)}` },
+      }),
+    );
+
+    expect(response.status).toBe(303);
+    const location = new URL(response.headers.get("location") ?? "");
+    expect(location.origin).toBe("https://console.quantifyterminal.com");
+    expect(location.pathname).toBe("/login");
+    expect(location.searchParams.get("notice")).toBe("email-confirmed");
+    expect(location.searchParams.get("next")).toBe(HANDOFF_PATH);
+    expect(response.headers.get("set-cookie")).toBe(
+      "qt-connect-return=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure",
+    );
+  });
+
+  it("ignores a return cookie that is not a valid handoff", async () => {
+    const response = await GET(
+      new Request(confirmUrl, { headers: { cookie: "qt-connect-return=%2Fadmin" } }),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "https://console.quantifyterminal.com/login?notice=email-confirmed",
+    );
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("does not return to the app when the token is rejected", async () => {
+    mocks.AzureAuthClient.mockImplementation(function (this: Record<string, unknown>) {
+      this.confirmEmail = vi.fn().mockRejectedValue(new Error("expired"));
+    });
+
+    const response = await GET(
+      new Request(confirmUrl, {
+        headers: { cookie: `qt-connect-return=${encodeURIComponent(HANDOFF_PATH)}` },
+      }),
+    );
+
+    expect(response.headers.get("location")).toBe(invalidLocation);
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+});

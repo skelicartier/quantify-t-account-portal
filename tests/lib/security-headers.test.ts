@@ -37,6 +37,7 @@ describe("credential-surface security headers", () => {
         "/account/:path*",
         "/admin/:path*",
         "/auth/:path*",
+        "/connect/:path*",
       ]),
     );
   });

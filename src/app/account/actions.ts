@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { endCurrentAccountApiSession } from "@/lib/account/session-lifecycle";
+import { desktopConnectNextPath } from "@/lib/auth/desktop-connect";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { clearPortalAzureAuthCookies, createServerAzureClient } from "@/lib/supabase/server";
 import { CONSOLE_THEME_COOKIE, CONSOLE_THEME_MAX_AGE_SECONDS, isConsoleTheme } from "@/lib/theme";
@@ -22,13 +23,23 @@ async function revokeCurrentProviderSession(): Promise<boolean> {
   return false;
 }
 
-export async function logout(): Promise<void> {
+/**
+ * Signs out. A desktop handoff in `next` survives the sign-out, so "Not you?" on the
+ * connect page returns the visitor to the same handoff once they sign in again.
+ */
+export async function logout(formData?: FormData): Promise<void> {
   await requireSameOriginServerAction();
+  const returnTo =
+    formData instanceof FormData ? desktopConnectNextPath(formData.get("next")) : null;
   const providerLogoutConfirmed = await revokeCurrentProviderSession();
 
   await clearPortalAzureAuthCookies();
   revalidatePath("/", "layout");
-  redirect(providerLogoutConfirmed ? "/login" : "/login?notice=logout-incomplete");
+  const query = new URLSearchParams();
+  if (!providerLogoutConfirmed) query.set("notice", "logout-incomplete");
+  if (returnTo) query.set("next", returnTo);
+  const search = query.toString();
+  redirect(search ? `/login?${search}` : "/login");
 }
 
 /**

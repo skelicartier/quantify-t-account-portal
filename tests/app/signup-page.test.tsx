@@ -1,0 +1,34 @@
+import { render, screen } from "@testing-library/react";
+
+const mocks = vi.hoisted(() => ({ signup: vi.fn() }));
+
+vi.mock("@/app/signup/actions", () => ({ signup: mocks.signup }));
+
+import SignupPage from "@/app/signup/page";
+
+const STATE = "c2VjcmV0LXN0YXRlLWZyb20tdGhlLWFwcA";
+const CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+const PATH = `/connect/desktop?state=${STATE}&port=53321&challenge=${CHALLENGE}`;
+
+describe("SignupPage", () => {
+  it("carries a desktop handoff through sign-up and back to sign-in", async () => {
+    render(await SignupPage({ searchParams: Promise.resolve({ next: PATH }) }));
+
+    expect(screen.getByText(/returned to Quantify Terminal on this computer/iu)).toBeVisible();
+    expect(document.querySelector('form input[name="next"]')).toHaveValue(PATH);
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+      "href",
+      `/login?next=${encodeURIComponent(PATH)}`,
+    );
+  });
+
+  it("does not carry any other destination", async () => {
+    render(await SignupPage({ searchParams: Promise.resolve({ next: "/admin" }) }));
+
+    expect(
+      screen.queryByText(/returned to Quantify Terminal on this computer/iu),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector('form input[name="next"]')).toBeNull();
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+  });
+});

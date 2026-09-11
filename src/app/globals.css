@@ -2363,6 +2363,31 @@
     text-decoration-color: currentColor;
   }
 
+  /* A form button that reads like the switch link (the connect page's "Not you? Sign out"). */
+  .auth__switch-button {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-color: var(--line-strong);
+    text-underline-offset: 4px;
+    cursor: pointer;
+  }
+
+  .auth__switch-button:hover {
+    text-decoration-color: currentColor;
+  }
+
+  .auth__fine {
+    color: var(--quiet);
+    font-size: 12.5px;
+    line-height: 1.55;
+    text-align: center;
+  }
+
   .auth__legal {
     display: flex;
     flex-wrap: wrap;

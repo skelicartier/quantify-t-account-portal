@@ -6,7 +6,8 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "font-src 'self' data:",
-  "form-action 'self'",
+  // The desktop handoff answers a form post with a redirect to the app's loopback listener.
+  "form-action 'self' http://127.0.0.1:*",
   "frame-ancestors 'none'",
   "img-src 'self' data: blob:",
   "object-src 'none'",
@@ -84,6 +85,10 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/auth/:path*",
+        headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
+      },
+      {
+        source: "/connect/:path*",
         headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
       },
     ];

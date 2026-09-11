@@ -12,7 +12,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 const PORT = Number(process.env.MOCK_PORT ?? 7071);
 const DEGRADED = new Set(
@@ -378,6 +378,9 @@ function authUser(userId: string) {
   };
 }
 
+/** Pending desktop handoff codes, keyed by the code itself (the real API stores a hash). */
+const handoffs = new Map<string, { userId: string; challenge: string }>();
+
 function bearer(request: IncomingMessage): string | null {
   const header = String(request.headers.authorization ?? "");
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
@@ -427,12 +430,36 @@ const server = createServer(async (request, response) => {
     });
   }
   if (route === "auth/logout") return ok(response, {});
+  if (route === "auth/handoff/redeem") {
+    // The desktop app redeems a one-time code with the verifier behind its challenge.
+    const code = String(json.code ?? "");
+    const pending = handoffs.get(code);
+    handoffs.delete(code);
+    const verifier = String(json.verifier ?? "");
+    if (!pending || pending.challenge !== createHash("sha256").update(verifier).digest("base64url"))
+      return fail(response, 401, "unauthenticated", "handoff invalid");
+    const p = person(pending.userId);
+    const token = `mock-${p.role}-${randomUUID()}`;
+    tokens.set(token, p.id);
+    return ok(response, {
+      user: authUser(p.id),
+      session: { access_token: token, refresh_token: `refresh-${token}`, expires_in: 3600 },
+    });
+  }
 
   const userId = bearer(request);
   if (!userId) return fail(response, 401, "unauthenticated", "A bearer token is required.");
   const persona = roles[userId] ?? "user";
   const me = person(userId);
 
+  if (route === "auth/handoff/start") {
+    const challenge = String(json.challenge ?? "");
+    if (!/^[A-Za-z0-9_-]{43}$/u.test(challenge) || json.client !== "desktop")
+      return fail(response, 400, "malformed_request", "Expected a desktop client challenge.");
+    const code = randomBytes(32).toString("base64url");
+    handoffs.set(code, { userId, challenge });
+    return ok(response, { code, expires_at: iso(-2) });
+  }
   if (route === "auth/user") return ok(response, { user: authUser(userId) });
   if (route === "auth/user/profile") return ok(response, { profile: profile(userId) });
   if (route === "auth/user/profile/update") {

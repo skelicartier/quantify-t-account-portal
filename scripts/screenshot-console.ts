@@ -8,14 +8,43 @@
  *   npx tsx scripts/screenshot-console.ts [http://127.0.0.1:3000]
  */
 
+import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 
 import AxeBuilder from "@axe-core/playwright";
 import { chromium, type Page } from "playwright";
 
 const BASE = process.argv[2] ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
+const API = process.env.QT_ACCOUNT_API_URL ?? "http://127.0.0.1:7071/api/v1";
 const OUT = join("test-results", "console");
+
+// The desktop handoff, played the way the app plays it: a PKCE pair, a state, and a
+// loopback listener that receives the one-time code.
+const VERIFIER = randomBytes(32).toString("base64url");
+const CHALLENGE = createHash("sha256").update(VERIFIER).digest("base64url");
+const STATE = randomBytes(24).toString("base64url");
+
+async function loopbackListener(): Promise<{
+  port: number;
+  callback: Promise<URL>;
+  close(): void;
+}> {
+  let resolveCallback: (url: URL) => void = () => undefined;
+  const callback = new Promise<URL>((resolve) => {
+    resolveCallback = resolve;
+  });
+  const server = createServer((request, response) => {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end("<p>You're signed in. Return to Quantify Terminal.</p>");
+    resolveCallback(new URL(request.url ?? "/", "http://127.0.0.1"));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  return { port, callback, close: () => server.close() };
+}
 const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 900 },
   { name: "phone", width: 412, height: 915 },
@@ -140,6 +169,49 @@ async function main() {
       problems += result.serious + (result.overflow > 1 ? 1 : 0);
       console.log("  ✓ /admin/users live search");
 
+      // The desktop handoff end to end: the connect page, Connect, the loopback callback
+      // carrying the code and state, and the code redeemed with the verifier.
+      const listener = await loopbackListener();
+      await page.goto(
+        `${BASE}/connect/desktop?state=${STATE}&port=${listener.port}&challenge=${CHALLENGE}`,
+        { waitUntil: "networkidle" },
+      );
+      await page.getByRole("button", { name: "Connect" }).waitFor();
+      await page.screenshot({ path: join(OUT, "connect-desktop-desktop.png"), fullPage: true });
+      const connectResult = await check(page, "/connect/desktop @desktop");
+      problems += connectResult.serious + (connectResult.overflow > 1 ? 1 : 0);
+      await page.getByRole("button", { name: "Connect" }).click();
+      const callbackUrl = await listener.callback;
+      listener.close();
+      const code = callbackUrl.searchParams.get("code") ?? "";
+      if (
+        callbackUrl.pathname !== "/callback" ||
+        callbackUrl.searchParams.get("state") !== STATE ||
+        !code
+      ) {
+        console.warn(
+          `  ! /connect/desktop: unexpected callback ${callbackUrl.pathname}${callbackUrl.search}`,
+        );
+        problems += 1;
+      } else {
+        const redeemed = await fetch(`${API}/auth/handoff/redeem`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code, verifier: VERIFIER }),
+        });
+        if (!redeemed.ok) {
+          console.warn(`  ! /connect/desktop: redeem answered ${redeemed.status}`);
+          problems += 1;
+        }
+      }
+      await page.goto(`${BASE}/connect/desktop`, { waitUntil: "networkidle" });
+      await page.getByRole("heading", { name: /connection link is incomplete/i }).waitFor();
+      await page.screenshot({
+        path: join(OUT, "connect-desktop-invalid-desktop.png"),
+        fullPage: true,
+      });
+      console.log("  ✓ /connect/desktop handoff, callback and redeem");
+
       // The light console is a per-device choice; the sign-in pages stay dark regardless.
       await page.goto(`${BASE}/account`, { waitUntil: "networkidle" });
       await switchTheme(page, "Light");
@@ -166,9 +238,18 @@ async function main() {
     await context.close();
   }
 
-  // A plain account holder must see the forbidden state, not an error page.
+  // A visitor the desktop app sent here signs in first and is told they'll be returned.
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
+  await page.goto(`${BASE}/connect/desktop?state=${STATE}&port=53321&challenge=${CHALLENGE}`, {
+    waitUntil: "networkidle",
+  });
+  await page.waitForURL(/\/login\?next=/u, { timeout: 15_000 });
+  await page.getByText(/returned to the app automatically/i).waitFor();
+  await page.screenshot({ path: join(OUT, "login-desktop-handoff.png"), fullPage: true });
+  console.log("  ✓ /connect/desktop signed out → /login with the handoff");
+
+  // A plain account holder must see the forbidden state, not an error page.
   await signIn(page, "user@example.test");
   await page.goto(`${BASE}/admin`, { waitUntil: "networkidle" });
   await page.screenshot({ path: join(OUT, "admin-forbidden-desktop.png"), fullPage: true });

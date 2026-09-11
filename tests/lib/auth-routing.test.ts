@@ -50,3 +50,18 @@ describe("protected account route policy", () => {
     expect(destination.searchParams.get("next")).toBe("/admin/roles?include=matches");
   });
 });
+
+describe("desktop handoff route policy", () => {
+  it("protects the connect page and returns to the same handoff after login", () => {
+    expect(isProtectedPortalPath("/connect/desktop")).toBe(true);
+    expect(isProtectedPortalPath("/connect")).toBe(false);
+    expect(isProtectedPortalPath("/connect/desktop/extra")).toBe(false);
+
+    const destination = buildLoginRedirectUrl(
+      new URL("https://console.quantifyterminal.com/connect/desktop?state=abc&port=53321"),
+    );
+
+    expect(destination.pathname).toBe("/login");
+    expect(destination.searchParams.get("next")).toBe("/connect/desktop?state=abc&port=53321");
+  });
+});

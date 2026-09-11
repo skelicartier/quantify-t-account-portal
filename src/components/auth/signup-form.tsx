@@ -12,9 +12,11 @@ import { INITIAL_SIGNUP_STATE, type SignupAction } from "@/lib/auth/signup";
 type SignupFormProps = {
   action: SignupAction;
   turnstileSiteKey: string;
+  /** A desktop handoff to return to once the email is confirmed and the visitor signs in. */
+  nextPath?: string | undefined;
 };
 
-export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
+export function SignupForm({ action, turnstileSiteKey, nextPath }: SignupFormProps) {
   const [state, formAction, isPending] = useActionState(action, INITIAL_SIGNUP_STATE);
 
   if (state.status === "accepted") {
@@ -37,6 +39,7 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
   return (
     <>
       <form className="auth-form" action={formAction} noValidate>
+        {nextPath && <input type="hidden" name="next" value={nextPath} />}
         <Field id="signup-name" label="Full name" note="Optional" error={nameError}>
           <Input
             id="signup-name"

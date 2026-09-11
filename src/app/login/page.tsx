@@ -4,6 +4,7 @@ import { login, verifyLoginChallenge } from "@/app/login/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { Callout } from "@/components/ui/callout";
+import { isDesktopConnectNextPath } from "@/lib/auth/desktop-connect";
 import { sanitizeNextPath } from "@/lib/auth/login";
 
 export const metadata = {
@@ -52,6 +53,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const noticeKey = Array.isArray(parameters.notice) ? parameters.notice[0] : parameters.notice;
   const nextPath = sanitizeNextPath(requestedPath);
   const notice = noticeKey ? NOTICES[noticeKey] : undefined;
+  // The desktop app sent the visitor here; the handoff rides along into sign-up too.
+  const returnsToDesktop = isDesktopConnectNextPath(nextPath);
   // Turnstile enforcement is not enabled for this deployment; the field stays inert.
   const turnstileSiteKey = "";
 
@@ -67,6 +70,14 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </Callout>
         </div>
       )}
+      {returnsToDesktop && (
+        <div className="auth-form">
+          <Callout tone="neutral" role="status" compact>
+            Sign in to connect Quantify Terminal on this computer. You&apos;ll be returned to the
+            app automatically.
+          </Callout>
+        </div>
+      )}
 
       <LoginForm
         action={login}
@@ -76,7 +87,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       />
 
       <p className="auth__switch">
-        Need a Quantify Terminal account? <Link href="/signup">Create an account</Link>
+        Need a Quantify Terminal account?{" "}
+        <Link href={returnsToDesktop ? `/signup?next=${encodeURIComponent(nextPath)}` : "/signup"}>
+          Create an account
+        </Link>
       </p>
     </AuthShell>
   );
