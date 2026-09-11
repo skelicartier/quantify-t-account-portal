@@ -1,34 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { ADMIN_LINKS } from "@/components/shell/nav-links";
+import { SidebarNav } from "@/components/shell/sidebar-nav";
 
-const ADMIN_LINKS = [
-  { href: "/admin", label: "Dashboard", activePrefix: undefined },
-  { href: "/admin/users", label: "Users", activePrefix: "/admin/users/" },
-  { href: "/admin/notifications", label: "Notifications", activePrefix: undefined },
-  { href: "/admin/email", label: "Email", activePrefix: undefined },
-  { href: "/admin/audit", label: "Audit", activePrefix: undefined },
-  { href: "/admin/reports", label: "Reports", activePrefix: undefined },
-  { href: "/admin/configuration", label: "Configuration", activePrefix: undefined },
-  { href: "/admin/credentials", label: "Credentials", activePrefix: undefined },
-  { href: "/admin/releases", label: "Releases", activePrefix: undefined },
-  { href: "/admin/roles", label: "Roles", activePrefix: undefined },
-] as const;
-
+// Client-side on purpose: the link table carries icon components, which can only be
+// handed to the client navigation from inside the client bundle.
 export function AdminNavigation() {
-  const pathname = usePathname();
-  return (
-    <nav className="account-navigation admin-navigation" aria-label="Administration sections">
-      {ADMIN_LINKS.map(({ href, label, activePrefix }) => {
-        const current =
-          pathname === href || (activePrefix ? pathname.startsWith(activePrefix) : false);
-        return (
-          <Link key={href} href={href} aria-current={current ? "page" : undefined}>
-            {label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
+  return <SidebarNav label="Administration sections" links={ADMIN_LINKS} />;
 }

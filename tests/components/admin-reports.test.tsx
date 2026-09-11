@@ -52,7 +52,8 @@ it("queues an audit CSV report and renders source-locked download state", async 
   render(<AdminReportManager reports={reports} action={action} />);
 
   expect(screen.getByRole("cell", { name: /Audit Events CSV/u })).toBeInTheDocument();
-  expect(screen.getAllByRole("cell", { name: "Ready" })).toHaveLength(2);
+  expect(screen.getAllByRole("cell", { name: "Ready" })).toHaveLength(1);
+  expect(screen.getByText("Private file ready")).toBeVisible();
   expect(screen.queryByText(/https?:\/\//u)).not.toBeInTheDocument();
 
   await user.type(screen.getByRole("textbox", { name: "Event" }), "session.revoked");

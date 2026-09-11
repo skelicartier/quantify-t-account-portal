@@ -15,9 +15,9 @@ export default function SignupPage() {
 
   return (
     <AuthShell
-      eyebrow="Website-only registration"
+      eyebrow="New account"
       title="Create your account"
-      description="Create one verified Quantify account for this portal and your desktop terminal."
+      description="One verified Quantify account for this console and your desktop terminal."
     >
       <SignupForm action={signup} turnstileSiteKey={turnstileSiteKey} />
 

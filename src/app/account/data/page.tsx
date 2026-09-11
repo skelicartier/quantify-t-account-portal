@@ -7,6 +7,7 @@ import {
 } from "@/app/account/data/actions";
 import { AccountDataControls } from "@/components/account/account-data-controls";
 import { requireCurrentAccountLifecycle } from "@/lib/dal/lifecycle";
+import { requestNow } from "@/lib/request-time";
 
 export const metadata: Metadata = { title: "Data" };
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export default async function AccountDataPage() {
       requestExportAction={requestAccountExport}
       requestDeletionAction={requestAccountDeletion}
       cancelDeletionAction={cancelAccountDeletion}
+      now={requestNow()}
     />
   );
 }

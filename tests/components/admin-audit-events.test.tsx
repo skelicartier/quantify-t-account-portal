@@ -82,7 +82,7 @@ describe("AdminAuditEvents", () => {
     );
     const table = screen.getByRole("table");
     expect(within(table).getByText("Session Revoked")).toBeVisible();
-    expect(within(table).getByText("redacted")).toBeVisible();
+    expect(within(table).getByText("Redacted")).toBeVisible();
     expect(
       screen.queryByText(/metadata|provider session|password|passcode/i),
     ).not.toBeInTheDocument();
@@ -102,7 +102,7 @@ describe("AdminAuditEvents", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: /audit access is not granted/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /audit is not available/i })).toBeVisible();
     expect(screen.queryByText("Session Revoked")).not.toBeInTheDocument();
   });
 });

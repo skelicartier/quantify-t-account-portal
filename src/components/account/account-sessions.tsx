@@ -1,109 +1,92 @@
+import { PageHeader } from "@/components/shell/page-header";
+import { Section } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Stat, StatGrid } from "@/components/ui/stat";
+import { StatusPill } from "@/components/ui/status-pill";
+import { Timestamp } from "@/components/ui/timestamp";
 import type { AccountSessionDto, AccountSessionStatus } from "@/lib/dto/session";
+import { formatLabel } from "@/lib/format";
 
 type AccountSessionsProps = {
   sessions: AccountSessionDto[];
+  now?: number | undefined;
 };
 
-function formatLabel(value: string): string {
-  return value
-    .split(/[-_\s]+/u)
-    .filter(Boolean)
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
-    .join(" ");
-}
-
-function formatDateTime(value: string | null): string {
-  if (!value) return "Not available";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Not available";
-  return new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(date);
-}
+const COLUMNS = [
+  { key: "device", label: "Device" },
+  { key: "status", label: "Status" },
+  { key: "last-seen", label: "Last seen" },
+  { key: "signed-in", label: "Signed in" },
+  { key: "expires", label: "Expires" },
+] as const;
 
 function countByStatus(sessions: AccountSessionDto[], status: AccountSessionStatus): number {
   return sessions.filter((session) => session.status === status).length;
 }
 
-function sessionName(session: AccountSessionDto): string {
-  return session.deviceName ?? formatLabel(session.source);
-}
-
-export function AccountSessions({ sessions }: AccountSessionsProps) {
+export function AccountSessions({ sessions, now }: AccountSessionsProps) {
   const activeCount = countByStatus(sessions, "active");
-  const revokedCount = countByStatus(sessions, "revoked");
-  const expiredCount = countByStatus(sessions, "expired");
+  const endedCount = countByStatus(sessions, "revoked") + countByStatus(sessions, "expired");
   const mostRecent = sessions[0]?.lastSeenAt ?? null;
 
   return (
-    <main className="account-main" id="main-content">
-      <section className="account-page-heading" aria-labelledby="account-sessions-heading">
-        <p className="eyebrow">Cloud account</p>
-        <h1 id="account-sessions-heading">Sessions</h1>
-        <p>Cloud session inventory for the signed-in account identity.</p>
-      </section>
+    <>
+      <PageHeader
+        eyebrow="Account"
+        title="Sessions"
+        titleId="account-sessions-heading"
+        description="Devices and apps signed in to your account."
+      />
 
-      <section className="account-grid account-grid--compact" aria-label="Session summary">
-        <article className="account-card">
-          <p className="account-card__label">Active</p>
-          <h2>{activeCount}</h2>
-        </article>
-        <article className="account-card">
-          <p className="account-card__label">Ended</p>
-          <h2>{revokedCount + expiredCount}</h2>
-        </article>
-        <article className="account-card">
-          <p className="account-card__label">Last seen</p>
-          <h2>{formatDateTime(mostRecent)}</h2>
-        </article>
-      </section>
+      <div className="page-content">
+        <StatGrid columns={3} label="Session summary">
+          <Stat label="Active" value={activeCount} />
+          <Stat label="Ended" value={endedCount} />
+          <Stat
+            label="Last seen"
+            value={<Timestamp value={mostRecent} now={now} fallback="Never" />}
+            text
+          />
+        </StatGrid>
 
-      <section className="account-section" aria-labelledby="account-session-list-heading">
-        <div className="account-section__heading">
-          <p className="account-card__label">Inventory</p>
-          <h2 id="account-session-list-heading">Signed-in surfaces</h2>
-        </div>
-
-        {sessions.length > 0 ? (
-          <div className="account-table-wrap">
-            <table className="account-table">
-              <thead>
-                <tr>
-                  <th>Surface</th>
-                  <th>Provider</th>
-                  <th>Status</th>
-                  <th>Last seen</th>
-                  <th>Created</th>
-                  <th>Expires</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sessions.map((session) => (
-                  <tr key={session.id}>
-                    <td>
-                      <strong>{sessionName(session)}</strong>
-                      <span>{formatLabel(session.source)}</span>
-                    </td>
-                    <td>{formatLabel(session.provider)}</td>
-                    <td>
-                      <span className={`status-value status-value--${session.status}`}>
-                        {formatLabel(session.status)}
-                      </span>
-                    </td>
-                    <td>{formatDateTime(session.lastSeenAt)}</td>
-                    <td>{formatDateTime(session.createdAt)}</td>
-                    <td>{formatDateTime(session.expiresAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="account-empty-state">No cloud sessions were returned for this account.</p>
-        )}
-      </section>
-    </main>
+        <Section id="account-session-list" title="Signed-in devices" eyebrow="Inventory">
+          <DataTable
+            columns={COLUMNS}
+            caption="Signed-in devices"
+            isEmpty={sessions.length === 0}
+            empty={
+              <EmptyState
+                title="No cloud sessions were found for this account."
+                description="Sessions appear here once you sign in from the console or the desktop terminal."
+              />
+            }
+          >
+            {sessions.map((session) => (
+              <tr key={session.id}>
+                <td>
+                  <span className="data-table__primary">
+                    {session.deviceName ?? formatLabel(session.source)}
+                  </span>
+                  <span className="data-table__secondary">{formatLabel(session.source)}</span>
+                </td>
+                <td>
+                  <StatusPill value={session.status} />
+                </td>
+                <td>
+                  <Timestamp value={session.lastSeenAt} now={now} />
+                </td>
+                <td>
+                  <Timestamp value={session.createdAt} now={now} />
+                </td>
+                <td>
+                  <Timestamp value={session.expiresAt} now={now} fallback="No expiry" />
+                </td>
+              </tr>
+            ))}
+          </DataTable>
+        </Section>
+      </div>
+    </>
   );
 }

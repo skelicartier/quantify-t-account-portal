@@ -110,6 +110,7 @@ describe("AdminDashboard", () => {
             assurance,
             metrics,
             roleReport,
+            degraded: [],
           } satisfies AdminDashboardAccess
         }
       />,
@@ -120,7 +121,8 @@ describe("AdminDashboard", () => {
     expect(screen.getByText("42")).toBeVisible();
     expect(screen.getByText("Active sessions")).toBeVisible();
     expect(screen.getByText("Desktop sessions")).toBeVisible();
-    expect(screen.getByText("roles:write")).toBeVisible();
+    expect(screen.getByText("Manage roles")).toBeVisible();
+    expect(screen.queryByText("roles:write")).not.toBeInTheDocument();
     expect(screen.getByText("Differences need review")).toBeVisible();
     const table = screen.getByRole("table");
     expect(within(table).getByText("7e5f9c11-2a3b-4c5d-8e9f-0a1b2c3d4e66")).toBeVisible();
@@ -145,7 +147,7 @@ describe("AdminDashboard", () => {
       "href",
       "/account/security",
     );
-    expect(screen.queryByText("roles:write")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manage roles")).not.toBeInTheDocument();
   });
 
   it("renders a forbidden state for active non-admin accounts", () => {

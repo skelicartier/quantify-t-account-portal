@@ -1,9 +1,17 @@
 "use client";
 
-import { useActionState, useState } from "react";
 import { Copy, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { useActionState, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Section } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusPill } from "@/components/ui/status-pill";
+import { Timestamp } from "@/components/ui/timestamp";
 import type { AccountApiAdminNotifications } from "@/lib/admin/account-api";
+import { formatLabel } from "@/lib/format";
 import {
   INITIAL_NOTIFICATION_STATE,
   type NotificationActionState,
@@ -29,6 +37,15 @@ const blank: NotificationInput = {
   actions: [],
   target: { mode: "all", user_ids: [], emails: [] },
 };
+
+const COLUMNS = [
+  { key: "title", label: "Notice" },
+  { key: "status", label: "Status" },
+  { key: "recipients", label: "Recipients" },
+  { key: "starts", label: "Starts" },
+  { key: "expires", label: "Expires" },
+  { key: "actions", label: <span className="sr-only">Actions</span> },
+] as const;
 
 function editable(note: AccountApiAdminNotifications["notifications"][number]): NotificationInput {
   const {
@@ -99,44 +116,50 @@ function NotificationEditor({
   };
 
   return (
-    <form action={formAction} className="notification-editor">
-      <div className="admin-section__heading">
-        <h2>{note.id ? "Edit notification" : "New notification"}</h2>
-        <button
-          type="button"
-          className="button notification-icon"
+    <form action={formAction} className="card card--important">
+      <div className="section__header">
+        <div>
+          <p className="eyebrow">{note.id ? "Editing" : "Draft"}</p>
+          <h2>{note.id ? "Edit notification" : "New notification"}</h2>
+        </div>
+        <Button
+          size="icon"
+          variant="ghost"
           title="Close editor"
           aria-label="Close editor"
           onClick={onClose}
           disabled={pending}
         >
           <X size={18} />
-        </button>
+        </Button>
       </div>
       <input type="hidden" name="revision" value={revision} />
       <input type="hidden" name="notification" value={JSON.stringify(payload)} />
-      <fieldset disabled={pending}>
-        <div className="notification-fields">
-          <label className="notification-field notification-field--wide">
-            Title
+      <fieldset className="fieldset form" disabled={pending}>
+        <div className="form-grid">
+          <label className="field form-grid__span">
+            <span className="field__label">Title</span>
             <input
+              className="input"
               maxLength={140}
               value={note.title}
               onChange={(event) => set("title", event.target.value)}
             />
           </label>
-          <label className="notification-field notification-field--wide">
-            Message
+          <label className="field form-grid__span">
+            <span className="field__label">Message</span>
             <textarea
+              className="textarea"
               rows={5}
               maxLength={4000}
               value={note.body}
               onChange={(event) => set("body", event.target.value)}
             />
           </label>
-          <label className="notification-field">
-            Severity
+          <label className="field">
+            <span className="field__label">Severity</span>
             <select
+              className="select"
               value={note.severity}
               onChange={(event) =>
                 set("severity", event.target.value as NotificationInput["severity"])
@@ -144,14 +167,15 @@ function NotificationEditor({
             >
               {["info", "success", "warning", "critical"].map((value) => (
                 <option key={value} value={value}>
-                  {value}
+                  {formatLabel(value)}
                 </option>
               ))}
             </select>
           </label>
-          <label className="notification-field">
-            Display
+          <label className="field">
+            <span className="field__label">Display</span>
             <select
+              className="select"
               value={note.display}
               onChange={(event) =>
                 set("display", event.target.value as NotificationInput["display"])
@@ -161,9 +185,10 @@ function NotificationEditor({
               <option value="popup">Popup</option>
             </select>
           </label>
-          <label className="notification-field">
-            Starts (UTC)
+          <label className="field">
+            <span className="field__label">Starts (UTC)</span>
             <input
+              className="input"
               type="datetime-local"
               value={dateValue(note.starts_at)}
               onChange={(event) =>
@@ -171,9 +196,10 @@ function NotificationEditor({
               }
             />
           </label>
-          <label className="notification-field">
-            Expires (UTC)
+          <label className="field">
+            <span className="field__label">Expires (UTC)</span>
             <input
+              className="input"
               type="datetime-local"
               value={dateValue(note.expires_at)}
               onChange={(event) =>
@@ -181,9 +207,10 @@ function NotificationEditor({
               }
             />
           </label>
-          <label className="notification-field notification-field--wide">
-            Recipients
+          <label className="field form-grid__span">
+            <span className="field__label">Recipients</span>
             <select
+              className="select"
               value={note.target.mode}
               onChange={(event) =>
                 set("target", {
@@ -199,18 +226,20 @@ function NotificationEditor({
           </label>
           {note.target.mode === "selected" && (
             <>
-              <label className="notification-field">
-                Account IDs
+              <label className="field">
+                <span className="field__label">Account IDs</span>
                 <textarea
+                  className="textarea"
                   rows={3}
                   maxLength={190000}
                   value={userIds}
                   onChange={(event) => setUserIds(event.target.value)}
                 />
               </label>
-              <label className="notification-field">
-                Email addresses
+              <label className="field">
+                <span className="field__label">Email addresses</span>
                 <textarea
+                  className="textarea"
                   rows={3}
                   maxLength={190000}
                   value={emails}
@@ -220,29 +249,39 @@ function NotificationEditor({
             </>
           )}
         </div>
-        <div className="notification-toolbar">
-          <label>
+
+        <div className="inline-actions">
+          <div className="checkbox">
             <input
               type="checkbox"
+              id="notification-active"
               checked={note.active}
               onChange={(event) => set("active", event.target.checked)}
-            />{" "}
-            Active
-          </label>
-          <label>
+            />
+            <label className="checkbox__label" htmlFor="notification-active">
+              Active
+            </label>
+          </div>
+          <div className="checkbox">
             <input
               type="checkbox"
+              id="notification-dismissible"
               checked={note.dismissible}
               onChange={(event) => set("dismissible", event.target.checked)}
-            />{" "}
-            Dismissible
-          </label>
+            />
+            <label className="checkbox__label" htmlFor="notification-dismissible">
+              Dismissible
+            </label>
+          </div>
         </div>
-        <div className="admin-section__heading">
-          <h3>Actions</h3>
-          <button
-            className="button notification-icon"
-            type="button"
+
+        <div className="section__header">
+          <div>
+            <h3>Actions</h3>
+            <p className="section__desc">Up to four buttons shown with the notice.</p>
+          </div>
+          <Button
+            size="icon"
             title="Add action"
             aria-label="Add action"
             disabled={note.actions.length >= 4}
@@ -254,7 +293,7 @@ function NotificationEditor({
             }
           >
             <Plus size={18} />
-          </button>
+          </Button>
         </div>
         {note.actions.map((item, index) => {
           const update = (patch: Partial<NotificationInput["actions"][number]>) =>
@@ -265,19 +304,21 @@ function NotificationEditor({
               ),
             );
           return (
-            <div className="notification-action-row" key={index}>
-              <label className="notification-field">
-                Label
+            <div className="form-grid" key={index}>
+              <label className="field">
+                <span className="field__label">Label</span>
                 <input
+                  className="input"
                   required
                   maxLength={60}
                   value={item.label}
                   onChange={(event) => update({ label: event.target.value })}
                 />
               </label>
-              <label className="notification-field">
-                Type
+              <label className="field">
+                <span className="field__label">Type</span>
                 <select
+                  className="select"
                   value={item.kind}
                   onChange={(event) => update({ kind: event.target.value as typeof item.kind })}
                 >
@@ -287,9 +328,10 @@ function NotificationEditor({
                 </select>
               </label>
               {item.kind !== "dismiss" && (
-                <label className="notification-field">
-                  HTTPS URL
+                <label className="field form-grid__span">
+                  <span className="field__label">HTTPS URL</span>
                   <input
+                    className="input"
                     type="url"
                     required
                     maxLength={500}
@@ -298,42 +340,58 @@ function NotificationEditor({
                   />
                 </label>
               )}
-              <label>
-                <input
-                  type="checkbox"
-                  checked={item.primary}
-                  onChange={(event) => update({ primary: event.target.checked })}
-                />{" "}
-                Primary
-              </label>
-              <button
-                type="button"
-                className="button notification-icon"
-                title="Remove action"
-                aria-label={`Remove action ${index + 1}`}
-                onClick={() =>
-                  set(
-                    "actions",
-                    note.actions.filter((_, position) => index !== position),
-                  )
-                }
-              >
-                <Trash2 size={18} />
-              </button>
+              <div className="inline-actions form-grid__span">
+                <div className="checkbox">
+                  <input
+                    type="checkbox"
+                    id={`notification-action-primary-${index}`}
+                    checked={item.primary}
+                    onChange={(event) => update({ primary: event.target.checked })}
+                  />
+                  <label
+                    className="checkbox__label"
+                    htmlFor={`notification-action-primary-${index}`}
+                  >
+                    Primary
+                  </label>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  title="Remove action"
+                  aria-label={`Remove action ${index + 1}`}
+                  onClick={() =>
+                    set(
+                      "actions",
+                      note.actions.filter((_, position) => index !== position),
+                    )
+                  }
+                >
+                  <Trash2 size={18} />
+                </Button>
+              </div>
             </div>
           );
         })}
-        <div className="notification-toolbar">
-          <button className="button button--primary" type="submit">
+        <div className="form-actions">
+          <Button variant="primary" type="submit">
             <Save size={16} aria-hidden="true" />
-            {pending ? "Saving" : "Save notification"}
-          </button>
-          <button className="button" type="button" onClick={onClose}>
+            {pending ? "Saving…" : "Save notification"}
+          </Button>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
-          </button>
+          </Button>
         </div>
       </fieldset>
-      {state.message && <p role={state.status === "error" ? "alert" : "status"}>{state.message}</p>}
+      {state.message && (
+        <Callout
+          tone={state.status === "error" ? "danger" : "success"}
+          role={state.status === "error" ? "alert" : "status"}
+          compact
+        >
+          {state.message}
+        </Callout>
+      )}
     </form>
   );
 }
@@ -360,87 +418,98 @@ export function AdminNotificationManager({ document, action, evaluatedAt }: Prop
     return result;
   };
   const status = (note: NotificationInput) => {
-    if (!note.active) return "Paused";
-    if (evaluatedAt === undefined) return "Enabled";
-    if (note.expires_at && Date.parse(note.expires_at) < evaluatedAt) return "Expired";
-    if (note.starts_at && Date.parse(note.starts_at) > evaluatedAt) return "Scheduled";
-    return "Active";
+    if (!note.active) return "paused";
+    if (evaluatedAt === undefined) return "enabled";
+    if (note.expires_at && Date.parse(note.expires_at) < evaluatedAt) return "expired";
+    if (note.starts_at && Date.parse(note.starts_at) > evaluatedAt) return "scheduled";
+    return "active";
   };
   return (
-    <>
-      <div className="notification-toolbar">
-        <button className="button button--primary" onClick={() => open(blank)}>
+    <Section
+      id="admin-notification-list"
+      title="Notices"
+      eyebrow="Published and scheduled"
+      actions={
+        <Button variant="primary" onClick={() => open(blank)}>
           <Plus size={16} aria-hidden="true" /> New notification
-        </button>
+        </Button>
+      }
+    >
+      <div className="stack">
+        {message && (
+          <Callout tone="success" role="status" compact>
+            {message}
+          </Callout>
+        )}
+        {selection && (
+          <NotificationEditor
+            key={selection.key}
+            initial={selection.note}
+            revision={selection.revision}
+            action={save}
+            onClose={() => setSelection(null)}
+          />
+        )}
+        <DataTable
+          columns={COLUMNS}
+          caption="Notices"
+          isEmpty={document.notifications.length === 0}
+          empty={
+            <EmptyState
+              title="No notifications yet."
+              description="Create one to show a notice in the console and the desktop terminal."
+              compact
+            />
+          }
+        >
+          {document.notifications.map((note) => (
+            <tr key={note.id}>
+              <td>
+                <span className="data-table__primary">{note.title || "Untitled"}</span>
+                <span className="data-table__secondary">{formatLabel(note.severity)}</span>
+              </td>
+              <td>
+                <StatusPill value={status(editable(note))} />
+              </td>
+              <td>
+                {note.target.mode === "selected"
+                  ? `Selected (${note.target.user_ids.length + note.target.emails.length})`
+                  : note.target.mode === "all"
+                    ? "All accounts"
+                    : "Active accounts"}
+              </td>
+              <td>
+                <Timestamp value={note.starts_at} mode="absolute" fallback="Immediately" />
+              </td>
+              <td>
+                <Timestamp value={note.expires_at} mode="absolute" fallback="Never" />
+              </td>
+              <td className="data-table__actions">
+                <div className="inline-actions">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    title="Edit notification"
+                    aria-label={`Edit ${note.title || "notification"}`}
+                    onClick={() => open(editable(note))}
+                  >
+                    <Pencil size={16} />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    title="Duplicate notification"
+                    aria-label={`Duplicate ${note.title || "notification"}`}
+                    onClick={() => open({ ...editable(note), id: "", active: false })}
+                  >
+                    <Copy size={16} />
+                  </Button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </DataTable>
       </div>
-      {message && <p role="status">{message}</p>}
-      {selection && (
-        <NotificationEditor
-          key={selection.key}
-          initial={selection.note}
-          revision={selection.revision}
-          action={save}
-          onClose={() => setSelection(null)}
-        />
-      )}
-      {document.notifications.length === 0 ? (
-        <p className="admin-empty-state">No notifications yet.</p>
-      ) : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Status</th>
-                <th>Recipients</th>
-                <th>Starts (UTC)</th>
-                <th>Expires (UTC)</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {document.notifications.map((note) => (
-                <tr key={note.id}>
-                  <td>
-                    <span className="admin-row-title">{note.title || "Untitled"}</span>
-                    <span className="account-id">{note.severity}</span>
-                  </td>
-                  <td>{status(editable(note))}</td>
-                  <td>
-                    {note.target.mode === "selected"
-                      ? `Selected (${note.target.user_ids.length + note.target.emails.length})`
-                      : note.target.mode === "all"
-                        ? "All accounts"
-                        : "Active accounts"}
-                  </td>
-                  <td>{note.starts_at || "Immediate"}</td>
-                  <td>{note.expires_at || "None"}</td>
-                  <td>
-                    <div className="notification-toolbar">
-                      <button
-                        className="button notification-icon"
-                        title="Edit notification"
-                        aria-label={`Edit ${note.title || "notification"}`}
-                        onClick={() => open(editable(note))}
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        className="button notification-icon"
-                        title="Duplicate notification"
-                        aria-label={`Duplicate ${note.title || "notification"}`}
-                        onClick={() => open({ ...editable(note), id: "", active: false })}
-                      >
-                        <Copy size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
+    </Section>
   );
 }

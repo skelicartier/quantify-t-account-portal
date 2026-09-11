@@ -1,93 +1,61 @@
-import Link from "next/link";
-
 import { saveAdminNotification } from "@/app/admin/notifications/actions";
+import { AdminGate } from "@/components/admin/admin-gate";
 import { AdminNotificationManager } from "@/components/admin/admin-notification-manager";
-import { formatAdminLabel, formatAdminNumber } from "@/components/admin/admin-format";
+import { PageHeader } from "@/components/shell/page-header";
+import { Stat, StatGrid } from "@/components/ui/stat";
 import type { AdminNotificationsAccess } from "@/lib/admin/access";
+import { formatNumber } from "@/lib/format";
 
 type AdminNotificationsProps = {
   access: AdminNotificationsAccess;
 };
 
 export function AdminNotifications({ access }: AdminNotificationsProps) {
-  const { me } = access;
+  const authorized = access.status === "authorized" ? access : null;
+  const notices = authorized?.notifications.notifications ?? [];
+  // The loader stamps the evaluation instant; without one, windows cannot be judged and
+  // only the active flag is counted.
+  const evaluatedAt = authorized?.evaluatedAt;
+  const activeNow = notices.filter(
+    (note) =>
+      note.active &&
+      (evaluatedAt === undefined ||
+        ((!note.starts_at || Date.parse(note.starts_at) <= evaluatedAt) &&
+          (!note.expires_at || Date.parse(note.expires_at) >= evaluatedAt))),
+  ).length;
+  const scheduled =
+    evaluatedAt === undefined
+      ? 0
+      : notices.filter(
+          (note) => note.active && note.starts_at && Date.parse(note.starts_at) > evaluatedAt,
+        ).length;
 
   return (
-    <main className="account-main admin-main" id="main-content">
-      <section className="account-hero admin-hero" aria-labelledby="admin-notifications-heading">
-        <div>
-          <p className="eyebrow">Administration</p>
-          <h1 id="admin-notifications-heading">Notifications</h1>
-        </div>
-        <div className={`admin-role-badge admin-role-badge--${me.role.effective}`}>
-          {formatAdminLabel(me.role.effective)}
-        </div>
-      </section>
-
-      {access.status === "forbidden" && (
-        <section
-          className="admin-state-panel"
-          aria-labelledby="admin-notifications-forbidden-heading"
-        >
-          <p className="account-card__label">Access denied</p>
-          <h2 id="admin-notifications-forbidden-heading">
-            This account is not authorized for administration
-          </h2>
-          <Link className="button" href="/account">
-            Return to account
-          </Link>
-        </section>
-      )}
-
-      {access.status === "mfa-required" && (
-        <section className="admin-state-panel" aria-labelledby="admin-notifications-mfa-heading">
-          <p className="account-card__label">Additional verification</p>
-          <h2 id="admin-notifications-mfa-heading">A verified second factor is required</h2>
-          <Link className="button button--primary" href="/account/security">
-            Open security settings
-          </Link>
-        </section>
-      )}
-
-      {access.status === "capability-required" && (
-        <section
-          className="admin-state-panel"
-          aria-labelledby="admin-notifications-capability-heading"
-        >
-          <p className="account-card__label">Capability required</p>
-          <h2 id="admin-notifications-capability-heading">Notification authoring is not granted</h2>
-          <p>{access.capability}</p>
-        </section>
-      )}
-
-      {access.status === "authorized" && (
-        <>
-          <dl className="notification-summary" aria-label="Notification summary">
-            <div>
-              <dt>Total</dt>
-              <dd>{formatAdminNumber(access.notifications.notifications.length)} notices</dd>
-            </div>
-            <div>
-              <dt>Revision</dt>
-              <dd className="account-id">{access.notifications.revision || "None"}</dd>
-            </div>
-          </dl>
-
-          <section className="admin-section" aria-labelledby="admin-notifications-table-heading">
-            <div className="admin-section__heading">
-              <div>
-                <p className="account-card__label">Notices</p>
-                <h2 id="admin-notifications-table-heading">All notices</h2>
-              </div>
-            </div>
-            <AdminNotificationManager
-              document={access.notifications}
-              evaluatedAt={access.evaluatedAt}
-              action={saveAdminNotification}
-            />
-          </section>
-        </>
-      )}
-    </main>
+    <>
+      <PageHeader
+        eyebrow="Administration"
+        title="Notifications"
+        titleId="admin-notifications-heading"
+        description="In-app notices shown to account holders in the console and the desktop terminal."
+      />
+      <div className="page-content">
+        <AdminGate access={access} section="Notifications">
+          {authorized && (
+            <>
+              <StatGrid columns={3} label="Notification summary">
+                <Stat label="Total notices" value={formatNumber(notices.length)} />
+                <Stat label="Showing now" value={formatNumber(activeNow)} />
+                <Stat label="Scheduled" value={formatNumber(scheduled)} />
+              </StatGrid>
+              <AdminNotificationManager
+                document={authorized.notifications}
+                evaluatedAt={authorized.evaluatedAt}
+                action={saveAdminNotification}
+              />
+            </>
+          )}
+        </AdminGate>
+      </div>
+    </>
   );
 }

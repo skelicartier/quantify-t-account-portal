@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useActionState } from "react";
 
 import { TurnstileField } from "@/components/auth/turnstile-field";
-
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Field, Input, describedBy } from "@/components/ui/field";
 import {
   INITIAL_LOGIN_CHALLENGE_STATE,
   INITIAL_LOGIN_STATE,
@@ -35,10 +37,10 @@ function LoginChallengeForm({
   return (
     <>
       <form className="auth-form" action={formAction} noValidate>
+        <h2>Enter your authenticator code</h2>
         <input type="hidden" name="next" value={nextPath} />
-        <div className="field-group">
-          <label htmlFor="login-totp-code">Authenticator code</label>
-          <input
+        <Field id="login-totp-code" label="Authenticator code" hint={prompt} error={codeError}>
+          <Input
             id="login-totp-code"
             name="code"
             inputMode="numeric"
@@ -48,29 +50,19 @@ function LoginChallengeForm({
             autoFocus
             required
             disabled={isPending}
-            aria-invalid={Boolean(codeError)}
-            aria-describedby={codeError ? "login-totp-code-error" : "login-totp-help"}
+            invalid={Boolean(codeError)}
+            aria-describedby={describedBy("login-totp-code", { hint: prompt, error: codeError })}
           />
-          {prompt && (
-            <p className="field-help" id="login-totp-help">
-              {prompt}
-            </p>
-          )}
-          {codeError && (
-            <p className="field-error" id="login-totp-code-error">
-              {codeError}
-            </p>
-          )}
-        </div>
-        <button className="button button--primary" type="submit" disabled={isPending}>
+        </Field>
+        <Button variant="primary" type="submit" block disabled={isPending}>
           {isPending ? "Verifying code…" : "Verify and continue"}
-        </button>
+        </Button>
       </form>
 
       {state.message && (
-        <div className="auth-alert" role="alert">
+        <Callout tone="danger" role="alert" compact className="auth-card__hint">
           {state.message}
-        </div>
+        </Callout>
       )}
     </>
   );
@@ -95,9 +87,8 @@ export function LoginForm({ action, challengeAction, nextPath, turnstileSiteKey 
     <>
       <form className="auth-form" action={formAction} noValidate>
         <input type="hidden" name="next" value={nextPath} />
-        <div className="field-group">
-          <label htmlFor="email">Email address</label>
-          <input
+        <Field id="email" label="Email address" error={emailError}>
+          <Input
             id="email"
             name="email"
             type="email"
@@ -108,21 +99,12 @@ export function LoginForm({ action, challengeAction, nextPath, turnstileSiteKey 
             maxLength={254}
             required
             disabled={isPending}
-            aria-invalid={Boolean(emailError)}
-            aria-describedby={emailError ? "email-error" : undefined}
+            invalid={Boolean(emailError)}
+            aria-describedby={describedBy("email", { error: emailError })}
           />
-          {emailError && (
-            <p className="field-error" id="email-error">
-              {emailError}
-            </p>
-          )}
-        </div>
-        <div className="field-group">
-          <div className="field-label-row">
-            <label htmlFor="password">Password</label>
-            <span>Use the password for your verified Quantify account</span>
-          </div>
-          <input
+        </Field>
+        <Field id="password" label="Password" error={passwordError}>
+          <Input
             id="password"
             name="password"
             type="password"
@@ -131,35 +113,29 @@ export function LoginForm({ action, challengeAction, nextPath, turnstileSiteKey 
             maxLength={1_024}
             required
             disabled={isPending}
-            aria-invalid={Boolean(passwordError)}
-            aria-describedby={passwordError ? "password-error" : undefined}
+            invalid={Boolean(passwordError)}
+            aria-describedby={describedBy("password", { error: passwordError })}
           />
-          {passwordError && (
-            <p className="field-error" id="password-error">
-              {passwordError}
-            </p>
-          )}
-          <Link className="field-assist-link" href="/forgot-password">
+          <Link className="field__assist" href="/forgot-password">
             Forgot password?
           </Link>
-        </div>
+        </Field>
         <TurnstileField siteKey={turnstileSiteKey} error={challengeError} disabled={isPending} />
-        <button className="button button--primary" type="submit" disabled={isPending}>
+        <Button variant="primary" type="submit" block disabled={isPending}>
           {isPending ? "Verifying account…" : "Sign in securely"}
-        </button>
+        </Button>
       </form>
 
       {state.message && (
-        <div className="auth-alert" role="alert">
+        <Callout tone="danger" role="alert" compact className="auth-card__hint">
           {state.message}
-        </div>
+        </Callout>
       )}
 
-      <div className="foundation-status" role="status">
-        <span aria-hidden="true" />
-        Authentication uses a server-managed session. Passwords and session tokens are never
-        returned in page data.
-      </div>
+      <p className="auth-card__hint">
+        Sign-in uses a server-managed session. Your password and session tokens are never returned
+        to the browser page.
+      </p>
     </>
   );
 }

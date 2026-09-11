@@ -13,7 +13,7 @@ function Fixture() {
     Pick<AccountApiNotificationState, "state" | "receipts">
   >({ state: [], receipts: [] });
   return (
-    <div className="account-shell">
+    <div className="shell">
       {location.search === "?account" ? (
         <AccountNotifications
           notifications={document.notifications}
@@ -47,11 +47,13 @@ function Fixture() {
           }}
         />
       ) : (
-        <main className="account-main admin-main">
-          <section className="account-page-heading">
-            <p className="eyebrow">Administration</p>
-            <h1>Notifications</h1>
-          </section>
+        <main className="shell__main">
+          <header className="page-header">
+            <div className="page-header__body">
+              <p className="eyebrow">Administration</p>
+              <h1>Notifications</h1>
+            </div>
+          </header>
           <AdminNotificationManager
             document={document}
             evaluatedAt={Date.parse("2026-09-05T00:00:00Z")}

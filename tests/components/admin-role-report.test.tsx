@@ -80,7 +80,7 @@ describe("AdminRoleReport", () => {
 
     expect(screen.getByRole("heading", { name: "Role reconciliation" })).toBeVisible();
     expect(screen.getByText("Differences need review")).toBeVisible();
-    expect(screen.getByText("qt-role-report")).toBeVisible();
+    expect(screen.queryByText("qt-role-report")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Differences" })).toHaveAttribute(
       "aria-current",
       "page",
@@ -91,7 +91,7 @@ describe("AdminRoleReport", () => {
     );
     const table = screen.getByRole("table");
     expect(within(table).getByText("7e5f9c11-2a3b-4c5d-8e9f-0a1b2c3d4e66")).toBeVisible();
-    expect(within(table).getByText("Missing In Database")).toBeVisible();
+    expect(within(table).getByText("Missing from database")).toBeVisible();
     expect(screen.queryByText(/pin|passcode/i)).not.toBeInTheDocument();
   });
 

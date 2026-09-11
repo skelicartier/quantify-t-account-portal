@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   INITIAL_ADMIN_USER_SESSION_REVOCATION_STATE,
   type AdminUserSessionRevocationState,
@@ -27,14 +28,17 @@ export function AdminUserSessionRevokeForm({
   );
 
   return (
-    <form className="admin-inline-form admin-inline-form--table" action={formAction}>
+    <form className="stack stack--tight" action={formAction}>
       <input type="hidden" name="userId" value={userId} />
       <input type="hidden" name="sessionId" value={sessionId} />
-      <button className="button" type="submit" disabled={pending}>
-        {pending ? "Revoking..." : "Revoke"}
-      </button>
+      <Button size="small" type="submit" disabled={pending}>
+        {pending ? "Revoking…" : "Revoke"}
+      </Button>
       {state.message && (
-        <p className={`admin-action-message admin-action-message--${state.status}`}>
+        <p
+          className={state.status === "error" ? "field__error" : "field__hint"}
+          role={state.status === "error" ? "alert" : "status"}
+        >
           {state.message}
         </p>
       )}

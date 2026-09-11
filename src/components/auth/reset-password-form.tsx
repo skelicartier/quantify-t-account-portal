@@ -1,8 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
 import Link from "next/link";
+import { useActionState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Field, Input, describedBy } from "@/components/ui/field";
 import { INITIAL_RESET_PASSWORD_STATE, type ResetPasswordAction } from "@/lib/auth/recovery";
 
 type ResetPasswordFormProps = {
@@ -17,8 +20,13 @@ export function ResetPasswordForm({ action, token }: ResetPasswordFormProps) {
 
   if (state.status === "success") {
     return (
-      <div className="auth-alert auth-alert--success" role="status">
-        {state.message} <Link href="/login?notice=password-updated">Sign in</Link>
+      <div className="auth-form">
+        <Callout tone="success" role="status" title="Password updated">
+          {state.message}{" "}
+          <Link className="text-link" href="/login?notice=password-updated">
+            Sign in
+          </Link>
+        </Callout>
       </div>
     );
   }
@@ -27,12 +35,13 @@ export function ResetPasswordForm({ action, token }: ResetPasswordFormProps) {
     <>
       <form className="auth-form" action={formAction} noValidate>
         {token && <input type="hidden" name="token" value={token} />}
-        <div className="field-group">
-          <div className="field-label-row">
-            <label htmlFor="reset-password">New password</label>
-            <span>Use 12–128 characters</span>
-          </div>
-          <input
+        <Field
+          id="reset-password"
+          label="New password"
+          note="12–128 characters"
+          error={passwordError}
+        >
+          <Input
             id="reset-password"
             name="password"
             type="password"
@@ -41,19 +50,17 @@ export function ResetPasswordForm({ action, token }: ResetPasswordFormProps) {
             maxLength={128}
             required
             disabled={isPending}
-            aria-invalid={Boolean(passwordError)}
-            aria-describedby={passwordError ? "reset-password-error" : undefined}
+            invalid={Boolean(passwordError)}
+            aria-describedby={describedBy("reset-password", { error: passwordError })}
           />
-          {passwordError && (
-            <p className="field-error" id="reset-password-error">
-              {passwordError}
-            </p>
-          )}
-        </div>
+        </Field>
 
-        <div className="field-group">
-          <label htmlFor="reset-password-confirmation">Confirm new password</label>
-          <input
+        <Field
+          id="reset-password-confirmation"
+          label="Confirm new password"
+          error={confirmationError}
+        >
+          <Input
             id="reset-password-confirmation"
             name="passwordConfirmation"
             type="password"
@@ -62,25 +69,22 @@ export function ResetPasswordForm({ action, token }: ResetPasswordFormProps) {
             maxLength={128}
             required
             disabled={isPending}
-            aria-invalid={Boolean(confirmationError)}
-            aria-describedby={confirmationError ? "reset-password-confirmation-error" : undefined}
+            invalid={Boolean(confirmationError)}
+            aria-describedby={describedBy("reset-password-confirmation", {
+              error: confirmationError,
+            })}
           />
-          {confirmationError && (
-            <p className="field-error" id="reset-password-confirmation-error">
-              {confirmationError}
-            </p>
-          )}
-        </div>
+        </Field>
 
-        <button className="button button--primary" type="submit" disabled={isPending}>
+        <Button variant="primary" type="submit" block disabled={isPending}>
           {isPending ? "Updating password…" : "Update password"}
-        </button>
+        </Button>
       </form>
 
       {state.message && (
-        <div className="auth-alert" role="alert">
+        <Callout tone="danger" role="alert" compact className="auth-card__hint">
           {state.message}
-        </div>
+        </Callout>
       )}
     </>
   );

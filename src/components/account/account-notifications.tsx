@@ -1,8 +1,16 @@
 "use client";
 
-import { useActionState, useMemo, useTransition } from "react";
 import { Check, ExternalLink, X } from "lucide-react";
+import { useActionState, useMemo, useTransition } from "react";
+
+import { PageHeader } from "@/components/shell/page-header";
+import { Button, buttonClass } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Timestamp } from "@/components/ui/timestamp";
 import type { AccountApiNotificationState, AccountApiNotifications } from "@/lib/admin/account-api";
+import { formatLabel } from "@/lib/format";
 import {
   INITIAL_NOTIFICATION_STATE,
   safeNotificationHref,
@@ -13,13 +21,21 @@ type Props = {
   notifications: AccountApiNotifications["notifications"];
   receiptState?: Pick<AccountApiNotificationState, "state" | "receipts">;
   action: (state: NotificationActionState, data: FormData) => Promise<NotificationActionState>;
+  now?: number | undefined;
 };
 
-function formatReceiptTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toISOString().replace(".000Z", "Z").replace("T", " ");
-}
+const RECEIPT_LABELS: Record<string, string> = {
+  seen: "Seen",
+  read: "Marked as read",
+  dismissed: "Dismissed",
+  clicked: "Opened a link",
+};
+
+const HISTORY_COLUMNS = [
+  { key: "action", label: "Action" },
+  { key: "notice", label: "Notice" },
+  { key: "when", label: "When" },
+] as const;
 
 function Notification({
   note,
@@ -40,35 +56,41 @@ function Notification({
       void action(INITIAL_NOTIFICATION_STATE, data);
     });
   };
+  const title = note.title || "Account notice";
   return (
-    <article className={`account-notification account-notification--${note.severity}`}>
-      <p className="account-card__label">
-        {note.severity}
-        {receipt ? ` / ${receipt.status}` : ""}
+    <article className={`notice notice--${note.severity}`}>
+      <p className="notice__meta">
+        <span>{formatLabel(note.severity)}</span>
+        {receipt && <span>{RECEIPT_LABELS[receipt.status] ?? formatLabel(receipt.status)}</span>}
       </p>
-      <h2>{note.title || "Account notice"}</h2>
-      <p className="notification-body">{note.body}</p>
+      <h2 className="notice__title">{title}</h2>
+      <p className="notice__body">{note.body}</p>
       <form action={formAction}>
         <input type="hidden" name="notificationId" value={note.id} />
-        <div className="notification-toolbar">
+        <div className="notice__actions">
           {note.actions.map((item, index) => {
-            if (item.kind === "dismiss")
+            if (item.kind === "dismiss") {
               return note.dismissible ? (
-                <button
+                <Button
                   key={index}
-                  className="button"
+                  size="small"
+                  type="submit"
                   name="status"
                   value="dismissed"
                   disabled={pending}
                 >
                   {item.label}
-                </button>
+                </Button>
               ) : null;
+            }
             const href = safeNotificationHref(item.url);
             return href ? (
               <a
                 key={index}
-                className={`button${item.primary ? " button--primary" : ""}`}
+                className={buttonClass({
+                  size: "small",
+                  variant: item.primary ? "primary" : "default",
+                })}
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -79,32 +101,40 @@ function Notification({
               </a>
             ) : null;
           })}
-          <button className="button" name="status" value="read" disabled={pending}>
+          <Button size="small" type="submit" name="status" value="read" disabled={pending}>
             <Check size={16} aria-hidden="true" />
             Mark read
-          </button>
+          </Button>
           {note.dismissible && (
-            <button
-              className="button notification-icon"
+            <Button
+              size="icon"
+              variant="ghost"
+              type="submit"
               name="status"
               value="dismissed"
               title="Dismiss notification"
-              aria-label={`Dismiss ${note.title || "notification"}`}
+              aria-label={`Dismiss ${title}`}
               disabled={pending}
             >
               <X size={16} />
-            </button>
+            </Button>
           )}
         </div>
         {state.message && (
-          <p role={state.status === "error" ? "alert" : "status"}>{state.message}</p>
+          <Callout
+            tone={state.status === "error" ? "danger" : "success"}
+            role={state.status === "error" ? "alert" : "status"}
+            compact
+          >
+            {state.message}
+          </Callout>
         )}
       </form>
     </article>
   );
 }
 
-export function AccountNotifications({ notifications, receiptState, action }: Props) {
+export function AccountNotifications({ notifications, receiptState, action, now }: Props) {
   const receiptsByNotification = useMemo(
     () => new Map((receiptState?.state ?? []).map((item) => [item.notification_id, item])),
     [receiptState],
@@ -113,40 +143,59 @@ export function AccountNotifications({ notifications, receiptState, action }: Pr
     (note) => receiptsByNotification.get(note.id)?.status !== "dismissed",
   );
   const titles = new Map(notifications.map((note) => [note.id, note.title || "Account notice"]));
+  const history = receiptState?.receipts.slice(0, 12) ?? [];
+
   return (
-    <main className="account-main" id="main-content">
-      <section className="account-page-heading">
-        <p className="eyebrow">Cloud account</p>
-        <h1>Notifications</h1>
-      </section>
-      <section className="account-notification-list" aria-label="Account notifications">
-        {visibleNotifications.length ? (
-          visibleNotifications.map((note) => (
-            <Notification
-              key={note.id}
-              note={note}
-              receipt={receiptsByNotification.get(note.id)}
-              action={action}
-            />
-          ))
-        ) : (
-          <p className="account-empty-state">No notifications.</p>
-        )}
-      </section>
-      {(receiptState?.receipts.length ?? 0) > 0 && (
-        <section className="notification-history" aria-label="Notification history">
-          <h2>Recent history</h2>
-          <ul>
-            {receiptState?.receipts.slice(0, 12).map((receipt) => (
-              <li key={receipt.id || `${receipt.notification_id}-${receipt.occurred_at}`}>
-                <span>{receipt.status}</span>
-                <span>{titles.get(receipt.notification_id) || receipt.notification_id}</span>
-                <time dateTime={receipt.occurred_at}>{formatReceiptTime(receipt.occurred_at)}</time>
-              </li>
-            ))}
-          </ul>
+    <>
+      <PageHeader
+        eyebrow="Account"
+        title="Notifications"
+        titleId="account-notifications-heading"
+        description="Notices from the Quantify Terminal team about your account and the platform."
+      />
+
+      <div className="page-content">
+        <section className="notice-list" aria-label="Account notifications">
+          {visibleNotifications.length > 0 ? (
+            visibleNotifications.map((note) => (
+              <Notification
+                key={note.id}
+                note={note}
+                receipt={receiptsByNotification.get(note.id)}
+                action={action}
+              />
+            ))
+          ) : (
+            <EmptyState title="You're all caught up." description="New notices will appear here." />
+          )}
         </section>
-      )}
-    </main>
+
+        {history.length > 0 && (
+          <section className="section" aria-label="Notification history">
+            <div className="section__header">
+              <div>
+                <p className="eyebrow">History</p>
+                <h2>Recent activity</h2>
+              </div>
+            </div>
+            <DataTable columns={HISTORY_COLUMNS} caption="Past notifications" minWidth={480}>
+              {history.map((receipt) => (
+                <tr key={receipt.id || `${receipt.notification_id}-${receipt.occurred_at}`}>
+                  <td>{RECEIPT_LABELS[receipt.status] ?? formatLabel(receipt.status)}</td>
+                  <td>
+                    <span className="data-table__primary">
+                      {titles.get(receipt.notification_id) || "Account notice"}
+                    </span>
+                  </td>
+                  <td>
+                    <Timestamp value={receipt.occurred_at} now={now} />
+                  </td>
+                </tr>
+              ))}
+            </DataTable>
+          </section>
+        )}
+      </div>
+    </>
   );
 }

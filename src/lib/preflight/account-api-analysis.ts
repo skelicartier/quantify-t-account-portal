@@ -198,7 +198,10 @@ function reservesBeforeMutating(source: string | null | undefined): boolean {
   );
   const activationMutate = source.indexOf("updated = deps.gateway.set_admin_user_active");
   const activationFinish = source.indexOf("complete(deps.idempotency", activationMutate);
-  const adminSessionReserve = source.indexOf("replayed = replay_or_reserve(", activationFinish);
+  const roleReserve = source.indexOf("replayed = replay_or_reserve(", activationFinish);
+  const roleMutate = source.indexOf("stored_role = deps.gateway.set_database_role");
+  const roleFinish = source.indexOf("complete(deps.idempotency", roleMutate);
+  const adminSessionReserve = source.indexOf("replayed = replay_or_reserve(", roleFinish);
   const adminSessionMutate = source.indexOf("revoked = deps.gateway.revoke_account_session");
   const adminSessionFinish = source.indexOf("complete(deps.idempotency", adminSessionMutate);
   const notificationUpdateReserve = source.indexOf(
@@ -270,7 +273,10 @@ function reservesBeforeMutating(source: string | null | undefined): boolean {
     activationReserve > accountDeletionCancelFinish &&
     activationMutate > activationReserve &&
     activationFinish > activationMutate &&
-    adminSessionReserve > activationFinish &&
+    roleReserve > activationFinish &&
+    roleMutate > roleReserve &&
+    roleFinish > roleMutate &&
+    adminSessionReserve > roleFinish &&
     adminSessionMutate > adminSessionReserve &&
     adminSessionFinish > adminSessionMutate &&
     notificationUpdateReserve > adminSessionFinish &&
@@ -451,7 +457,7 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         // A reservation lease and a replay window are separate lifetimes.
         "lease_seconds",
       ]) &&
-      occursAtLeast(modules.app, "require_key(request)", 12) &&
+      occursAtLeast(modules.app, "require_key(request)", 13) &&
       includesAll(modules.app, ["replay_or_reserve", "scope_for("]) &&
       // The reservation must precede the side effect. Recording afterwards misses the case
       // the module exists for: a request killed between the write and the record.
@@ -591,6 +597,17 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         "target_role",
         "account.activated",
         "account.deactivated",
+        // Role assignment shares the activation contract: same DTO, same idempotency
+        // shape, same audit path, plus the self-change and pinned-target refusals.
+        'ADMIN_USER_ROLE_ROUTE = "admin/users/{user_id}/role"',
+        "ADMIN_USER_ROLE_ALLOWED_FIELDS",
+        "MANAGE_ROLES",
+        "def _admin_user_role",
+        "def _can_change_role",
+        "set_database_role",
+        "cannot change own role",
+        "break-glass owner is pinned by configuration",
+        "account.role_changed",
       ]) &&
       includesAll(modules.dto, [
         "def admin_user_activation_dto",
@@ -604,8 +621,15 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         '"is_active"',
         '"return=representation"',
         "LAST_OWNER_PROTECTED",
+        "def set_database_role",
+        "UPDATE dbo.app_roles SET role",
+        "INSERT INTO dbo.app_roles",
       ]) &&
-      includesAll(modules.audit, ['"account.activated"', '"account.deactivated"']),
+      includesAll(modules.audit, [
+        '"account.activated"',
+        '"account.deactivated"',
+        '"account.role_changed"',
+      ]),
     adminUserSessionRevokeRoute:
       includesAll(modules.app, [
         'ADMIN_USER_SESSION_REVOKE_ROUTE = "admin/users/{user_id}/sessions/{session_id}/revoke"',

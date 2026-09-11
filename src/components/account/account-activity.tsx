@@ -1,96 +1,80 @@
+import { PageHeader } from "@/components/shell/page-header";
+import { Section } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Stat, StatGrid } from "@/components/ui/stat";
+import { StatusPill } from "@/components/ui/status-pill";
+import { Timestamp } from "@/components/ui/timestamp";
 import type { AccountActivityEventDto } from "@/lib/dto/session";
+import { formatLabel } from "@/lib/format";
 
 type AccountActivityProps = {
   events: AccountActivityEventDto[];
+  now?: number | undefined;
 };
 
-function formatLabel(value: string): string {
-  const acronyms = new Set(["api", "mfa", "totp", "uuid"]);
-  return value
-    .split(/[-_.\s]+/u)
-    .filter(Boolean)
-    .map((part) =>
-      acronyms.has(part.toLowerCase())
-        ? part.toUpperCase()
-        : `${part.charAt(0).toUpperCase()}${part.slice(1)}`,
-    )
-    .join(" ");
-}
+const COLUMNS = [
+  { key: "when", label: "When" },
+  { key: "event", label: "Event" },
+  { key: "outcome", label: "Outcome" },
+  { key: "surface", label: "Surface" },
+] as const;
 
-function formatDateTime(value: string | null): string {
-  if (!value) return "Not available";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Not available";
-  return new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(date);
-}
-
-export function AccountActivity({ events }: AccountActivityProps) {
+export function AccountActivity({ events, now }: AccountActivityProps) {
   const lastEvent = events[0]?.occurredAt ?? null;
+  const flagged = events.filter(
+    (event) => event.outcome === "blocked" || event.outcome === "failure",
+  ).length;
 
   return (
-    <main className="account-main" id="main-content">
-      <section className="account-page-heading" aria-labelledby="account-activity-heading">
-        <p className="eyebrow">Cloud account</p>
-        <h1 id="account-activity-heading">Activity</h1>
-        <p>Authentication and account-security events from the cloud audit stream.</p>
-      </section>
+    <>
+      <PageHeader
+        eyebrow="Account"
+        title="Activity"
+        titleId="account-activity-heading"
+        description="Sign-in and security events recorded for your account."
+      />
 
-      <section className="account-grid account-grid--compact" aria-label="Activity summary">
-        <article className="account-card">
-          <p className="account-card__label">Events</p>
-          <h2>{events.length}</h2>
-        </article>
-        <article className="account-card">
-          <p className="account-card__label">Latest</p>
-          <h2>{formatDateTime(lastEvent)}</h2>
-        </article>
-        <article className="account-card">
-          <p className="account-card__label">Scope</p>
-          <h2>Self only</h2>
-        </article>
-      </section>
+      <div className="page-content">
+        <StatGrid columns={3} label="Activity summary">
+          <Stat label="Events" value={events.length} />
+          <Stat
+            label="Latest"
+            value={<Timestamp value={lastEvent} now={now} fallback="None yet" />}
+            text
+          />
+          <Stat label="Needs attention" value={flagged} tone={flagged > 0 ? "danger" : "default"} />
+        </StatGrid>
 
-      <section className="account-section" aria-labelledby="account-activity-list-heading">
-        <div className="account-section__heading">
-          <p className="account-card__label">Event history</p>
-          <h2 id="account-activity-list-heading">Security timeline</h2>
-        </div>
-
-        {events.length > 0 ? (
-          <div className="account-table-wrap">
-            <table className="account-table">
-              <thead>
-                <tr>
-                  <th>Event</th>
-                  <th>Outcome</th>
-                  <th>Surface</th>
-                  <th>Occurred</th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((event) => (
-                  <tr key={event.id}>
-                    <td>{formatLabel(event.eventType)}</td>
-                    <td>
-                      <span className={`status-value status-value--${event.outcome}`}>
-                        {formatLabel(event.outcome)}
-                      </span>
-                    </td>
-                    <td>{formatLabel(event.source)}</td>
-                    <td>{formatDateTime(event.occurredAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="account-empty-state">No security events were returned for this account.</p>
-        )}
-      </section>
-    </main>
+        <Section id="account-activity-list" title="Security timeline" eyebrow="History">
+          <DataTable
+            columns={COLUMNS}
+            caption="Security timeline"
+            isEmpty={events.length === 0}
+            empty={
+              <EmptyState
+                title="No security events were recorded for this account."
+                description="Sign-ins, password changes and session events will show up here."
+              />
+            }
+          >
+            {events.map((event) => (
+              <tr key={event.id}>
+                <td>
+                  <Timestamp value={event.occurredAt} now={now} mode="both" />
+                </td>
+                <td>
+                  <span className="data-table__primary">{formatLabel(event.eventType)}</span>
+                </td>
+                <td>
+                  <StatusPill value={event.outcome} />
+                </td>
+                <td>{formatLabel(event.source)}</td>
+              </tr>
+            ))}
+          </DataTable>
+        </Section>
+      </div>
+    </>
   );
 }

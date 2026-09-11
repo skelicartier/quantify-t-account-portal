@@ -1,10 +1,18 @@
 "use client";
 
-import { useActionState, useState } from "react";
 import { Send } from "lucide-react";
+import { useActionState, useState } from "react";
 
-import { formatAdminNumber } from "@/components/admin/admin-format";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Section } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ShortId } from "@/components/ui/short-id";
+import { StatusPill } from "@/components/ui/status-pill";
+import { Timestamp } from "@/components/ui/timestamp";
 import type { AccountApiAdminNotificationEmailQueue } from "@/lib/admin/account-api";
+import { formatNumber } from "@/lib/format";
 import {
   INITIAL_NOTIFICATION_EMAIL_STATE,
   type NotificationEmailActionState,
@@ -17,6 +25,7 @@ type Props = {
     state: NotificationEmailActionState,
     data: FormData,
   ) => Promise<NotificationEmailActionState>;
+  now?: number | undefined;
 };
 
 const blank: NotificationEmailInput = {
@@ -26,6 +35,15 @@ const blank: NotificationEmailInput = {
   target: { mode: "all", user_ids: [], emails: [] },
 };
 
+const COLUMNS = [
+  { key: "subject", label: "Subject" },
+  { key: "status", label: "Status" },
+  { key: "recipients", label: "Recipients" },
+  { key: "scheduled", label: "Scheduled" },
+  { key: "attempts", label: "Attempts", align: "end" },
+  { key: "detail", label: "Detail" },
+] as const;
+
 function dateValue(value: string): string {
   const date = new Date(value);
   return value && Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 16) : "";
@@ -34,17 +52,41 @@ function dateValue(value: string): string {
 function recipientLabel(target: AccountApiAdminNotificationEmailQueue["jobs"][number]["target"]) {
   if (target.mode === "all") return "All accounts";
   if (target.mode === "active") return "Active accounts";
-  return `Selected (${formatAdminNumber(target.user_ids.length + target.emails.length)})`;
+  return `Selected (${formatNumber(target.user_ids.length + target.emails.length)})`;
 }
 
-function statusDetail(job: AccountApiAdminNotificationEmailQueue["jobs"][number]) {
-  if (job.status === "sent") return job.completed_at || "Completed";
-  if (job.status === "dead") return job.last_error || "Dead-lettered";
-  if (job.status === "retry") return job.next_attempt_at || "Retry pending";
-  return job.next_attempt_at || "Queued";
+function JobDetail({
+  job,
+  now,
+}: {
+  job: AccountApiAdminNotificationEmailQueue["jobs"][number];
+  now?: number | undefined;
+}) {
+  if (job.status === "sent") {
+    return (
+      <span className="quiet">
+        Sent <Timestamp value={job.completed_at} now={now} fallback="" />
+      </span>
+    );
+  }
+  if (job.status === "dead")
+    return <span className="field__error">{job.last_error || "Delivery failed"}</span>;
+  if (job.status === "retry") {
+    return (
+      <span className="quiet">
+        {job.last_error ? `${job.last_error} · ` : ""}
+        Next attempt <Timestamp value={job.next_attempt_at} now={now} fallback="soon" />
+      </span>
+    );
+  }
+  return (
+    <span className="quiet">
+      <Timestamp value={job.next_attempt_at} now={now} fallback="Waiting for the worker" />
+    </span>
+  );
 }
 
-export function AdminEmailManager({ queue, action }: Props) {
+export function AdminEmailManager({ queue, action, now }: Props) {
   const [email, setEmail] = useState(blank);
   const [userIds, setUserIds] = useState("");
   const [emails, setEmails] = useState("");
@@ -66,129 +108,154 @@ export function AdminEmailManager({ queue, action }: Props) {
 
   return (
     <>
-      <form action={formAction} className="notification-editor">
-        <input type="hidden" name="revision" value={queue.revision} />
-        <input type="hidden" name="email" value={JSON.stringify(payload)} />
-        <fieldset disabled={pending || quotaFull}>
-          <div className="notification-fields">
-            <label className="notification-field notification-field--wide">
-              Subject
-              <input
-                required
-                maxLength={140}
-                value={email.subject}
-                onChange={(event) => set("subject", event.target.value)}
-              />
-            </label>
-            <label className="notification-field notification-field--wide">
-              Body
-              <textarea
-                required
-                rows={6}
-                maxLength={4000}
-                value={email.body}
-                onChange={(event) => set("body", event.target.value)}
-              />
-            </label>
-            <label className="notification-field">
-              Recipients
-              <select
-                value={email.target.mode}
-                onChange={(event) =>
-                  set("target", {
-                    ...email.target,
-                    mode: event.target.value as NotificationEmailInput["target"]["mode"],
-                  })
-                }
-              >
-                <option value="all">All accounts</option>
-                <option value="active">Active accounts</option>
-                <option value="selected">Selected accounts</option>
-              </select>
-            </label>
-            <label className="notification-field">
-              Schedule (UTC)
-              <input
-                type="datetime-local"
-                value={dateValue(email.scheduled_at)}
-                onChange={(event) =>
-                  set("scheduled_at", event.target.value ? `${event.target.value}:00Z` : "")
-                }
-              />
-            </label>
-            {email.target.mode === "selected" && (
-              <>
-                <label className="notification-field">
-                  Account IDs
-                  <textarea
-                    rows={3}
-                    maxLength={190000}
-                    value={userIds}
-                    onChange={(event) => setUserIds(event.target.value)}
-                  />
-                </label>
-                <label className="notification-field">
-                  Email addresses
-                  <textarea
-                    rows={3}
-                    maxLength={190000}
-                    value={emails}
-                    onChange={(event) => setEmails(event.target.value)}
-                  />
-                </label>
-              </>
-            )}
-          </div>
-          <div className="notification-toolbar">
-            <button className="button button--primary" type="submit">
+      <Section
+        id="admin-email-compose"
+        title="Compose"
+        eyebrow="New email"
+        description="Plain text only. Links must use HTTPS."
+      >
+        <form action={formAction} className="form">
+          <input type="hidden" name="revision" value={queue.revision} />
+          <input type="hidden" name="email" value={JSON.stringify(payload)} />
+          <fieldset className="fieldset" disabled={pending || quotaFull}>
+            <div className="form-grid">
+              <label className="field form-grid__span">
+                <span className="field__label">Subject</span>
+                <input
+                  className="input"
+                  required
+                  maxLength={140}
+                  value={email.subject}
+                  onChange={(event) => set("subject", event.target.value)}
+                />
+              </label>
+              <label className="field form-grid__span">
+                <span className="field__label">Body</span>
+                <textarea
+                  className="textarea"
+                  required
+                  rows={6}
+                  maxLength={4000}
+                  value={email.body}
+                  onChange={(event) => set("body", event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span className="field__label">Recipients</span>
+                <select
+                  className="select"
+                  value={email.target.mode}
+                  onChange={(event) =>
+                    set("target", {
+                      ...email.target,
+                      mode: event.target.value as NotificationEmailInput["target"]["mode"],
+                    })
+                  }
+                >
+                  <option value="all">All accounts</option>
+                  <option value="active">Active accounts</option>
+                  <option value="selected">Selected accounts</option>
+                </select>
+              </label>
+              <label className="field">
+                <span className="field__label">Schedule (UTC)</span>
+                <input
+                  className="input"
+                  type="datetime-local"
+                  value={dateValue(email.scheduled_at)}
+                  onChange={(event) =>
+                    set("scheduled_at", event.target.value ? `${event.target.value}:00Z` : "")
+                  }
+                />
+              </label>
+              {email.target.mode === "selected" && (
+                <>
+                  <label className="field">
+                    <span className="field__label">Account IDs</span>
+                    <textarea
+                      className="textarea"
+                      rows={3}
+                      maxLength={190000}
+                      value={userIds}
+                      onChange={(event) => setUserIds(event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="field__label">Email addresses</span>
+                    <textarea
+                      className="textarea"
+                      rows={3}
+                      maxLength={190000}
+                      value={emails}
+                      onChange={(event) => setEmails(event.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+          </fieldset>
+          {quotaFull && (
+            <Callout role="status" tone="attention" compact>
+              Email queue quota reached. Wait for today&apos;s quota to reset or for queued jobs to
+              send.
+            </Callout>
+          )}
+          {state.message && (
+            <Callout
+              tone={state.status === "error" ? "danger" : "success"}
+              role={state.status === "error" ? "alert" : "status"}
+              compact
+            >
+              {state.message}
+            </Callout>
+          )}
+          <div className="form-actions">
+            <Button variant="primary" type="submit" disabled={pending || quotaFull}>
               <Send size={16} aria-hidden="true" />
-              {pending ? "Queueing" : "Queue email"}
-            </button>
+              {pending ? "Queueing…" : "Queue email"}
+            </Button>
           </div>
-        </fieldset>
-        {quotaFull && <p role="status">Email queue quota reached.</p>}
-        {state.message && (
-          <p role={state.status === "error" ? "alert" : "status"}>{state.message}</p>
-        )}
-      </form>
+        </form>
+      </Section>
 
-      {queue.jobs.length === 0 ? (
-        <p className="admin-empty-state">No email jobs queued.</p>
-      ) : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Subject</th>
-                <th>Status</th>
-                <th>Recipients</th>
-                <th>Scheduled</th>
-                <th>Next / final</th>
-                <th>Attempts</th>
-                <th>Last error</th>
-              </tr>
-            </thead>
-            <tbody>
-              {queue.jobs.map((job) => (
-                <tr key={job.id}>
-                  <td>
-                    <span className="admin-row-title">{job.subject}</span>
-                    <span className="account-id">{job.id}</span>
-                  </td>
-                  <td>{job.status}</td>
-                  <td>{recipientLabel(job.target)}</td>
-                  <td>{job.scheduled_at || "Immediate"}</td>
-                  <td>{statusDetail(job)}</td>
-                  <td>
-                    {formatAdminNumber(job.attempts)} / {formatAdminNumber(job.max_attempts)}
-                  </td>
-                  <td>{job.last_error || "None"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <Section id="admin-email-jobs" title="Queue" eyebrow="Delivery">
+        <DataTable
+          columns={COLUMNS}
+          caption="Queued email"
+          isEmpty={queue.jobs.length === 0}
+          empty={
+            <EmptyState
+              title="No email jobs queued."
+              description="Queued messages and their delivery status appear here."
+              compact
+            />
+          }
+        >
+          {queue.jobs.map((job) => (
+            <tr key={job.id}>
+              <td>
+                <span className="data-table__primary">{job.subject}</span>
+                <span className="data-table__secondary">
+                  <ShortId value={job.id} />
+                </span>
+              </td>
+              <td>
+                <StatusPill value={job.status} />
+              </td>
+              <td>{recipientLabel(job.target)}</td>
+              <td>
+                <Timestamp value={job.scheduled_at} now={now} fallback="Immediate" />
+              </td>
+              <td className="data-table__num">
+                {formatNumber(job.attempts)} / {formatNumber(job.max_attempts)}
+              </td>
+              <td>
+                <JobDetail job={job} now={now} />
+              </td>
+            </tr>
+          ))}
+        </DataTable>
+      </Section>
     </>
   );
 }

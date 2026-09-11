@@ -2,6 +2,11 @@
 
 import { useActionState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Field, Input, describedBy } from "@/components/ui/field";
+import { StatusPill } from "@/components/ui/status-pill";
+import { Timestamp } from "@/components/ui/timestamp";
 import {
   INITIAL_TOTP_ENROLLMENT_STATE,
   TOTP_CODE_LENGTH,
@@ -39,12 +44,13 @@ function displayName(friendlyName: string | null): string {
 function StatusMessage({ state }: { state: TotpEnrollmentState }) {
   if (!state.message) return null;
   return (
-    <p
-      className={`account-form__status account-form__status--${state.status}`}
+    <Callout
+      tone={state.status === "success" ? "success" : "danger"}
       role={state.status === "success" ? "status" : "alert"}
+      compact
     >
       {state.message}
-    </p>
+    </Callout>
   );
 }
 
@@ -78,31 +84,29 @@ function FactorRemovalForm({
   const inputId = `security-remove-password-${index}`;
 
   return (
-    <form className="account-form" action={formAction} noValidate>
+    <form className="form" action={formAction} noValidate>
       <input type="hidden" name="factorId" value={factor.id} />
-      <div className="field-group">
-        <label htmlFor={inputId}>
-          Current password, to remove {displayName(factor.friendlyName)}
-        </label>
-        <input
+      <Field
+        id={inputId}
+        label={`Current password, to remove ${displayName(factor.friendlyName)}`}
+        error={passwordError}
+      >
+        <Input
           id={inputId}
           name="currentPassword"
           type="password"
           autoComplete="current-password"
           required
           disabled={pending}
-          aria-invalid={Boolean(passwordError)}
-          aria-describedby={passwordError ? `${inputId}-error` : undefined}
+          invalid={Boolean(passwordError)}
+          aria-describedby={describedBy(inputId, { error: passwordError })}
         />
-        {passwordError && (
-          <p className="field-error" id={`${inputId}-error`}>
-            {passwordError}
-          </p>
-        )}
+      </Field>
+      <div className="form-actions">
+        <Button type="submit" disabled={pending}>
+          {pending ? "Removing…" : "Remove authenticator"}
+        </Button>
       </div>
-      <button className="button" type="submit" disabled={pending}>
-        {pending ? "Removing…" : "Remove authenticator"}
-      </button>
     </form>
   );
 }
@@ -142,20 +146,23 @@ export function TwoFactorPanel({
   // statement about the account when it is a statement about this request.
   if (!factorsReadable) {
     return (
-      <div className="account-form">
-        <p className="account-form__status account-form__status--error" role="alert">
+      <div className="stack">
+        <Callout tone="danger" role="alert">
           Two-factor status is temporarily unavailable, so it cannot be changed right now. Reload to
           try again. Nothing about your account has changed.
-        </p>
+        </Callout>
       </div>
     );
   }
 
   return (
-    <div className="account-form">
-      <p>
-        Status: <strong>{enrolled ? "Two-factor authentication is on" : "Password only"}</strong>
-        {enrolled && currentLevel === "aal2" && " — this session is verified."}
+    <div className="stack">
+      <p className="inline-actions">
+        <StatusPill value={enrolled ? "on" : "off"} label={enrolled ? "On" : "Off"} />
+        <strong>{enrolled ? "Two-factor authentication is on" : "Password only"}</strong>
+        {enrolled && currentLevel === "aal2" && (
+          <span className="quiet">This session is verified.</span>
+        )}
       </p>
 
       {/* Removing the last factor empties the list, so the confirmation has to survive
@@ -164,12 +171,16 @@ export function TwoFactorPanel({
 
       {enrolled ? (
         <>
-          <ul className="account-factor-list">
+          <ul className="list-rows">
             {factors.map((factor) => (
-              <li key={factor.id}>
-                <span>{displayName(factor.friendlyName)}</span>
+              <li className="list-row" key={factor.id}>
+                <span className="list-row__main">
+                  <span className="list-row__title">{displayName(factor.friendlyName)}</span>
+                </span>
                 {factor.createdAt && (
-                  <span className="account-card__label">Added {factor.createdAt.slice(0, 10)}</span>
+                  <span className="quiet">
+                    Added <Timestamp value={factor.createdAt} mode="date" />
+                  </span>
                 )}
               </li>
             ))}
@@ -191,30 +202,35 @@ export function TwoFactorPanel({
           ))}
         </>
       ) : activeSetup ? (
-        <form className="account-form" action={confirmAction} noValidate>
+        <form className="form" action={confirmAction} noValidate>
           <input type="hidden" name="factorId" value={activeSetup.factorId ?? ""} />
           {/* Render only a real image data URI. Anything else falls back to the
               manual key below rather than emitting a broken or unexpected source.
               A plain element is deliberate: the payload is an inline data URI that
               needs no optimizer, and it must render identically without JavaScript. */}
           {activeSetup.qrCode?.startsWith("data:image/") && (
-            // eslint-disable-next-line @next/next/no-img-element -- inline data URI, never remote
-            <img
-              className="account-totp-qr"
-              src={activeSetup.qrCode}
-              alt="QR code for enrolling this account in your authenticator app"
-              width={200}
-              height={200}
-            />
+            <div className="qr-frame">
+              {/* eslint-disable-next-line @next/next/no-img-element -- inline data URI, never remote */}
+              <img
+                src={activeSetup.qrCode}
+                alt="QR code for enrolling this account in your authenticator app"
+                width={200}
+                height={200}
+              />
+            </div>
           )}
           {activeSetup.secret && (
-            <p className="field-help">
-              Cannot scan? Enter this key manually: <code>{activeSetup.secret}</code>
+            <p className="field__hint">
+              Cannot scan? Enter this key manually:{" "}
+              <code className="secret">{activeSetup.secret}</code>
             </p>
           )}
-          <div className="field-group">
-            <label htmlFor="security-totp-code">Authenticator code</label>
-            <input
+          <Field
+            id="security-totp-code"
+            label="Authenticator code"
+            error={confirmState.fieldErrors.code[0]}
+          >
+            <Input
               id="security-totp-code"
               name="code"
               inputMode="numeric"
@@ -223,58 +239,51 @@ export function TwoFactorPanel({
               maxLength={TOTP_CODE_LENGTH}
               required
               disabled={confirmPending}
-              aria-invalid={Boolean(confirmState.fieldErrors.code[0])}
-              aria-describedby={
-                confirmState.fieldErrors.code[0] ? "security-totp-code-error" : undefined
-              }
+              invalid={Boolean(confirmState.fieldErrors.code[0])}
+              aria-describedby={describedBy("security-totp-code", {
+                error: confirmState.fieldErrors.code[0],
+              })}
             />
-            {confirmState.fieldErrors.code[0] && (
-              <p className="field-error" id="security-totp-code-error">
-                {confirmState.fieldErrors.code[0]}
-              </p>
-            )}
-          </div>
+          </Field>
           <StatusMessage state={confirmState} />
-          <button className="button button--primary" type="submit" disabled={confirmPending}>
-            {confirmPending ? "Verifying…" : "Turn on two-factor authentication"}
-          </button>
+          <div className="form-actions">
+            <Button variant="primary" type="submit" disabled={confirmPending}>
+              {confirmPending ? "Verifying…" : "Turn on two-factor authentication"}
+            </Button>
+          </div>
         </form>
       ) : (
         /* Starting enrollment asks for the current password: verifying a factor
            raises the required level for every session of this account, so it must
            not be reachable from a session that only holds a stolen cookie. */
-        <form className="account-form" action={enrollAction} noValidate>
-          <div className="field-group">
-            <label htmlFor="security-enroll-password">
-              Current password, to set up an authenticator
-            </label>
-            <input
+        <form className="form" action={enrollAction} noValidate>
+          <Field
+            id="security-enroll-password"
+            label="Current password, to set up an authenticator"
+            error={enrollState.fieldErrors.currentPassword[0]}
+          >
+            <Input
               id="security-enroll-password"
               name="currentPassword"
               type="password"
               autoComplete="current-password"
               required
               disabled={enrollPending}
-              aria-invalid={Boolean(enrollState.fieldErrors.currentPassword[0])}
-              aria-describedby={
-                enrollState.fieldErrors.currentPassword[0]
-                  ? "security-enroll-password-error"
-                  : undefined
-              }
+              invalid={Boolean(enrollState.fieldErrors.currentPassword[0])}
+              aria-describedby={describedBy("security-enroll-password", {
+                error: enrollState.fieldErrors.currentPassword[0],
+              })}
             />
-            {enrollState.fieldErrors.currentPassword[0] && (
-              <p className="field-error" id="security-enroll-password-error">
-                {enrollState.fieldErrors.currentPassword[0]}
-              </p>
-            )}
-          </div>
+          </Field>
           {/* Only a failure is reported here. Neither the confirm state nor a pending
               enrollment's instructions belong under a "Password only" status: after an
               enroll-then-remove in one page instance both are stale. */}
           {enrollState.status === "error" && <StatusMessage state={enrollState} />}
-          <button className="button button--primary" type="submit" disabled={enrollPending}>
-            {enrollPending ? "Preparing…" : "Set up an authenticator app"}
-          </button>
+          <div className="form-actions">
+            <Button variant="primary" type="submit" disabled={enrollPending}>
+              {enrollPending ? "Preparing…" : "Set up an authenticator app"}
+            </Button>
+          </div>
         </form>
       )}
     </div>

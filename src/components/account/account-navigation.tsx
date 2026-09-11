@@ -1,31 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { ACCOUNT_LINKS } from "@/components/shell/nav-links";
+import { SidebarNav } from "@/components/shell/sidebar-nav";
 
-const ACCOUNT_LINKS = [
-  { href: "/account", label: "Overview" },
-  { href: "/account/profile", label: "Profile" },
-  { href: "/account/preferences", label: "Preferences" },
-  { href: "/account/security", label: "Security" },
-  { href: "/account/sessions", label: "Sessions" },
-  { href: "/account/activity", label: "Activity" },
-  { href: "/account/notifications", label: "Notifications" },
-  { href: "/account/data", label: "Data" },
-] as const;
-
+// Client-side on purpose: the link table carries icon components, which can only be
+// handed to the client navigation from inside the client bundle.
 export function AccountNavigation() {
-  const pathname = usePathname();
-  return (
-    <nav className="account-navigation" aria-label="Account sections">
-      {ACCOUNT_LINKS.map(({ href, label }) => {
-        const current = pathname === href;
-        return (
-          <Link key={href} href={href} aria-current={current ? "page" : undefined}>
-            {label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
+  return <SidebarNav label="Account sections" links={ACCOUNT_LINKS} />;
 }

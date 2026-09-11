@@ -46,6 +46,7 @@ import {
   resolveAccountApiBaseUrl,
   ROLE_REPORT_CAPABILITY,
   setAccountApiAdminUserActive,
+  setAccountApiAdminUserRole,
   enqueueAccountApiAdminNotificationEmail,
   enqueueAccountApiAdminReport,
   updateAccountApiAdminNotifications,
@@ -481,6 +482,64 @@ describe("Account API client", () => {
     const base = resolveAccountApiBaseUrl({ QT_ACCOUNT_API_URL: `${ACCOUNT_API_URL}/` });
 
     expect(buildAccountApiUrl(base, "/me").toString()).toBe(`${ACCOUNT_API_URL}/me`);
+  });
+
+  it.each([
+    ["https://account-api.example.test", "https://account-api.example.test/api/v1/me"],
+    ["https://account-api.example.test/", "https://account-api.example.test/api/v1/me"],
+    ["http://localhost:7071", "http://localhost:7071/api/v1/me"],
+    ["http://127.0.0.1:7071/api/v1", "http://127.0.0.1:7071/api/v1/me"],
+  ])("appends the versioned route prefix when the base %s omits it", (value, expected) => {
+    const base = resolveAccountApiBaseUrl({ QT_ACCOUNT_API_URL: value });
+
+    expect(buildAccountApiUrl(base, "me").toString()).toBe(expected);
+  });
+
+  it("logs a bounded breadcrumb and fails closed on a non-JSON response", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetcher = vi.fn<TestFetcher>(
+      async () =>
+        new Response("<html>404</html>", {
+          status: 404,
+          headers: { "content-type": "text/html", "x-correlation-id": "qt-platform-404" },
+        }),
+    );
+
+    await expect(
+      fetchAccountApiMe("bearer-token", {
+        environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+        fetcher,
+      }),
+    ).rejects.toMatchObject({
+      name: "AccountApiUnavailableError",
+      correlationId: "qt-platform-404",
+    });
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    const line = String(consoleError.mock.calls[0]?.[0]);
+    expect(line).toContain("[account-api] route=me method=GET outcome=non_json_response");
+    expect(line).toContain("correlation_id=qt-platform-404");
+    expect(line).not.toContain("bearer-token");
+    consoleError.mockRestore();
+  });
+
+  it("logs schema issue paths without echoing the payload", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetcher = vi.fn<TestFetcher>(async () =>
+      jsonResponse({ ...mePayload, environment: "", secret_field: "do-not-log" }),
+    );
+
+    await expect(
+      fetchAccountApiMe("bearer-token", {
+        environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+        fetcher,
+      }),
+    ).rejects.toBeInstanceOf(AccountApiUnavailableError);
+    const line = String(consoleError.mock.calls[0]?.[0]);
+    expect(line).toContain("outcome=schema_mismatch");
+    expect(line).toContain("issues=environment");
+    expect(line).toContain("correlation_id=qt-correlation");
+    expect(line).not.toContain("do-not-log");
+    consoleError.mockRestore();
   });
 
   it.each([
@@ -1032,6 +1091,56 @@ describe("Account API client", () => {
       Authorization: "Bearer bearer-token",
       "Idempotency-Key": "portal-abcdef123456",
     });
+  });
+
+  it("assigns an admin user role with a server-generated idempotency key", async () => {
+    const rolePayload = {
+      ...adminUserSummary,
+      role: { ...adminUserSummary.role, effective: "admin", database: "admin" },
+      ok: true,
+      correlation_id: "qt-role",
+      event: { id: "event-2", event_type: "account.role_changed" },
+      replayed: false,
+      legacy_mirrored: true,
+    };
+    const fetcher = vi.fn<TestFetcher>(async () => jsonResponse(rolePayload));
+
+    const result = await setAccountApiAdminUserRole("bearer-token", USER_ID, "admin", {
+      environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+      fetcher,
+      idempotencyKey: "portal-abcdef123456",
+    });
+
+    expect(result.role.effective).toBe("admin");
+    expect(result.event.event_type).toBe("account.role_changed");
+    const [url, init] = firstFetchCall(fetcher);
+    expect(url.toString()).toBe(`${ACCOUNT_API_URL}/admin/users/${USER_ID}/role`);
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(JSON.stringify({ role: "admin" }));
+    expect(init.headers).toMatchObject({
+      Authorization: "Bearer bearer-token",
+      "Idempotency-Key": "portal-abcdef123456",
+    });
+  });
+
+  it("refuses to send an unknown role or user id to the role route", async () => {
+    const fetcher = vi.fn<TestFetcher>(async () => jsonResponse({}));
+
+    await expect(
+      setAccountApiAdminUserRole("bearer-token", USER_ID, "superuser" as never, {
+        environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+        fetcher,
+        idempotencyKey: "portal-abcdef123456",
+      }),
+    ).rejects.toBeInstanceOf(AccountApiUnavailableError);
+    await expect(
+      setAccountApiAdminUserRole("bearer-token", "not-a-uuid", "admin", {
+        environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+        fetcher,
+        idempotencyKey: "portal-abcdef123456",
+      }),
+    ).rejects.toBeInstanceOf(AccountApiUnavailableError);
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("revokes an admin user session with a server-generated idempotency key", async () => {

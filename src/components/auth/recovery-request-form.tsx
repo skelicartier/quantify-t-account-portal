@@ -3,6 +3,9 @@
 import { useActionState } from "react";
 
 import { TurnstileField } from "@/components/auth/turnstile-field";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Field, Input, describedBy } from "@/components/ui/field";
 import { INITIAL_RECOVERY_REQUEST_STATE, type RecoveryRequestAction } from "@/lib/auth/recovery";
 
 type RecoveryRequestFormProps = {
@@ -15,8 +18,10 @@ export function RecoveryRequestForm({ action, turnstileSiteKey }: RecoveryReques
 
   if (state.status === "accepted") {
     return (
-      <div className="auth-alert auth-alert--success" role="status">
-        {state.message}
+      <div className="auth-form">
+        <Callout tone="success" role="status" title="Request received">
+          {state.message}
+        </Callout>
       </div>
     );
   }
@@ -27,9 +32,8 @@ export function RecoveryRequestForm({ action, turnstileSiteKey }: RecoveryReques
   return (
     <>
       <form className="auth-form" action={formAction} noValidate>
-        <div className="field-group">
-          <label htmlFor="recovery-email">Email address</label>
-          <input
+        <Field id="recovery-email" label="Email address" error={emailError}>
+          <Input
             id="recovery-email"
             name="email"
             type="email"
@@ -40,27 +44,22 @@ export function RecoveryRequestForm({ action, turnstileSiteKey }: RecoveryReques
             maxLength={254}
             required
             disabled={isPending}
-            aria-invalid={Boolean(emailError)}
-            aria-describedby={emailError ? "recovery-email-error" : undefined}
+            invalid={Boolean(emailError)}
+            aria-describedby={describedBy("recovery-email", { error: emailError })}
           />
-          {emailError && (
-            <p className="field-error" id="recovery-email-error">
-              {emailError}
-            </p>
-          )}
-        </div>
+        </Field>
 
         <TurnstileField siteKey={turnstileSiteKey} error={challengeError} disabled={isPending} />
 
-        <button className="button button--primary" type="submit" disabled={isPending}>
+        <Button variant="primary" type="submit" block disabled={isPending}>
           {isPending ? "Sending recovery email…" : "Send recovery email"}
-        </button>
+        </Button>
       </form>
 
       {state.message && (
-        <div className="auth-alert" role="alert">
+        <Callout tone="danger" role="alert" compact className="auth-card__hint">
           {state.message}
-        </div>
+        </Callout>
       )}
     </>
   );

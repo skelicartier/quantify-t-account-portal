@@ -102,8 +102,8 @@ describe("admin platform status", () => {
     render(<AdminConfiguration access={{ status: "authorized", me, assurance, configuration }} />);
 
     expect(screen.getByRole("heading", { name: "Configuration" })).toBeVisible();
-    expect(screen.getByText("16,384")).toBeVisible();
-    expect(screen.getByText("86,400s")).toBeVisible();
+    expect(screen.getByText("16 KB")).toBeVisible();
+    expect(screen.getByText("1 day")).toBeVisible();
     expect(screen.getAllByText("2")[0]).toBeVisible();
     expect(screen.queryByText("owner@example.test")).not.toBeInTheDocument();
   });
@@ -118,7 +118,8 @@ describe("admin platform status", () => {
 
     expect(screen.getByRole("heading", { name: "Credentials" })).toBeVisible();
     expect(screen.getByRole("cell", { name: "Supabase Service Role" })).toBeVisible();
-    expect(screen.getAllByText("Source Locked").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Rotated at source").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("Source Locked")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Releases" })).toBeVisible();
     expect(screen.getByText("Server signatures")).toBeVisible();
     expect(screen.queryByText(/xkeysib|service-role|sender@example/iu)).not.toBeInTheDocument();

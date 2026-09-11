@@ -18,7 +18,7 @@ export interface AzureAuthConfig {
 }
 
 function normalizeAccountApiUrl(raw: string | undefined): string {
-  const fallback = process.env.NODE_ENV === "production" ? "" : "http://localhost:7071";
+  const fallback = process.env.NODE_ENV === "production" ? "" : "http://localhost:7071/api/v1";
   const value = (raw || fallback).trim().replace(/\/+$/u, "");
   if (!value) throw new Error("QT_ACCOUNT_API_URL is required for Azure auth.");
 

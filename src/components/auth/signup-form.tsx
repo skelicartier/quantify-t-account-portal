@@ -3,6 +3,9 @@
 import { useActionState } from "react";
 
 import { TurnstileField } from "@/components/auth/turnstile-field";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Field, Input, describedBy } from "@/components/ui/field";
 import { LEGAL_CONSENT_FIELD_NAME, PRIVACY_URL, TERMS_URL } from "@/lib/auth/consent";
 import { INITIAL_SIGNUP_STATE, type SignupAction } from "@/lib/auth/signup";
 
@@ -16,8 +19,10 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
 
   if (state.status === "accepted") {
     return (
-      <div className="auth-alert auth-alert--success" role="status">
-        {state.message}
+      <div className="auth-form">
+        <Callout tone="success" role="status" title="Almost there">
+          {state.message}
+        </Callout>
       </div>
     );
   }
@@ -31,9 +36,8 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
   return (
     <>
       <form className="auth-form" action={formAction} noValidate>
-        <div className="field-group">
-          <label htmlFor="signup-email">Email address</label>
-          <input
+        <Field id="signup-email" label="Email address" error={emailError}>
+          <Input
             id="signup-email"
             name="email"
             type="email"
@@ -44,22 +48,13 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
             maxLength={254}
             required
             disabled={isPending}
-            aria-invalid={Boolean(emailError)}
-            aria-describedby={emailError ? "signup-email-error" : undefined}
+            invalid={Boolean(emailError)}
+            aria-describedby={describedBy("signup-email", { error: emailError })}
           />
-          {emailError && (
-            <p className="field-error" id="signup-email-error">
-              {emailError}
-            </p>
-          )}
-        </div>
+        </Field>
 
-        <div className="field-group">
-          <div className="field-label-row">
-            <label htmlFor="signup-password">Password</label>
-            <span>Use 12–128 characters</span>
-          </div>
-          <input
+        <Field id="signup-password" label="Password" note="12–128 characters" error={passwordError}>
+          <Input
             id="signup-password"
             name="password"
             type="password"
@@ -69,19 +64,13 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
             maxLength={128}
             required
             disabled={isPending}
-            aria-invalid={Boolean(passwordError)}
-            aria-describedby={passwordError ? "signup-password-error" : undefined}
+            invalid={Boolean(passwordError)}
+            aria-describedby={describedBy("signup-password", { error: passwordError })}
           />
-          {passwordError && (
-            <p className="field-error" id="signup-password-error">
-              {passwordError}
-            </p>
-          )}
-        </div>
+        </Field>
 
-        <div className="field-group">
-          <label htmlFor="signup-password-confirmation">Confirm password</label>
-          <input
+        <Field id="signup-password-confirmation" label="Confirm password" error={confirmationError}>
+          <Input
             id="signup-password-confirmation"
             name="passwordConfirmation"
             type="password"
@@ -91,17 +80,14 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
             maxLength={128}
             required
             disabled={isPending}
-            aria-invalid={Boolean(confirmationError)}
-            aria-describedby={confirmationError ? "signup-confirmation-error" : undefined}
+            invalid={Boolean(confirmationError)}
+            aria-describedby={describedBy("signup-password-confirmation", {
+              error: confirmationError,
+            })}
           />
-          {confirmationError && (
-            <p className="field-error" id="signup-confirmation-error">
-              {confirmationError}
-            </p>
-          )}
-        </div>
+        </Field>
 
-        <div className="checkbox-field">
+        <div className="checkbox">
           <input
             id="legal-consent"
             name={LEGAL_CONSENT_FIELD_NAME}
@@ -111,19 +97,19 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
             aria-invalid={Boolean(consentError)}
             aria-describedby={consentError ? "legal-consent-error" : undefined}
           />
-          <label htmlFor="legal-consent">
+          <label className="checkbox__label" htmlFor="legal-consent">
             I agree to the{" "}
-            <a href={TERMS_URL} target="_blank" rel="noreferrer">
+            <a className="text-link" href={TERMS_URL} target="_blank" rel="noreferrer">
               Terms of Service
             </a>{" "}
             and{" "}
-            <a href={PRIVACY_URL} target="_blank" rel="noreferrer">
+            <a className="text-link" href={PRIVACY_URL} target="_blank" rel="noreferrer">
               Privacy Policy
             </a>
             .
           </label>
           {consentError && (
-            <p className="field-error" id="legal-consent-error">
+            <p className="field__error checkbox__desc" id="legal-consent-error">
               {consentError}
             </p>
           )}
@@ -131,15 +117,15 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
 
         <TurnstileField siteKey={turnstileSiteKey} error={challengeError} disabled={isPending} />
 
-        <button className="button button--primary" type="submit" disabled={isPending}>
+        <Button variant="primary" type="submit" block disabled={isPending}>
           {isPending ? "Creating account…" : "Create account"}
-        </button>
+        </Button>
       </form>
 
       {state.message && (
-        <div className="auth-alert" role="alert">
+        <Callout tone="danger" role="alert" compact className="auth-card__hint">
           {state.message}
-        </div>
+        </Callout>
       )}
     </>
   );

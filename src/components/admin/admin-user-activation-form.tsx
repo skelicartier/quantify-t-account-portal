@@ -2,6 +2,8 @@
 
 import { useActionState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import {
   INITIAL_ADMIN_USER_ACTIVATION_STATE,
   type AdminUserActivationState,
@@ -24,16 +26,20 @@ export function AdminUserActivationForm({
   const [state, formAction, pending] = useActionState(action, INITIAL_ADMIN_USER_ACTIVATION_STATE);
   const nextActive = !isActive;
   return (
-    <form className="admin-inline-form" action={formAction}>
+    <form className="stack stack--tight" action={formAction}>
       <input type="hidden" name="userId" value={userId} />
       <input type="hidden" name="isActive" value={String(nextActive)} />
-      <button className="button" type="submit" disabled={pending}>
-        {pending ? "Updating" : nextActive ? "Activate user" : "Deactivate user"}
-      </button>
+      <Button variant={nextActive ? "primary" : "danger"} type="submit" disabled={pending}>
+        {pending ? "Updating…" : nextActive ? "Activate user" : "Deactivate user"}
+      </Button>
       {state.message && (
-        <p className="admin-action-message" role={state.status === "error" ? "alert" : "status"}>
+        <Callout
+          tone={state.status === "error" ? "danger" : "success"}
+          role={state.status === "error" ? "alert" : "status"}
+          compact
+        >
           {state.message}
-        </p>
+        </Callout>
       )}
     </form>
   );

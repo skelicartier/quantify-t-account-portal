@@ -1,4 +1,3 @@
-import { ArrowUpRight, KeyRound, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { BrandMark } from "@/components/brand/brand-mark";
@@ -10,69 +9,40 @@ type AuthShellProps = {
   children: ReactNode;
 };
 
-const trustItems = [
-  {
-    icon: ShieldCheck,
-    title: "Shared cloud identity",
-    detail: "One verified account for the portal and desktop terminal.",
-  },
-  {
-    icon: KeyRound,
-    title: "Server-enforced access",
-    detail: "Authorization is checked at the data and API boundaries.",
-  },
-];
+const MARKETING_SITE = "https://www.quantifyterminal.com";
 
+/** The single-column credential surface: brand bar, one card, legal links. */
 export function AuthShell({ eyebrow, title, description, children }: AuthShellProps) {
   return (
-    <main className="auth-shell" id="main-content">
-      <section className="auth-shell__context" aria-labelledby="portal-context-heading">
+    <main className="auth" id="main-content">
+      <div className="auth__bar">
         <BrandMark />
-
-        <div className="auth-shell__context-copy">
-          <p className="eyebrow">Account infrastructure</p>
-          <h1 id="portal-context-heading">
-            Control your access.
-            <span>Keep your terminal connected.</span>
-          </h1>
-          <p>
-            A dedicated account surface for identity, preferences, sessions, and authorized
-            administration.
+        <a className="auth__site" href={MARKETING_SITE} rel="noreferrer">
+          quantifyterminal.com
+        </a>
+      </div>
+      <div className="auth__main">
+        <div className="auth__stack">
+          <section className="auth-card" aria-labelledby="auth-heading">
+            <p className="eyebrow">{eyebrow}</p>
+            <h1 className="auth-card__title" id="auth-heading">
+              {title}
+            </h1>
+            <p className="auth-card__desc">{description}</p>
+            {children}
+          </section>
+          <p className="auth__legal">
+            Protected account surface ·{" "}
+            <a href={`${MARKETING_SITE}/privacy`} rel="noreferrer">
+              Privacy
+            </a>{" "}
+            ·{" "}
+            <a href={`${MARKETING_SITE}/terms`} rel="noreferrer">
+              Terms
+            </a>
           </p>
         </div>
-
-        <div className="trust-list" aria-label="Security architecture">
-          {trustItems.map(({ icon: Icon, title: itemTitle, detail }) => (
-            <div className="trust-item" key={itemTitle}>
-              <Icon aria-hidden="true" size={18} strokeWidth={1.7} />
-              <div>
-                <strong>{itemTitle}</strong>
-                <span>{detail}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <a className="context-link" href="https://www.quantifyterminal.com" rel="noreferrer">
-          Visit quantifyterminal.com
-          <ArrowUpRight aria-hidden="true" size={16} />
-        </a>
-      </section>
-
-      <section className="auth-shell__surface" aria-labelledby="auth-heading">
-        <div className="auth-card">
-          <div className="auth-card__heading">
-            <p className="eyebrow">{eyebrow}</p>
-            <h2 id="auth-heading">{title}</h2>
-            <p>{description}</p>
-          </div>
-          {children}
-        </div>
-        <p className="auth-shell__legal">
-          Protected account surface · <a href="https://www.quantifyterminal.com/privacy">Privacy</a>{" "}
-          · <a href="https://www.quantifyterminal.com/terms">Terms</a>
-        </p>
-      </section>
+      </div>
     </main>
   );
 }

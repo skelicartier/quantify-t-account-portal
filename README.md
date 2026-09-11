@@ -57,6 +57,22 @@ This adds the offline cross-repository preflight. It reads only explicit checked
 
 A real authenticated login/refresh/logout and `/account` accessibility pass requires an explicitly authorized disposable staging account. Never run lifecycle or migration tests against production users.
 
+To exercise every signed-in console page in a real browser without any cloud, run the local Account API stand-in and the visual check:
+
+```bash
+npm run mock:api                                   # http://127.0.0.1:7071/api/v1
+QT_ACCOUNT_API_URL=http://127.0.0.1:7071/api/v1 npm run dev
+npm run check:console-ui                           # screenshots → test-results/console/
+```
+
+`check:console-ui` signs in as each mock persona, captures every route at desktop and phone widths in both console themes, opens the mobile navigation, and fails on horizontal overflow or any serious/critical axe finding.
+
+## Console UI
+
+The console shares quantifyterminal.com's palette: the signed-in shell defaults to the dark theme and offers a per-device dark/light switch in the sidebar (stored in the `qt-console-theme` cookie by the `setConsoleTheme` Server Action). The sign-in, sign-up and recovery pages are always dark. Space Grotesk (headings) and JetBrains Mono (identifiers, timestamps, micro labels) are shipped with the app from `src/app/fonts/` under the SIL Open Font License, so no request ever leaves for a font CDN and the `font-src 'self'` policy holds. The favicon is the marketing site's.
+
+Owners (`roles:write`) change another account's role from `/admin/users/[userId]`; the Account API refuses self-changes, demoting the last active Owner, and changing an account pinned by the break-glass configuration.
+
 ## Deployment
 
 See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the protected Vercel preview/staging procedure, environment allow-list, rollback boundary, and cloud no-mutation rules. The checked-in `prebuild` gate rejects every Vercel production build until the final reviewed release task removes that lock.

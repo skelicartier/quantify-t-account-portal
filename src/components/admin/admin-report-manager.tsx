@@ -1,10 +1,20 @@
 "use client";
 
-import { useActionState } from "react";
 import { FileText } from "lucide-react";
+import { useActionState } from "react";
 
-import { formatAdminLabel, formatAdminNumber } from "@/components/admin/admin-format";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Section } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Field, Input } from "@/components/ui/field";
+import { ShortId } from "@/components/ui/short-id";
+import { StatusPill } from "@/components/ui/status-pill";
+import { Timestamp } from "@/components/ui/timestamp";
 import type { AccountApiAdminReports } from "@/lib/admin/account-api";
+import { AUDIT_FILTER_FIELDS } from "@/lib/admin/audit-filters";
+import { formatLabel, formatNumber, pluralize } from "@/lib/format";
 
 type AdminReportActionState = {
   status: "idle" | "success" | "error";
@@ -14,6 +24,7 @@ type AdminReportActionState = {
 type Props = {
   reports: AccountApiAdminReports;
   action: (state: AdminReportActionState, data: FormData) => Promise<AdminReportActionState>;
+  now?: number | undefined;
 };
 
 const INITIAL_ADMIN_REPORT_STATE: AdminReportActionState = {
@@ -21,89 +32,135 @@ const INITIAL_ADMIN_REPORT_STATE: AdminReportActionState = {
   message: "",
 };
 
-const FILTER_FIELDS = [
-  { name: "event_type", label: "Event" },
-  { name: "outcome", label: "Outcome" },
-  { name: "source", label: "Source" },
-  { name: "subject_user_id", label: "Subject" },
-  { name: "actor_user_id", label: "Actor" },
-  { name: "session_id", label: "Session" },
-  { name: "request_id", label: "Request" },
+const COLUMNS = [
+  { key: "report", label: "Report" },
+  { key: "status", label: "Status" },
+  { key: "filters", label: "Filters" },
+  { key: "rows", label: "Rows", align: "end" },
+  { key: "expires", label: "Expires" },
+  { key: "delivery", label: "Delivery" },
 ] as const;
 
 function filterSummary(job: AccountApiAdminReports["jobs"][number]): string {
   const count = Object.values(job.filters).filter(Boolean).length;
-  return count === 0 ? "All permitted events" : `${formatAdminNumber(count)} filters`;
+  return count === 0 ? "All permitted events" : pluralize(count, "filter");
 }
 
-function downloadStatus(job: AccountApiAdminReports["jobs"][number]): string {
-  if (job.status === "expired") return "Expired";
-  if (job.download.available) return "Ready";
-  if (job.status === "failed") return job.last_error || "Failed";
-  return job.next_attempt_at || "Queued";
+function Delivery({
+  job,
+  now,
+}: {
+  job: AccountApiAdminReports["jobs"][number];
+  now?: number | undefined;
+}) {
+  if (job.status === "expired") return <span className="quiet">Expired</span>;
+  if (job.download.available) return <span>Private file ready</span>;
+  if (job.status === "failed")
+    return <span className="field__error">{job.last_error || "Generation failed"}</span>;
+  if (job.next_attempt_at) {
+    return (
+      <span className="quiet">
+        Next attempt <Timestamp value={job.next_attempt_at} now={now} />
+      </span>
+    );
+  }
+  return <span className="quiet">Pending</span>;
 }
 
-export function AdminReportManager({ reports, action }: Props) {
+export function AdminReportManager({ reports, action, now }: Props) {
   const [state, formAction, pending] = useActionState(action, INITIAL_ADMIN_REPORT_STATE);
   const queueFull = reports.jobs.length >= reports.queue.job_limit;
 
   return (
     <>
-      <form action={formAction} className="admin-filter-form">
-        <input type="hidden" name="revision" value={reports.revision} />
-        <fieldset disabled={pending || queueFull}>
-          {FILTER_FIELDS.map((field) => (
-            <label key={field.name}>
-              <span>{field.label}</span>
-              <input name={field.name} autoComplete="off" />
-            </label>
-          ))}
-          <button className="button button--primary" type="submit">
-            <FileText size={16} aria-hidden="true" />
-            {pending ? "Queueing" : "Queue CSV"}
-          </button>
-        </fieldset>
-        {queueFull && <p role="status">Report queue limit reached.</p>}
-        {state.message && (
-          <p role={state.status === "error" ? "alert" : "status"}>{state.message}</p>
-        )}
-      </form>
-
-      {reports.jobs.length === 0 ? (
-        <p className="admin-empty-state">No reports queued.</p>
-      ) : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Report</th>
-                <th>Status</th>
-                <th>Filters</th>
-                <th>Rows</th>
-                <th>Expires</th>
-                <th>Download</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reports.jobs.map((job) => (
-                <tr key={job.id}>
-                  <td>
-                    <span className="admin-row-title">
-                      {formatAdminLabel(job.report_type)} {job.format.toUpperCase()}
-                    </span>
-                    <span className="account-id">{job.id}</span>
-                  </td>
-                  <td>{formatAdminLabel(job.status)}</td>
-                  <td>{filterSummary(job)}</td>
-                  <td>{formatAdminNumber(job.row_count)}</td>
-                  <td>{job.download.expires_at || job.expires_at || "Pending"}</td>
-                  <td>{downloadStatus(job)}</td>
-                </tr>
+      <Section
+        id="admin-report-enqueue"
+        title="Queue an audit export"
+        eyebrow="New report"
+        description="Leave every filter empty to export all events you're permitted to see."
+      >
+        <form action={formAction} className="form">
+          <input type="hidden" name="revision" value={reports.revision} />
+          <fieldset className="fieldset" disabled={pending || queueFull}>
+            <div className="form-grid">
+              {AUDIT_FILTER_FIELDS.map((field) => (
+                <Field key={field.name} id={`report-filter-${field.name}`} label={field.label}>
+                  <Input
+                    id={`report-filter-${field.name}`}
+                    name={field.name}
+                    placeholder={field.placeholder}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </Field>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </div>
+          </fieldset>
+          {queueFull && (
+            <Callout role="status" tone="attention" compact>
+              Report queue limit reached. Wait for a report to expire before queueing another.
+            </Callout>
+          )}
+          {state.message && (
+            <Callout
+              tone={state.status === "error" ? "danger" : "success"}
+              role={state.status === "error" ? "alert" : "status"}
+              compact
+            >
+              {state.message}
+            </Callout>
+          )}
+          <div className="form-actions">
+            <Button variant="primary" type="submit" disabled={pending || queueFull}>
+              <FileText size={16} aria-hidden="true" />
+              {pending ? "Queueing…" : "Queue CSV"}
+            </Button>
+          </div>
+        </form>
+      </Section>
+
+      <Section id="admin-report-jobs" title="Recent reports" eyebrow="Queue">
+        <DataTable
+          columns={COLUMNS}
+          caption="Recent reports"
+          isEmpty={reports.jobs.length === 0}
+          empty={
+            <EmptyState
+              title="No reports queued."
+              description="Queued exports appear here with their download status."
+              compact
+            />
+          }
+        >
+          {reports.jobs.map((job) => (
+            <tr key={job.id}>
+              <td>
+                <span className="data-table__primary">
+                  {formatLabel(job.report_type)} {job.format.toUpperCase()}
+                </span>
+                <span className="data-table__secondary">
+                  <ShortId value={job.id} />
+                </span>
+              </td>
+              <td>
+                <StatusPill value={job.status} />
+              </td>
+              <td>{filterSummary(job)}</td>
+              <td className="data-table__num">{formatNumber(job.row_count)}</td>
+              <td>
+                <Timestamp
+                  value={job.download.expires_at || job.expires_at}
+                  now={now}
+                  fallback="Pending"
+                />
+              </td>
+              <td>
+                <Delivery job={job} now={now} />
+              </td>
+            </tr>
+          ))}
+        </DataTable>
+      </Section>
     </>
   );
 }

@@ -2,6 +2,9 @@
 
 import { useActionState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Field, Input, describedBy } from "@/components/ui/field";
 import { INITIAL_EMAIL_CHANGE_STATE, type EmailChangeActionState } from "@/lib/auth/security-input";
 
 type EmailChangeFormProps = {
@@ -9,13 +12,16 @@ type EmailChangeFormProps = {
   action: (state: EmailChangeActionState, formData: FormData) => Promise<EmailChangeActionState>;
 };
 
+const EMAIL_HINT =
+  "Both your current and new address must confirm the change before it takes effect.";
+
 export function EmailChangeForm({ currentEmail, action }: EmailChangeFormProps) {
   const [state, formAction, pending] = useActionState(action, INITIAL_EMAIL_CHANGE_STATE);
+  const errors = state.fieldErrors;
   return (
-    <form className="account-form" action={formAction} noValidate>
-      <div className="field-group">
-        <label htmlFor="security-current-email">Current verified email</label>
-        <input
+    <form className="form" action={formAction} noValidate>
+      <Field id="security-current-email" label="Current verified email">
+        <Input
           id="security-current-email"
           name="currentEmail"
           type="email"
@@ -24,10 +30,14 @@ export function EmailChangeForm({ currentEmail, action }: EmailChangeFormProps) 
           disabled
           autoComplete="off"
         />
-      </div>
-      <div className="field-group">
-        <label htmlFor="security-new-email">New email address</label>
-        <input
+      </Field>
+      <Field
+        id="security-new-email"
+        label="New email address"
+        hint={EMAIL_HINT}
+        error={errors.email[0]}
+      >
+        <Input
           id="security-new-email"
           name="email"
           type="email"
@@ -36,51 +46,45 @@ export function EmailChangeForm({ currentEmail, action }: EmailChangeFormProps) 
           maxLength={254}
           required
           disabled={pending}
-          aria-invalid={Boolean(state.fieldErrors.email[0])}
-          aria-describedby={
-            state.fieldErrors.email[0] ? "security-new-email-error" : "security-email-help"
-          }
+          invalid={Boolean(errors.email[0])}
+          aria-describedby={describedBy("security-new-email", {
+            hint: EMAIL_HINT,
+            error: errors.email[0],
+          })}
         />
-        <p className="field-help" id="security-email-help">
-          Both your current and new address must confirm the change before it takes effect.
-        </p>
-        {state.fieldErrors.email[0] && (
-          <p className="field-error" id="security-new-email-error">
-            {state.fieldErrors.email[0]}
-          </p>
-        )}
-      </div>
-      <div className="field-group">
-        <label htmlFor="security-email-password">Current password</label>
-        <input
+      </Field>
+      <Field
+        id="security-email-password"
+        label="Current password"
+        error={errors.currentPassword[0]}
+      >
+        <Input
           id="security-email-password"
           name="currentPassword"
           type="password"
           autoComplete="current-password"
           required
           disabled={pending}
-          aria-invalid={Boolean(state.fieldErrors.currentPassword[0])}
-          aria-describedby={
-            state.fieldErrors.currentPassword[0] ? "security-email-password-error" : undefined
-          }
+          invalid={Boolean(errors.currentPassword[0])}
+          aria-describedby={describedBy("security-email-password", {
+            error: errors.currentPassword[0],
+          })}
         />
-        {state.fieldErrors.currentPassword[0] && (
-          <p className="field-error" id="security-email-password-error">
-            {state.fieldErrors.currentPassword[0]}
-          </p>
-        )}
-      </div>
+      </Field>
       {state.message && (
-        <p
-          className={`account-form__status account-form__status--${state.status}`}
+        <Callout
+          tone={state.status === "success" ? "success" : "danger"}
           role={state.status === "success" ? "status" : "alert"}
+          compact
         >
           {state.message}
-        </p>
+        </Callout>
       )}
-      <button className="button button--primary" type="submit" disabled={pending}>
-        {pending ? "Sending confirmations…" : "Request email change"}
-      </button>
+      <div className="form-actions">
+        <Button variant="primary" type="submit" disabled={pending}>
+          {pending ? "Sending confirmations…" : "Request email change"}
+        </Button>
+      </div>
     </form>
   );
 }

@@ -97,7 +97,7 @@ export function TurnstileField({ siteKey, error, disabled = false }: TurnstileFi
       : undefined);
 
   return (
-    <div className="turnstile-field">
+    <div className="turnstile">
       <Script
         id="cloudflare-turnstile"
         src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
@@ -108,7 +108,7 @@ export function TurnstileField({ siteKey, error, disabled = false }: TurnstileFi
       <div ref={containerRef} role="group" aria-label="Security verification" />
       <input type="hidden" name={CHALLENGE_FIELD_NAME} value={token} disabled={disabled} readOnly />
       {displayedError && (
-        <p className="field-error" id="challenge-error" role="alert">
+        <p className="field__error" id="challenge-error" role="alert">
           {displayedError}
         </p>
       )}

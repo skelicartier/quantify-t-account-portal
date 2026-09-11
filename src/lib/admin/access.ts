@@ -22,7 +22,7 @@ import {
   fetchAccountApiAdminReleaseStatus,
   fetchAccountApiAdminUser,
   fetchAccountApiAdminUsers,
-  fetchAccountApiMe,
+  fetchAccountApiMe as fetchAccountApiMeUncached,
   fetchAccountApiRoleReport,
   NOTIFICATIONS_CAPABILITY,
   RELEASE_STATUS_CAPABILITY,
@@ -44,16 +44,26 @@ import {
 import type { AssuranceState } from "@/lib/auth/assurance";
 import { createServerAzureClient } from "@/lib/supabase/server";
 
+// One `/me` per request: the console shell asks "may this person see Admin?" and every
+// admin page asks "who is this?"; both answers come from the same call.
+const fetchAccountApiMe = cache(fetchAccountApiMeUncached);
+
+/** Which parts of the dashboard could not be loaded; the page renders around them. */
+export type AdminDashboardDegradation = "metrics" | "role-report";
+
 export type AdminDashboardAccess =
   | {
       status: "authorized";
       me: AccountApiMe;
       assurance: AssuranceState;
-      metrics: AccountApiAdminMetrics;
+      metrics: AccountApiAdminMetrics | null;
       roleReport: AccountApiRoleReport | null;
+      degraded: AdminDashboardDegradation[];
     }
   | { status: "mfa-required"; me: AccountApiMe; assurance: AssuranceState }
   | { status: "forbidden"; me: AccountApiMe };
+
+export type AdminEntry = { me: AccountApiMe; canEnterAdmin: boolean };
 
 export type AdminRoleReportAccess =
   | {
@@ -77,7 +87,8 @@ export type AdminUsersAccess =
       status: "authorized";
       me: AccountApiMe;
       assurance: AssuranceState;
-      users: AccountApiAdminUsers;
+      /** `null` when the directory read failed; the page shows an inline retry state. */
+      users: AccountApiAdminUsers | null;
       limit: number;
       offset: number;
     }
@@ -294,6 +305,25 @@ async function currentAccountApiIdentity(nextPath: string): Promise<{
   }
 }
 
+/**
+ * The signed-in caller's Account API identity, for the console shell.
+ *
+ * Fails closed to `null` on every problem — no token, a 401, an outage — because the
+ * shell must still render the account pages; it only decides whether the Admin
+ * section is offered. The pages themselves keep their own hard gates.
+ */
+export const getAdminEntry = cache(async (): Promise<AdminEntry | null> => {
+  try {
+    const azure = await createServerAzureClient({ cookieWriteMode: "best-effort" });
+    const token = azure.getAccessToken()?.trim();
+    if (!token) return null;
+    const me = await fetchAccountApiMe(token);
+    return { me, canEnterAdmin: hasAdminPortalAccess(me) };
+  } catch {
+    return null;
+  }
+});
+
 export const getAdminDashboardAccess = cache(async (): Promise<AdminDashboardAccess> => {
   const { accessToken, me } = await currentAccountApiIdentity("/admin");
 
@@ -304,14 +334,26 @@ export const getAdminDashboardAccess = cache(async (): Promise<AdminDashboardAcc
     return { status: "mfa-required", me, assurance };
   }
 
-  const [metrics, roleReport] = await Promise.all([
+  // Each panel degrades on its own: an aggregate read that times out must not take the
+  // operator's identity, capabilities, and navigation down with it.
+  const [metricsResult, roleReportResult] = await Promise.allSettled([
     fetchAccountApiAdminMetrics(accessToken),
     canReadRoleReport(me)
       ? fetchAccountApiRoleReport(accessToken, { includeMatches: false })
       : Promise.resolve(null),
   ]);
+  const degraded: AdminDashboardDegradation[] = [];
+  if (metricsResult.status === "rejected") degraded.push("metrics");
+  if (roleReportResult.status === "rejected") degraded.push("role-report");
 
-  return { status: "authorized", me, assurance, metrics, roleReport };
+  return {
+    status: "authorized",
+    me,
+    assurance,
+    metrics: metricsResult.status === "fulfilled" ? metricsResult.value : null,
+    roleReport: roleReportResult.status === "fulfilled" ? roleReportResult.value : null,
+    degraded,
+  };
 });
 
 export const getAdminRoleReportAccess = cache(
@@ -355,14 +397,15 @@ export const getAdminUsersAccess = cache(
       return { status: "mfa-required", me, assurance };
     }
 
-    return {
-      status: "authorized",
-      me,
-      assurance,
-      users: await fetchAccountApiAdminUsers(accessToken, { limit, offset }),
-      limit,
-      offset,
-    };
+    let users: AccountApiAdminUsers | null;
+    try {
+      users = await fetchAccountApiAdminUsers(accessToken, { limit, offset });
+    } catch (error) {
+      if (error instanceof AccountApiRequestError && error.status === 401) throw error;
+      users = null;
+    }
+
+    return { status: "authorized", me, assurance, users, limit, offset };
   },
 );
 

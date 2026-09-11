@@ -1,127 +1,121 @@
-import Link from "next/link";
-
+import { PageHeader } from "@/components/shell/page-header";
+import { Callout } from "@/components/ui/callout";
+import { Card, LinkCard } from "@/components/ui/card";
+import { KeyValue, KeyValueRow } from "@/components/ui/key-value";
+import { ShortId } from "@/components/ui/short-id";
+import { Stat, StatGrid } from "@/components/ui/stat";
+import { StatusPill } from "@/components/ui/status-pill";
+import { Timestamp } from "@/components/ui/timestamp";
 import type { AccountOverviewDto } from "@/lib/dto/account";
+import { formatLabel } from "@/lib/format";
 
 type AccountOverviewProps = {
   account: AccountOverviewDto;
+  canEnterAdmin?: boolean;
+  now?: number | undefined;
 };
 
-function formatDate(value: string | null): string {
-  if (!value) return "Not available";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Not available";
-  return new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeZone: "UTC",
-  }).format(date);
-}
-
-function formatLabel(value: string): string {
-  return value
-    .split(/[-_\s]+/u)
-    .filter(Boolean)
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
-    .join(" ");
-}
-
-export function AccountOverview({ account }: AccountOverviewProps) {
+export function AccountOverview({ account, canEnterAdmin = false, now }: AccountOverviewProps) {
   return (
-    <main className="account-main" id="main-content">
-      <section className="account-hero" aria-labelledby="account-overview-heading">
-        <div>
-          <p className="eyebrow">Cloud account</p>
-          <h1 id="account-overview-heading">Account overview</h1>
-          <p>
-            Review the identity currently connected to Quantify Terminal. Profile and preference
-            controls remain UUID-owned and server-authorized.
-          </p>
-        </div>
-        <div className="account-avatar" aria-hidden="true">
-          {account.initials}
-        </div>
-      </section>
+    <>
+      <PageHeader
+        eyebrow="Account"
+        title="Account overview"
+        titleId="account-overview-heading"
+        description="Your identity, plan, and recent access at a glance."
+      />
 
-      {account.profileState !== "ready" && (
-        <div className="account-notice" role="status">
-          {account.profileState === "missing"
-            ? "Your verified identity is active, but its cloud profile is not available yet."
-            : "Your verified identity is available. Cloud profile details could not be refreshed."}
-        </div>
-      )}
+      <div className="page-content">
+        {account.profileState !== "ready" && (
+          <Callout role="status" tone="attention" title="Profile details are unavailable right now">
+            {account.profileState === "missing"
+              ? "Your sign-in is verified, but your profile hasn't been set up yet. You can still manage security and sessions."
+              : "Your sign-in is verified, but profile details couldn't be loaded. Refresh in a moment; nothing about your account has changed."}
+          </Callout>
+        )}
 
-      <section className="account-grid" aria-label="Account summary">
-        <article className="account-card account-card--identity">
-          <p className="account-card__label">Account holder</p>
-          <h2>{account.displayName}</h2>
-          <p className="account-card__email">{account.email ?? "Email unavailable"}</p>
-          <dl className="account-details">
-            <div>
-              <dt>Email verification</dt>
-              <dd>{account.emailConfirmed ? "Confirmed" : "Not confirmed"}</dd>
+        <div className="overview">
+          <Card important>
+            <div className="overview__identity">
+              <span className="avatar avatar--large" aria-hidden="true">
+                {account.initials}
+              </span>
+              <div>
+                <p className="eyebrow">Account holder</p>
+                <h2 className="overview__name">{account.displayName}</h2>
+                <p className="overview__email">{account.email ?? "Email unavailable"}</p>
+              </div>
             </div>
-            <div>
-              <dt>Account ID</dt>
-              <dd className="account-id">{account.userId}</dd>
-            </div>
-          </dl>
-        </article>
-        <article className="account-card">
-          <p className="account-card__label">Account standing</p>
-          <dl className="account-metrics">
-            <div>
-              <dt>Status</dt>
-              <dd className={`status-value status-value--${account.status}`}>
-                {formatLabel(account.status)}
-              </dd>
-            </div>
-            <div>
-              <dt>Plan</dt>
-              <dd>{formatLabel(account.subscriptionTier)}</dd>
-            </div>
-          </dl>
-        </article>
-        <article className="account-card">
-          <p className="account-card__label">Activity</p>
-          <dl className="account-details">
-            <div>
-              <dt>Member since</dt>
-              <dd>{formatDate(account.memberSince)}</dd>
-            </div>
-            <div>
-              <dt>Last sign-in</dt>
-              <dd>{formatDate(account.lastSignInAt)}</dd>
-            </div>
-          </dl>
-        </article>
-      </section>
+            <KeyValue columns={2} className="card__body">
+              <KeyValueRow label="Account ID">
+                <ShortId value={account.userId} full />
+              </KeyValueRow>
+              <KeyValueRow label="Member since">
+                <Timestamp value={account.memberSince} mode="date" />
+              </KeyValueRow>
+            </KeyValue>
+          </Card>
 
-      <aside className="account-complete">
-        <div>
-          <p className="account-card__label">Account controls</p>
-          <h2>Account controls are available</h2>
-          <p>
-            Update account details and preferences here. Session history and security events use the
-            same verified cloud identity.
-          </p>
+          <StatGrid columns={2} label="Account standing">
+            <Stat label="Status" value={<StatusPill value={account.status} />} text />
+            <Stat label="Plan" value={formatLabel(account.subscriptionTier)} text />
+            <Stat
+              label="Last sign-in"
+              value={<Timestamp value={account.lastSignInAt} now={now} />}
+              text
+            />
+            <Stat
+              label="Sign-in email"
+              value={
+                <StatusPill
+                  value={account.emailConfirmed ? "verified" : "unverified"}
+                  label={account.emailConfirmed ? "Verified" : "Not verified"}
+                />
+              }
+              text
+            />
+          </StatGrid>
         </div>
-        <div className="account-complete__actions">
-          <Link className="button button--primary" href="/account/profile">
-            Edit profile
-          </Link>
-          <Link className="button" href="/admin">
-            Admin panel
-          </Link>
-          <Link className="button" href="/account/preferences">
-            Preferences
-          </Link>
-          <Link className="button" href="/account/sessions">
-            Sessions
-          </Link>
-          <Link className="button" href="/account/activity">
-            Activity
-          </Link>
-        </div>
-      </aside>
-    </main>
+
+        <section className="section" aria-labelledby="account-manage-heading">
+          <div className="section__header">
+            <div>
+              <p className="eyebrow">Manage</p>
+              <h2 id="account-manage-heading">Everything about your account</h2>
+            </div>
+          </div>
+          <div className="card-grid">
+            <LinkCard
+              href="/account/profile"
+              title="Edit profile"
+              description="Name, phone and country shared with your terminal."
+            />
+            <LinkCard
+              href="/account/preferences"
+              title="Preferences"
+              description="Timezone, currency and notification choices."
+            />
+            <LinkCard
+              href="/account/sessions"
+              title="Sessions"
+              description="Devices and apps currently signed in."
+            />
+            <LinkCard
+              href="/account/activity"
+              title="Activity"
+              description="Sign-in and security events on this account."
+            />
+            {canEnterAdmin && (
+              <LinkCard
+                href="/admin"
+                eyebrow="Administration"
+                title="Admin console"
+                description="People, roles, audit and platform status."
+              />
+            )}
+          </div>
+        </section>
+      </div>
+    </>
   );
 }

@@ -230,8 +230,9 @@ it("renders email retry and dead-letter state", () => {
     />,
   );
 
-  expect(screen.getByRole("cell", { name: "retry" })).toBeInTheDocument();
-  expect(screen.getByText("2026-09-05T04:05:00Z")).toBeInTheDocument();
-  expect(screen.getByRole("cell", { name: "dead" })).toBeInTheDocument();
-  expect(screen.getAllByText("delivery failed")).toHaveLength(2);
+  expect(screen.getByRole("cell", { name: "Retrying" })).toBeInTheDocument();
+  expect(screen.getAllByText(/5 Sep 2026, 04:05 UTC/).length).toBeGreaterThan(0);
+  expect(screen.queryByText("2026-09-05T04:05:00Z")).not.toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "Failed" })).toBeInTheDocument();
+  expect(screen.getAllByText("delivery failed")).toHaveLength(1);
 });

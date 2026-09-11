@@ -2,6 +2,9 @@
 
 import { useActionState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Field, Input, describedBy } from "@/components/ui/field";
 import { INITIAL_PROFILE_ACTION_STATE, type ProfileActionState } from "@/lib/account/profile-input";
 import type { AccountProfileDto } from "@/lib/dto/profile";
 
@@ -13,18 +16,19 @@ type ProfileFormProps = {
 export function ProfileForm({ profile, action }: ProfileFormProps) {
   const [state, formAction, pending] = useActionState(action, INITIAL_PROFILE_ACTION_STATE);
   const version = state.profileVersion ?? profile.profileVersion;
+  const errors = state.fieldErrors;
+
   return (
-    <form className="account-form" action={formAction} noValidate>
+    <form className="form" action={formAction} noValidate>
       <input type="hidden" name="profileVersion" value={version} />
-      {state.fieldErrors.profileVersion[0] && (
-        <p className="field-error" id="profile-version-error" role="alert">
-          {state.fieldErrors.profileVersion[0]}
-        </p>
+      {errors.profileVersion[0] && (
+        <Callout tone="danger" role="alert" compact>
+          {errors.profileVersion[0]}
+        </Callout>
       )}
-      <div className="account-form__grid">
-        <div className="field-group">
-          <label htmlFor="profile-first-name">First name</label>
-          <input
+      <div className="form-grid">
+        <Field id="profile-first-name" label="First name" error={errors.firstName[0]}>
+          <Input
             id="profile-first-name"
             name="firstName"
             defaultValue={profile.firstName}
@@ -32,20 +36,12 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
             autoComplete="given-name"
             required
             disabled={pending}
-            aria-invalid={Boolean(state.fieldErrors.firstName[0])}
-            aria-describedby={
-              state.fieldErrors.firstName[0] ? "profile-first-name-error" : undefined
-            }
+            invalid={Boolean(errors.firstName[0])}
+            aria-describedby={describedBy("profile-first-name", { error: errors.firstName[0] })}
           />
-          {state.fieldErrors.firstName[0] && (
-            <p className="field-error" id="profile-first-name-error">
-              {state.fieldErrors.firstName[0]}
-            </p>
-          )}
-        </div>
-        <div className="field-group">
-          <label htmlFor="profile-last-name">Last name</label>
-          <input
+        </Field>
+        <Field id="profile-last-name" label="Last name" error={errors.lastName[0]}>
+          <Input
             id="profile-last-name"
             name="lastName"
             defaultValue={profile.lastName}
@@ -53,23 +49,19 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
             autoComplete="family-name"
             required
             disabled={pending}
-            aria-invalid={Boolean(state.fieldErrors.lastName[0])}
-            aria-describedby={state.fieldErrors.lastName[0] ? "profile-last-name-error" : undefined}
+            invalid={Boolean(errors.lastName[0])}
+            aria-describedby={describedBy("profile-last-name", { error: errors.lastName[0] })}
           />
-          {state.fieldErrors.lastName[0] && (
-            <p className="field-error" id="profile-last-name-error">
-              {state.fieldErrors.lastName[0]}
-            </p>
-          )}
-        </div>
-        <div className="field-group">
-          <label htmlFor="profile-email">Verified email</label>
-          <input id="profile-email" value={profile.email ?? "Unavailable"} readOnly disabled />
-          <p className="field-help">Email changes require a separately verified security flow.</p>
-        </div>
-        <div className="field-group">
-          <label htmlFor="profile-phone">Phone</label>
-          <input
+        </Field>
+        <Field
+          id="profile-email"
+          label="Verified email"
+          hint="Change your sign-in address from Security; it needs a separate confirmation."
+        >
+          <Input id="profile-email" value={profile.email ?? "Unavailable"} readOnly disabled />
+        </Field>
+        <Field id="profile-phone" label="Phone" note="Optional" error={errors.phone[0]}>
+          <Input
             id="profile-phone"
             name="phone"
             type="tel"
@@ -77,18 +69,17 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
             maxLength={32}
             autoComplete="tel"
             disabled={pending}
-            aria-invalid={Boolean(state.fieldErrors.phone[0])}
-            aria-describedby={state.fieldErrors.phone[0] ? "profile-phone-error" : undefined}
+            invalid={Boolean(errors.phone[0])}
+            aria-describedby={describedBy("profile-phone", { error: errors.phone[0] })}
           />
-          {state.fieldErrors.phone[0] && (
-            <p className="field-error" id="profile-phone-error">
-              {state.fieldErrors.phone[0]}
-            </p>
-          )}
-        </div>
-        <div className="field-group account-form__span">
-          <label htmlFor="profile-country">Country</label>
-          <input
+        </Field>
+        <Field
+          id="profile-country"
+          label="Country"
+          className="form-grid__span"
+          error={errors.country[0]}
+        >
+          <Input
             id="profile-country"
             name="country"
             defaultValue={profile.country}
@@ -96,27 +87,25 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
             autoComplete="country-name"
             required
             disabled={pending}
-            aria-invalid={Boolean(state.fieldErrors.country[0])}
-            aria-describedby={state.fieldErrors.country[0] ? "profile-country-error" : undefined}
+            invalid={Boolean(errors.country[0])}
+            aria-describedby={describedBy("profile-country", { error: errors.country[0] })}
           />
-          {state.fieldErrors.country[0] && (
-            <p className="field-error" id="profile-country-error">
-              {state.fieldErrors.country[0]}
-            </p>
-          )}
-        </div>
+        </Field>
       </div>
       {state.message && (
-        <p
-          className={`account-form__status account-form__status--${state.status}`}
+        <Callout
+          tone={state.status === "success" ? "success" : "danger"}
           role={state.status === "success" ? "status" : "alert"}
+          compact
         >
           {state.message}
-        </p>
+        </Callout>
       )}
-      <button className="button button--primary" type="submit" disabled={pending}>
-        {pending ? "Saving profile…" : "Save profile"}
-      </button>
+      <div className="form-actions">
+        <Button variant="primary" type="submit" disabled={pending}>
+          {pending ? "Saving profile…" : "Save profile"}
+        </Button>
+      </div>
     </form>
   );
 }

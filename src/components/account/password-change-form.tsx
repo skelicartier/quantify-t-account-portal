@@ -2,6 +2,9 @@
 
 import { useActionState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Field, Input, describedBy } from "@/components/ui/field";
 import {
   INITIAL_PASSWORD_CHANGE_STATE,
   type PasswordChangeActionState,
@@ -17,31 +20,35 @@ type PasswordChangeFormProps = {
 
 export function PasswordChangeForm({ action }: PasswordChangeFormProps) {
   const [state, formAction, pending] = useActionState(action, INITIAL_PASSWORD_CHANGE_STATE);
+  const errors = state.fieldErrors;
+  const passwordHint = `Use at least ${PASSWORD_MINIMUM_LENGTH} characters and something you have not used here before.`;
   return (
-    <form className="account-form" action={formAction} noValidate>
-      <div className="field-group">
-        <label htmlFor="security-current-password">Current password</label>
-        <input
+    <form className="form" action={formAction} noValidate>
+      <Field
+        id="security-current-password"
+        label="Current password"
+        error={errors.currentPassword[0]}
+      >
+        <Input
           id="security-current-password"
           name="currentPassword"
           type="password"
           autoComplete="current-password"
           required
           disabled={pending}
-          aria-invalid={Boolean(state.fieldErrors.currentPassword[0])}
-          aria-describedby={
-            state.fieldErrors.currentPassword[0] ? "security-current-password-error" : undefined
-          }
+          invalid={Boolean(errors.currentPassword[0])}
+          aria-describedby={describedBy("security-current-password", {
+            error: errors.currentPassword[0],
+          })}
         />
-        {state.fieldErrors.currentPassword[0] && (
-          <p className="field-error" id="security-current-password-error">
-            {state.fieldErrors.currentPassword[0]}
-          </p>
-        )}
-      </div>
-      <div className="field-group">
-        <label htmlFor="security-new-password">New password</label>
-        <input
+      </Field>
+      <Field
+        id="security-new-password"
+        label="New password"
+        hint={passwordHint}
+        error={errors.password[0]}
+      >
+        <Input
           id="security-new-password"
           name="password"
           type="password"
@@ -50,24 +57,19 @@ export function PasswordChangeForm({ action }: PasswordChangeFormProps) {
           maxLength={PASSWORD_MAXIMUM_LENGTH}
           required
           disabled={pending}
-          aria-invalid={Boolean(state.fieldErrors.password[0])}
-          aria-describedby={
-            state.fieldErrors.password[0] ? "security-new-password-error" : "security-password-help"
-          }
+          invalid={Boolean(errors.password[0])}
+          aria-describedby={describedBy("security-new-password", {
+            hint: passwordHint,
+            error: errors.password[0],
+          })}
         />
-        <p className="field-help" id="security-password-help">
-          Use at least {PASSWORD_MINIMUM_LENGTH} characters and something you have not used here
-          before.
-        </p>
-        {state.fieldErrors.password[0] && (
-          <p className="field-error" id="security-new-password-error">
-            {state.fieldErrors.password[0]}
-          </p>
-        )}
-      </div>
-      <div className="field-group">
-        <label htmlFor="security-confirm-password">Confirm new password</label>
-        <input
+      </Field>
+      <Field
+        id="security-confirm-password"
+        label="Confirm new password"
+        error={errors.passwordConfirmation[0]}
+      >
+        <Input
           id="security-confirm-password"
           name="passwordConfirmation"
           type="password"
@@ -75,30 +77,26 @@ export function PasswordChangeForm({ action }: PasswordChangeFormProps) {
           maxLength={PASSWORD_MAXIMUM_LENGTH}
           required
           disabled={pending}
-          aria-invalid={Boolean(state.fieldErrors.passwordConfirmation[0])}
-          aria-describedby={
-            state.fieldErrors.passwordConfirmation[0]
-              ? "security-confirm-password-error"
-              : undefined
-          }
+          invalid={Boolean(errors.passwordConfirmation[0])}
+          aria-describedby={describedBy("security-confirm-password", {
+            error: errors.passwordConfirmation[0],
+          })}
         />
-        {state.fieldErrors.passwordConfirmation[0] && (
-          <p className="field-error" id="security-confirm-password-error">
-            {state.fieldErrors.passwordConfirmation[0]}
-          </p>
-        )}
-      </div>
+      </Field>
       {state.message && (
-        <p
-          className={`account-form__status account-form__status--${state.status}`}
+        <Callout
+          tone={state.status === "success" ? "success" : "danger"}
           role={state.status === "success" ? "status" : "alert"}
+          compact
         >
           {state.message}
-        </p>
+        </Callout>
       )}
-      <button className="button button--primary" type="submit" disabled={pending}>
-        {pending ? "Updating password…" : "Update password"}
-      </button>
+      <div className="form-actions">
+        <Button variant="primary" type="submit" disabled={pending}>
+          {pending ? "Updating password…" : "Update password"}
+        </Button>
+      </div>
     </form>
   );
 }

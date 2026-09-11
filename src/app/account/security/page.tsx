@@ -10,6 +10,8 @@ import {
 import { EmailChangeForm } from "@/components/account/email-change-form";
 import { PasswordChangeForm } from "@/components/account/password-change-form";
 import { TwoFactorPanel } from "@/components/account/two-factor-panel";
+import { PageHeader } from "@/components/shell/page-header";
+import { Callout } from "@/components/ui/callout";
 import { requireCurrentAccount } from "@/lib/dal/account";
 import { getCurrentAssurance } from "@/lib/dal/assurance-guard";
 
@@ -32,85 +34,89 @@ export default async function SecurityPage({
   const noticeMessage = typeof notice === "string" ? NOTICES[notice] : undefined;
 
   return (
-    <main className="account-main" id="main-content">
-      <section className="account-page-heading" aria-labelledby="security-heading">
-        <p className="eyebrow">Shared account</p>
-        <h1 id="security-heading">Security</h1>
-        <p>
-          Change your password, move to a new verified email address, and require a second factor at
-          sign-in. Every change here asks for your current password.
-        </p>
+    <>
+      <PageHeader
+        eyebrow="Account"
+        title="Security"
+        titleId="security-heading"
+        description="Change your password, move to a new verified email, and require a second factor at sign-in. Every change here asks for your current password."
+      />
+
+      <div className="page-content">
         {noticeMessage && (
-          <p className="auth-alert" role="status">
+          <Callout role="status" tone="success">
             {noticeMessage}
-          </p>
+          </Callout>
         )}
-      </section>
 
-      <section className="account-form-panel" aria-labelledby="security-password-heading">
-        <div>
-          <p className="account-card__label">Password</p>
-          <h2 id="security-password-heading">Change password</h2>
-          <p>Updating your password signs out your other sessions on this account.</p>
+        <div className="settings-row">
+          <div className="settings-row__intro">
+            <p className="eyebrow">Password</p>
+            <h2 id="security-password-heading">Change password</h2>
+            <p>Updating your password signs out your other sessions on this account.</p>
+          </div>
+          <PasswordChangeForm action={changePassword} />
         </div>
-        <PasswordChangeForm action={changePassword} />
-      </section>
 
-      <section className="account-form-panel" aria-labelledby="security-email-heading">
-        <div>
-          <p className="account-card__label">Email</p>
-          <h2 id="security-email-heading">Change verified email</h2>
-          <p>
-            Your sign-in address only changes after the confirmation links from both the current and
-            the new inbox are used. Your account identity does not change.
-          </p>
+        <div className="settings-row">
+          <div className="settings-row__intro">
+            <p className="eyebrow">Email</p>
+            <h2 id="security-email-heading">Change verified email</h2>
+            <p>
+              Your sign-in address only changes after the confirmation links from both the current
+              and the new inbox are used. Your account identity does not change.
+            </p>
+          </div>
+          <EmailChangeForm currentEmail={account.email} action={changeEmail} />
         </div>
-        <EmailChangeForm currentEmail={account.email} action={changeEmail} />
-      </section>
 
-      <section className="account-form-panel" aria-labelledby="security-mfa-heading">
-        <div>
-          <p className="account-card__label">Two-factor authentication</p>
-          <h2 id="security-mfa-heading">Authenticator app</h2>
-          <p>
-            Two-factor state comes from your verified authentication factors, not from a stored
-            preference, so what you see here is what sign-in enforces.
-          </p>
+        <div className="settings-row">
+          <div className="settings-row__intro">
+            <p className="eyebrow">Two-factor authentication</p>
+            <h2 id="security-mfa-heading">Authenticator app</h2>
+            <p>
+              What you see here is what sign-in enforces: the status comes from your verified
+              factors, not from a saved preference.
+            </p>
+          </div>
+          <TwoFactorPanel
+            factors={assurance.verifiedTotpFactors}
+            currentLevel={assurance.currentLevel}
+            factorsReadable={assurance.factorsReadable}
+            startEnrollment={startTotpEnrollment}
+            confirmEnrollment={confirmTotpEnrollment}
+            removeFactor={removeTotpFactor}
+          />
         </div>
-        <TwoFactorPanel
-          factors={assurance.verifiedTotpFactors}
-          currentLevel={assurance.currentLevel}
-          factorsReadable={assurance.factorsReadable}
-          startEnrollment={startTotpEnrollment}
-          confirmEnrollment={confirmTotpEnrollment}
-          removeFactor={removeTotpFactor}
-        />
-      </section>
 
-      <section className="account-form-panel" aria-labelledby="security-recovery-heading">
-        <div>
-          <p className="account-card__label">If you lose access</p>
-          <h2 id="security-recovery-heading">Recovery guidance</h2>
+        <div className="settings-row">
+          <div className="settings-row__intro">
+            <p className="eyebrow">If you lose access</p>
+            <h2 id="security-recovery-heading">Recovery guidance</h2>
+          </div>
+          <Callout title="Keep these in mind">
+            <ul className="stack stack--tight">
+              <li>
+                Keep your authenticator app backed up. This console issues no printable recovery
+                codes, so a lost authenticator cannot be bypassed from this page.
+              </li>
+              <li>
+                Losing your password alone is recoverable: use the sign-in page&apos;s password
+                reset and confirm from your verified inbox.
+              </li>
+              <li>
+                Losing your second factor requires an identity-verified support review before the
+                factor can be removed. Removing it yourself always needs your current password.
+              </li>
+              <li>
+                Password resets and email changes are confirmed by email. Treat any message you did
+                not request as a warning that someone else knows your password, and change it
+                immediately.
+              </li>
+            </ul>
+          </Callout>
         </div>
-        <ul className="account-guidance-list">
-          <li>
-            Keep your authenticator app backed up. This portal issues no printable recovery codes,
-            so a lost authenticator cannot be bypassed from this page.
-          </li>
-          <li>
-            Losing your password alone is recoverable: use the sign-in page&apos;s password reset
-            and confirm from your verified inbox.
-          </li>
-          <li>
-            Losing your second factor requires an identity-verified support review before the factor
-            can be removed. Removing it yourself always needs your current password.
-          </li>
-          <li>
-            Password resets and email changes are confirmed by email. Treat any message you did not
-            request as a warning that someone else knows your password, and change it immediately.
-          </li>
-        </ul>
-      </section>
-    </main>
+      </div>
+    </>
   );
 }

@@ -1,15 +1,33 @@
 import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 
 import "./globals.css";
 
+// Both faces ship with the app (variable WOFF2, SIL OFL — see src/app/fonts), so the
+// build never depends on Google Fonts and the strict `font-src 'self'` CSP holds.
+const spaceGrotesk = localFont({
+  src: "./fonts/space-grotesk-latin-wght.woff2",
+  weight: "300 700",
+  display: "swap",
+  variable: "--font-space-grotesk",
+});
+
+const jetbrainsMono = localFont({
+  src: "./fonts/jetbrains-mono-latin-wght.woff2",
+  weight: "100 800",
+  display: "swap",
+  variable: "--font-jetbrains-mono",
+  adjustFontFallback: false,
+});
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://console.quantifyterminal.com"),
   title: {
-    default: "Quantify Terminal Account",
+    default: "Quantify Terminal Console",
     template: "%s | Quantify Terminal",
   },
-  description: "Secure account access and administration for Quantify Terminal.",
+  description: "Account and administration console for Quantify Terminal.",
   robots: {
     index: false,
     follow: false,
@@ -26,7 +44,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${spaceGrotesk.variable} ${jetbrainsMono.variable}`}>
       <body>
         <a className="skip-link" href="#main-content">
           Skip to main content

@@ -483,6 +483,55 @@ describe("admin access gates", () => {
     });
   });
 
+  it("keeps the dashboard authorized when an aggregate read fails", async () => {
+    const { access, fetchAccountApiAdminMetrics } = await loadAccessHarness();
+    fetchAccountApiAdminMetrics.mockRejectedValueOnce(new Error("upstream timeout"));
+
+    await expect(access.getAdminDashboardAccess()).resolves.toMatchObject({
+      status: "authorized",
+      metrics: null,
+      roleReport: { correlation_id: "qt-role-report" },
+      degraded: ["metrics"],
+    });
+  });
+
+  it("keeps the user directory page authorized when the directory read fails", async () => {
+    const { access, fetchAccountApiAdminUsers } = await loadAccessHarness();
+    fetchAccountApiAdminUsers.mockRejectedValueOnce(new Error("upstream timeout"));
+
+    await expect(access.getAdminUsersAccess(25, 0)).resolves.toMatchObject({
+      status: "authorized",
+      users: null,
+      limit: 25,
+      offset: 0,
+    });
+  });
+
+  it("offers the admin section only to callers the backend admits", async () => {
+    const admitted = await loadAccessHarness();
+    await expect(admitted.access.getAdminEntry()).resolves.toMatchObject({
+      canEnterAdmin: true,
+      me: { user: { email: "owner@example.test" } },
+    });
+
+    const plain = await loadAccessHarness({
+      mePayload: {
+        ...me,
+        role: { ...me.role, effective: "user", database: "user", legacy: "user" },
+        capabilities: ["account:read-self"],
+      },
+    });
+    await expect(plain.access.getAdminEntry()).resolves.toMatchObject({ canEnterAdmin: false });
+
+    const signedOut = await loadAccessHarness({ sessionToken: null });
+    await expect(signedOut.access.getAdminEntry()).resolves.toBeNull();
+    expect(signedOut.fetchAccountApiMe).not.toHaveBeenCalled();
+
+    const outage = await loadAccessHarness();
+    outage.fetchAccountApiMe.mockRejectedValueOnce(new Error("upstream timeout"));
+    await expect(outage.access.getAdminEntry()).resolves.toBeNull();
+  });
+
   it("redirects a missing admin role-report session to the admin roles return path", async () => {
     const { access, redirect } = await loadAccessHarness({ sessionToken: null });
 

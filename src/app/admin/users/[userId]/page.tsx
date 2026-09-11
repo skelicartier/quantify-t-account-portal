@@ -3,11 +3,13 @@ import type { Metadata } from "next";
 import {
   revokeAdminUserSession,
   updateAdminUserActivation,
+  updateAdminUserRole,
 } from "@/app/admin/users/[userId]/actions";
 import { AdminUserDetail } from "@/components/admin/admin-user-detail";
 import { getAdminUserDetailAccess } from "@/lib/admin/access";
+import { requestNow } from "@/lib/request-time";
 
-export const metadata: Metadata = { title: "User Detail" };
+export const metadata: Metadata = { title: "User detail" };
 export const dynamic = "force-dynamic";
 
 type AdminUserDetailPageProps = {
@@ -23,6 +25,8 @@ export default async function AdminUserDetailPage({ params }: AdminUserDetailPag
       access={access}
       activationAction={updateAdminUserActivation}
       sessionRevokeAction={revokeAdminUserSession}
+      roleAction={updateAdminUserRole}
+      now={requestNow()}
     />
   );
 }

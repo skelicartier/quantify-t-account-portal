@@ -1,21 +1,34 @@
 "use client";
 
-import Link from "next/link";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 
-export default function AdminError() {
+/** Segment boundary for the administration pages; renders inside the console shell. */
+export default function AdminError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
   return (
-    <main className="account-main" id="main-content">
-      <section className="admin-state-panel" aria-labelledby="admin-error-heading">
-        <p className="account-card__label">Administration</p>
-        <h1 id="admin-error-heading">Admin controls are not ready yet</h1>
-        <p>
-          The portal could not complete the privileged authorization check through the Account API.
-          No administrative data was shown.
-        </p>
-        <Link className="button" href="/account">
-          Return to account
-        </Link>
-      </section>
-    </main>
+    <div className="page-state">
+      <p className="eyebrow">Administration</p>
+      <h1 id="admin-error-heading">This administration view could not load</h1>
+      <div className="page-content">
+        <Callout tone="danger" title="No administrative data was shown">
+          The privileged check did not complete, so nothing was changed. Refresh to try again. If it
+          keeps failing, the account service may be recovering; check back in a minute.
+        </Callout>
+      </div>
+      <div className="page-state__actions">
+        <Button variant="primary" onClick={() => reset()}>
+          Refresh
+        </Button>
+        <ButtonLink href="/admin">Dashboard</ButtonLink>
+        <ButtonLink href="/account">Return to account</ButtonLink>
+      </div>
+      {error.digest && <p className="page-state__ref">Reference {error.digest}</p>}
+    </div>
   );
 }

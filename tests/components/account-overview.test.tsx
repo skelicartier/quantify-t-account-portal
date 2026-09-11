@@ -18,18 +18,19 @@ const account: AccountOverviewDto = {
 
 describe("AccountOverview", () => {
   it("renders the sanitized account summary and profile navigation", () => {
-    render(<AccountOverview account={account} />);
+    render(<AccountOverview account={account} canEnterAdmin />);
 
     expect(screen.getByRole("heading", { name: /account overview/i })).toBeVisible();
     expect(screen.getByText("Avery Stone")).toBeVisible();
     expect(screen.getByText("user@example.com")).toBeVisible();
     expect(screen.getByText("Professional")).toBeVisible();
     expect(screen.getByText("Active")).toBeVisible();
+    expect(screen.getByText("3 Jan 2024")).toBeVisible();
     expect(screen.getByRole("link", { name: /edit profile/i })).toHaveAttribute(
       "href",
       "/account/profile",
     );
-    expect(screen.getByRole("link", { name: /admin panel/i })).toHaveAttribute("href", "/admin");
+    expect(screen.getByRole("link", { name: /admin console/i })).toHaveAttribute("href", "/admin");
     expect(screen.getByRole("link", { name: /preferences/i })).toHaveAttribute(
       "href",
       "/account/preferences",
@@ -43,5 +44,22 @@ describe("AccountOverview", () => {
       "/account/activity",
     );
     expect(screen.queryByText(/passcode|pin/i)).not.toBeInTheDocument();
+  });
+
+  it("hides the admin console link for accounts the backend does not admit", () => {
+    render(<AccountOverview account={account} />);
+
+    expect(screen.queryByRole("link", { name: /admin console/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /edit profile/i })).toBeVisible();
+  });
+
+  it("explains a degraded profile without hiding the verified identity", () => {
+    render(
+      <AccountOverview account={{ ...account, profileState: "unavailable", status: "unknown" }} />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(/couldn't be loaded/i);
+    expect(screen.getByText("user@example.com")).toBeVisible();
+    expect(screen.getByText("Unknown")).toBeVisible();
   });
 });

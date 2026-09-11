@@ -2,9 +2,15 @@ import "server-only";
 
 import { z } from "zod";
 
+import { ASSIGNABLE_ROLES, type AssignableRole } from "@/lib/admin/role-labels";
+
+export { ASSIGNABLE_ROLES, type AssignableRole };
 export const ADMIN_ENTRY_CAPABILITY = "account:read-any";
 export const ROLE_REPORT_CAPABILITY = "roles:read-report";
 export const MANAGE_ROLES_CAPABILITY = "roles:write";
+export const ROLE_WRITE_CAPABILITY = MANAGE_ROLES_CAPABILITY;
+/** The versioned path every Account API route lives under (`host.json` routePrefix). */
+export const ACCOUNT_API_ROUTE_PREFIX = "/api/v1";
 export const AUDIT_EVENTS_CAPABILITY = "audit:read";
 export const USER_ACTIVATION_CAPABILITY = "users:set-active";
 export const USER_SESSION_REVOKE_CAPABILITY = "sessions:revoke-any";
@@ -16,10 +22,59 @@ export const RELEASE_STATUS_CAPABILITY = "releases:read-status";
 type Fetcher = (input: URL, init: RequestInit) => Promise<Response>;
 
 export class AccountApiUnavailableError extends Error {
-  constructor() {
+  readonly correlationId: string | null;
+
+  constructor(correlationId: string | null = null) {
     super("Account administration is temporarily unavailable.");
     this.name = "AccountApiUnavailableError";
+    this.correlationId = correlationId;
   }
+}
+
+/**
+ * Server-side breadcrumb for an Account API failure. Deliberately narrow: the route,
+ * the outcome, and the correlation id are enough to find the matching backend log line,
+ * and nothing that could carry a token, a body, or a header is ever included.
+ */
+function logAccountApiFailure(
+  route: string,
+  method: string,
+  detail: Readonly<Record<string, string | number | null>>,
+): void {
+  const fields = Object.entries({ route, method, ...detail })
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+  console.error(`[account-api] ${fields}`);
+}
+
+function schemaIssuePaths(error: z.ZodError): string {
+  return error.issues
+    .slice(0, 8)
+    .map((issue) => issue.path.map(String).join(".") || "<root>")
+    .join(",");
+}
+
+function parseAccountApiPayload<T>(
+  schema: z.ZodType<T>,
+  payload: unknown,
+  route: string,
+  method = "GET",
+): T {
+  const parsed = schema.safeParse(payload);
+  if (parsed.success) return parsed.data;
+  const correlationId =
+    typeof payload === "object" &&
+    payload !== null &&
+    typeof (payload as { correlation_id?: unknown }).correlation_id === "string"
+      ? (payload as { correlation_id: string }).correlation_id
+      : null;
+  logAccountApiFailure(route, method, {
+    outcome: "schema_mismatch",
+    issues: schemaIssuePaths(parsed.error),
+    correlation_id: correlationId,
+  });
+  throw new AccountApiUnavailableError(correlationId);
 }
 
 export class AccountApiRequestError extends Error {
@@ -92,6 +147,10 @@ export const accountApiMeSchema = z
   })
   .strict();
 
+// A profile created before the versioned write path exists carries version 0; that is a
+// readable profile, not a malformed one, and the compare-and-swap still works from 0.
+const profileVersionSchema = z.number().int().nonnegative();
+
 const accountProfileSchema = z
   .object({
     user_id: z.string().uuid(),
@@ -111,7 +170,7 @@ const accountProfileSchema = z
     notify_news_digest: z.boolean(),
     data_refresh_rate: z.string().max(64),
     theme_preference: z.string().max(64),
-    profile_version: z.number().int().positive(),
+    profile_version: profileVersionSchema,
     created_at: z.string().max(64),
     last_login_at: z.string().max(64),
     updated_at: z.string().max(64),
@@ -121,7 +180,7 @@ const accountProfileSchema = z
 const accountProfileMutationReceiptSchema = z
   .object({
     user_id: z.string().uuid(),
-    profile_version: z.number().int().positive(),
+    profile_version: profileVersionSchema,
     updated_at: z.string().max(64),
   })
   .strict();
@@ -577,7 +636,8 @@ const accountExportDownloadSchema = z
     private: z.boolean(),
     encrypted: z.boolean(),
     source_locked: z.boolean(),
-    content_type: z.literal("application/octet-stream"),
+    // Older API builds described the encrypted artifact as JSON; both are the same file.
+    content_type: z.enum(["application/octet-stream", "application/json"]),
     filename: z.string().min(1).max(180),
     expires_at: z.string().max(64),
     ttl_seconds: z.number().int().positive().max(3600),
@@ -1021,7 +1081,13 @@ export function resolveAccountApiBaseUrl(
     throw new AccountApiUnavailableError();
   }
 
-  url.pathname = url.pathname.replace(/\/+$/u, "");
+  // The API publishes every route under `/api/v1`. Accept the base with or without that
+  // suffix so a host-only value (the shape the auth client already tolerates) cannot send
+  // this client to the platform's bodyless 404.
+  const pathname = url.pathname.replace(/\/+$/u, "");
+  url.pathname = pathname.endsWith(ACCOUNT_API_ROUTE_PREFIX)
+    ? pathname
+    : `${pathname}${ACCOUNT_API_ROUTE_PREFIX}`;
   return url;
 }
 
@@ -1032,11 +1098,16 @@ export function buildAccountApiUrl(baseUrl: URL, route: string): URL {
   return url;
 }
 
-async function parseJson(response: Response): Promise<unknown> {
+async function parseJson(response: Response, route: string, method: string): Promise<unknown> {
   try {
     return await response.json();
   } catch {
-    throw new AccountApiUnavailableError();
+    logAccountApiFailure(route, method, {
+      outcome: "non_json_response",
+      status: response.status,
+      correlation_id: response.headers.get("x-correlation-id"),
+    });
+    throw new AccountApiUnavailableError(response.headers.get("x-correlation-id"));
   }
 }
 
@@ -1076,14 +1147,35 @@ async function fetchAccountApiJson(
       requestInit.body = body;
     }
     response = await (options.fetcher ?? fetch)(url, requestInit);
-  } catch {
+  } catch (error) {
+    logAccountApiFailure(route, method, {
+      outcome: "network_error",
+      reason: error instanceof Error ? error.name : "unknown",
+    });
     throw new AccountApiUnavailableError();
   }
-  const payload = await parseJson(response);
+  const payload = await parseJson(response, route, method);
 
   if (!response.ok) {
     const parsed = accountApiErrorSchema.safeParse(payload);
-    if (!parsed.success) throw new AccountApiUnavailableError();
+    if (!parsed.success) {
+      logAccountApiFailure(route, method, {
+        outcome: "unrecognized_error_body",
+        status: response.status,
+        correlation_id: response.headers.get("x-correlation-id"),
+      });
+      throw new AccountApiUnavailableError(response.headers.get("x-correlation-id"));
+    }
+    // 401 is the caller's session ending, not a service fault; everything else is
+    // worth a breadcrumb because the caller will render it as a generic failure.
+    if (response.status !== 401) {
+      logAccountApiFailure(route, method, {
+        outcome: "api_error",
+        status: response.status,
+        code: parsed.data.error.code,
+        correlation_id: parsed.data.correlation_id ?? null,
+      });
+    }
     throw new AccountApiRequestError({
       status: response.status,
       code: parsed.data.error.code,
@@ -1119,9 +1211,7 @@ export async function fetchAccountApiMe(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiMe> {
   const payload = await fetchAccountApiJson("me", accessToken, options);
-  const parsed = accountApiMeSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(accountApiMeSchema, payload, "me", "GET");
 }
 
 export async function fetchAccountApiProfile(
@@ -1129,9 +1219,7 @@ export async function fetchAccountApiProfile(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiProfile> {
   const payload = await fetchAccountApiJson("auth/user/profile", accessToken, options);
-  const parsed = accountApiProfileSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(accountApiProfileSchema, payload, "auth/user/profile", "GET");
 }
 
 export async function updateAccountApiProfile(
@@ -1140,9 +1228,12 @@ export async function updateAccountApiProfile(
   options: AccountApiFetchOptions & { idempotencyKey: string },
 ): Promise<AccountApiProfileUpdate> {
   const payload = await postAccountApiJson("auth/user/profile/update", accessToken, body, options);
-  const parsed = accountApiProfileUpdateSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiProfileUpdateSchema,
+    payload,
+    "auth/user/profile/update",
+    "POST",
+  );
 }
 
 export async function fetchAccountApiSessions(
@@ -1150,9 +1241,7 @@ export async function fetchAccountApiSessions(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiSessions> {
   const payload = await fetchAccountApiJson("sessions", accessToken, options);
-  const parsed = accountApiSessionsSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(accountApiSessionsSchema, payload, "sessions", "GET");
 }
 
 export async function fetchAccountApiActivity(
@@ -1160,9 +1249,7 @@ export async function fetchAccountApiActivity(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiActivity> {
   const payload = await fetchAccountApiJson("activity", accessToken, options);
-  const parsed = accountApiActivitySchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(accountApiActivitySchema, payload, "activity", "GET");
 }
 
 export async function fetchAccountApiRoleReport(
@@ -1174,9 +1261,7 @@ export async function fetchAccountApiRoleReport(
     ? { ...fetchOptions, query: { include_matches: "true" } }
     : fetchOptions;
   const payload = await fetchAccountApiJson("admin/role-report", accessToken, requestOptions);
-  const parsed = accountApiRoleReportSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(accountApiRoleReportSchema, payload, "admin/role-report", "GET");
 }
 
 export async function fetchAccountApiAdminMetrics(
@@ -1184,9 +1269,7 @@ export async function fetchAccountApiAdminMetrics(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAdminMetrics> {
   const payload = await fetchAccountApiJson("admin/metrics", accessToken, options);
-  const parsed = accountApiAdminMetricsSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(accountApiAdminMetricsSchema, payload, "admin/metrics", "GET");
 }
 
 export async function fetchAccountApiAdminConfiguration(
@@ -1194,9 +1277,12 @@ export async function fetchAccountApiAdminConfiguration(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAdminConfiguration> {
   const payload = await fetchAccountApiJson("admin/configuration", accessToken, options);
-  const parsed = accountApiAdminConfigurationSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminConfigurationSchema,
+    payload,
+    "admin/configuration",
+    "GET",
+  );
 }
 
 export async function fetchAccountApiAdminCredentialStatus(
@@ -1204,9 +1290,12 @@ export async function fetchAccountApiAdminCredentialStatus(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAdminCredentialStatus> {
   const payload = await fetchAccountApiJson("admin/credentials", accessToken, options);
-  const parsed = accountApiAdminCredentialStatusSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminCredentialStatusSchema,
+    payload,
+    "admin/credentials",
+    "GET",
+  );
 }
 
 export async function fetchAccountApiAdminReleaseStatus(
@@ -1214,9 +1303,12 @@ export async function fetchAccountApiAdminReleaseStatus(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAdminReleaseStatus> {
   const payload = await fetchAccountApiJson("admin/releases", accessToken, options);
-  const parsed = accountApiAdminReleaseStatusSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminReleaseStatusSchema,
+    payload,
+    "admin/releases",
+    "GET",
+  );
 }
 
 export async function fetchAccountApiAdminUsers(
@@ -1233,9 +1325,7 @@ export async function fetchAccountApiAdminUsers(
     ...fetchOptions,
     query,
   });
-  const parsed = accountApiAdminUsersSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(accountApiAdminUsersSchema, payload, "admin/users", "GET");
 }
 
 export async function fetchAccountApiAdminUser(
@@ -1250,9 +1340,12 @@ export async function fetchAccountApiAdminUser(
     accessToken,
     options,
   );
-  const parsed = accountApiAdminUserDetailSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminUserDetailSchema,
+    payload,
+    `admin/users/${encodeURIComponent(parsedUserId.data)}`,
+    "GET",
+  );
 }
 
 export async function fetchAccountApiAdminAuditEvents(
@@ -1273,9 +1366,12 @@ export async function fetchAccountApiAdminAuditEvents(
     ...fetchOptions,
     query,
   });
-  const parsed = accountApiAdminAuditEventsSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminAuditEventsSchema,
+    payload,
+    "admin/audit-events/search",
+    "GET",
+  );
 }
 
 export async function fetchAccountApiAdminReports(
@@ -1283,9 +1379,7 @@ export async function fetchAccountApiAdminReports(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAdminReports> {
   const payload = await fetchAccountApiJson("admin/reports", accessToken, options);
-  const parsed = accountApiAdminReportsSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(accountApiAdminReportsSchema, payload, "admin/reports", "GET");
 }
 
 export async function enqueueAccountApiAdminReport(
@@ -1306,9 +1400,12 @@ export async function enqueueAccountApiAdminReport(
     },
     options,
   );
-  const parsed = accountApiAdminReportEnqueueSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminReportEnqueueSchema,
+    payload,
+    "admin/reports/enqueue",
+    "POST",
+  );
 }
 
 export async function fetchAccountApiAdminReportDownload(
@@ -1323,9 +1420,12 @@ export async function fetchAccountApiAdminReportDownload(
     accessToken,
     options,
   );
-  const parsed = accountApiAdminReportDownloadSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminReportDownloadSchema,
+    payload,
+    `admin/reports/${encodeURIComponent(parsedReportId.data)}/download`,
+    "GET",
+  );
 }
 
 export async function fetchAccountApiAccountLifecycle(
@@ -1333,9 +1433,12 @@ export async function fetchAccountApiAccountLifecycle(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAccountLifecycle> {
   const payload = await fetchAccountApiJson("account/lifecycle", accessToken, options);
-  const parsed = accountApiAccountLifecycleSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAccountLifecycleSchema,
+    payload,
+    "account/lifecycle",
+    "GET",
+  );
 }
 
 export async function requestAccountApiAccountExport(
@@ -1355,9 +1458,12 @@ export async function requestAccountApiAccountExport(
     },
     options,
   );
-  const parsed = accountApiAccountExportRequestSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAccountExportRequestSchema,
+    payload,
+    "account/exports/request",
+    "POST",
+  );
 }
 
 export async function fetchAccountApiAccountExportDownload(
@@ -1372,9 +1478,12 @@ export async function fetchAccountApiAccountExportDownload(
     accessToken,
     options,
   );
-  const parsed = accountApiAccountExportDownloadSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAccountExportDownloadSchema,
+    payload,
+    `account/exports/${encodeURIComponent(parsedExportId.data)}/download`,
+    "GET",
+  );
 }
 
 export async function requestAccountApiAccountDeletion(
@@ -1393,9 +1502,12 @@ export async function requestAccountApiAccountDeletion(
     },
     options,
   );
-  const parsed = accountApiAccountDeletionResultSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAccountDeletionResultSchema,
+    payload,
+    "account/deletion/request",
+    "POST",
+  );
 }
 
 export async function cancelAccountApiAccountDeletion(
@@ -1417,9 +1529,12 @@ export async function cancelAccountApiAccountDeletion(
     },
     options,
   );
-  const parsed = accountApiAccountDeletionResultSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAccountDeletionResultSchema,
+    payload,
+    "account/deletion/cancel",
+    "POST",
+  );
 }
 
 export async function setAccountApiAdminUserActive(
@@ -1436,9 +1551,30 @@ export async function setAccountApiAdminUserActive(
     { is_active: isActive },
     options,
   );
-  const parsed = accountApiAdminUserActivationSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminUserActivationSchema,
+    payload,
+    `admin/users/${encodeURIComponent(parsedUserId.data)}/activation`,
+    "POST",
+  );
+}
+
+/**
+ * Assign a canonical role to another account. The API answers with the same projection
+ * the activation route uses, so the caller can render the new role without a re-read.
+ */
+export async function setAccountApiAdminUserRole(
+  accessToken: string,
+  userId: string,
+  role: AssignableRole,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiAdminUserActivation> {
+  const parsedUserId = z.string().uuid().safeParse(userId.trim().toLowerCase());
+  const parsedRole = z.enum(ASSIGNABLE_ROLES).safeParse(role);
+  if (!parsedUserId.success || !parsedRole.success) throw new AccountApiUnavailableError();
+  const route = `admin/users/${encodeURIComponent(parsedUserId.data)}/role`;
+  const payload = await postAccountApiJson(route, accessToken, { role: parsedRole.data }, options);
+  return parseAccountApiPayload(accountApiAdminUserActivationSchema, payload, route, "POST");
 }
 
 export async function revokeAccountApiAdminUserSession(
@@ -1457,9 +1593,12 @@ export async function revokeAccountApiAdminUserSession(
     { reason },
     fetchOptions,
   );
-  const parsed = accountApiAdminUserSessionRevokeSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminUserSessionRevokeSchema,
+    payload,
+    `admin/users/${encodeURIComponent(parsedUserId.data)}/sessions/${encodeURIComponent(parsedSessionId.data)}/revoke`,
+    "POST",
+  );
 }
 
 export async function fetchAccountApiNotifications(
@@ -1467,9 +1606,7 @@ export async function fetchAccountApiNotifications(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiNotifications> {
   const payload = await fetchAccountApiJson("notifications", accessToken, options);
-  const parsed = accountApiNotificationsSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(accountApiNotificationsSchema, payload, "notifications", "GET");
 }
 
 export async function fetchAccountApiNotificationState(
@@ -1477,9 +1614,12 @@ export async function fetchAccountApiNotificationState(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiNotificationState> {
   const payload = await fetchAccountApiJson("notifications/state", accessToken, options);
-  const parsed = accountApiNotificationStateSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiNotificationStateSchema,
+    payload,
+    "notifications/state",
+    "GET",
+  );
 }
 
 export async function recordAccountApiNotificationReceipt(
@@ -1501,9 +1641,12 @@ export async function recordAccountApiNotificationReceipt(
     { notification_id: parsedId.data, status },
     options,
   );
-  const parsed = accountApiNotificationReceiptSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiNotificationReceiptSchema,
+    payload,
+    "notifications/receipts",
+    "POST",
+  );
 }
 
 export async function fetchAccountApiAdminNotifications(
@@ -1511,9 +1654,12 @@ export async function fetchAccountApiAdminNotifications(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAdminNotifications> {
   const payload = await fetchAccountApiJson("admin/notifications", accessToken, options);
-  const parsed = accountApiAdminNotificationsSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminNotificationsSchema,
+    payload,
+    "admin/notifications",
+    "GET",
+  );
 }
 
 export async function updateAccountApiAdminNotifications(
@@ -1532,9 +1678,12 @@ export async function updateAccountApiAdminNotifications(
     },
     options,
   );
-  const parsed = accountApiAdminNotificationsUpdateSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminNotificationsUpdateSchema,
+    payload,
+    "admin/notifications/update",
+    "POST",
+  );
 }
 
 export async function fetchAccountApiAdminNotificationEmailQueue(
@@ -1542,9 +1691,12 @@ export async function fetchAccountApiAdminNotificationEmailQueue(
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAdminNotificationEmailQueue> {
   const payload = await fetchAccountApiJson("admin/email", accessToken, options);
-  const parsed = accountApiAdminNotificationEmailQueueSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminNotificationEmailQueueSchema,
+    payload,
+    "admin/email",
+    "GET",
+  );
 }
 
 export async function enqueueAccountApiAdminNotificationEmail(
@@ -1572,7 +1724,10 @@ export async function enqueueAccountApiAdminNotificationEmail(
     },
     options,
   );
-  const parsed = accountApiAdminNotificationEmailEnqueueSchema.safeParse(payload);
-  if (!parsed.success) throw new AccountApiUnavailableError();
-  return parsed.data;
+  return parseAccountApiPayload(
+    accountApiAdminNotificationEmailEnqueueSchema,
+    payload,
+    "admin/email/enqueue",
+    "POST",
+  );
 }

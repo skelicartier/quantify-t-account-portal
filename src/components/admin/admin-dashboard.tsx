@@ -1,282 +1,199 @@
-import Link from "next/link";
-
-import { formatAdminLabel, formatAdminNumber } from "@/components/admin/admin-format";
+import { AdminGate } from "@/components/admin/admin-gate";
+import { PageHeader } from "@/components/shell/page-header";
+import { EnvBadge, RoleBadge } from "@/components/ui/badge";
+import { ButtonLink } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { Card, Section } from "@/components/ui/card";
+import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import { KeyValue, KeyValueRow } from "@/components/ui/key-value";
+import { ShortId } from "@/components/ui/short-id";
+import { Stat, StatGrid } from "@/components/ui/stat";
+import { StatusPill } from "@/components/ui/status-pill";
+import { Timestamp } from "@/components/ui/timestamp";
 import type { AdminDashboardAccess } from "@/lib/admin/access";
+import {
+  capabilityLabel,
+  mismatchLabel,
+  mismatchTone,
+  roleLabel,
+  roleReportStatus,
+} from "@/lib/admin/role-labels";
+import { formatNumber } from "@/lib/format";
 
 type AdminDashboardProps = {
   access: AdminDashboardAccess;
+  now?: number | undefined;
 };
 
-type AuthorizedAdminDashboardAccess = Extract<AdminDashboardAccess, { status: "authorized" }>;
+const REVIEW_COLUMNS = [
+  { key: "user", label: "Account" },
+  { key: "effective", label: "Effective" },
+  { key: "database", label: "Database" },
+  { key: "legacy", label: "Legacy" },
+  { key: "reason", label: "Reason" },
+] as const;
 
-function roleReportStatus(access: AdminDashboardAccess): string {
-  if (access.status !== "authorized") return "Not available";
-  if (!access.roleReport) return "Not permitted";
-  if (!access.roleReport.legacy_source_available) return "Legacy store unreadable";
-  if (access.roleReport.legacy_unparsable_entry_count > 0) return "Legacy entries need review";
-  if (access.roleReport.legacy_retirement_ready) return "Ready for reviewed cutover";
-  return "Differences need review";
-}
+const DEGRADED_LABELS = {
+  metrics: "Account metrics",
+  "role-report": "Role report",
+} as const;
 
-function AdminMetricsSummary({ metrics }: { metrics: AuthorizedAdminDashboardAccess["metrics"] }) {
-  const flaggedEvents =
-    (metrics.auth_events_24h.by_outcome.failure ?? 0) +
-    (metrics.auth_events_24h.by_outcome.blocked ?? 0);
-  const metricsTruncated =
-    metrics.limits.accounts_truncated ||
-    metrics.limits.sessions_truncated ||
-    metrics.limits.events_truncated;
-
-  return (
-    <section className="admin-section" aria-labelledby="admin-metrics-heading">
-      <div className="admin-section__heading">
-        <div>
-          <p className="account-card__label">Metrics</p>
-          <h2 id="admin-metrics-heading">Account health</h2>
-        </div>
-        <time dateTime={metrics.generated_at}>{metrics.generated_at}</time>
-      </div>
-      <div className="admin-report-grid">
-        <div>
-          <span>Total accounts</span>
-          <strong>{formatAdminNumber(metrics.accounts.total)}</strong>
-        </div>
-        <div>
-          <span>Active accounts</span>
-          <strong>{formatAdminNumber(metrics.accounts.active)}</strong>
-        </div>
-        <div>
-          <span>New in 24h</span>
-          <strong>{formatAdminNumber(metrics.accounts.created_24h)}</strong>
-        </div>
-        <div>
-          <span>Logged in 24h</span>
-          <strong>{formatAdminNumber(metrics.accounts.logged_in_24h)}</strong>
-        </div>
-        <div>
-          <span>Active sessions</span>
-          <strong>{formatAdminNumber(metrics.sessions.active)}</strong>
-        </div>
-        <div>
-          <span>Expired sessions</span>
-          <strong>{formatAdminNumber(metrics.sessions.expired)}</strong>
-        </div>
-        <div>
-          <span>Revoked sessions</span>
-          <strong>{formatAdminNumber(metrics.sessions.revoked)}</strong>
-        </div>
-        <div>
-          <span>Auth events 24h</span>
-          <strong>{formatAdminNumber(metrics.auth_events_24h.total)}</strong>
-        </div>
-        <div>
-          <span>Flagged events</span>
-          <strong>{formatAdminNumber(flaggedEvents)}</strong>
-        </div>
-        <div>
-          <span>Portal sessions</span>
-          <strong>{formatAdminNumber(metrics.sessions.by_source.portal ?? 0)}</strong>
-        </div>
-        <div>
-          <span>Desktop sessions</span>
-          <strong>{formatAdminNumber(metrics.sessions.by_source.desktop ?? 0)}</strong>
-        </div>
-        <div>
-          <span>Bounded rows</span>
-          <strong>
-            {metricsTruncated ? "Partial" : formatAdminNumber(metrics.limits.row_limit)}
-          </strong>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function AdminDashboard({ access }: AdminDashboardProps) {
+export function AdminDashboard({ access, now }: AdminDashboardProps) {
   const { me } = access;
-  const roleReport = access.status === "authorized" ? access.roleReport : null;
+  const authorized = access.status === "authorized" ? access : null;
+  const metrics = authorized?.metrics ?? null;
+  const roleReport = authorized?.roleReport ?? null;
+  const flaggedEvents = metrics
+    ? (metrics.auth_events_24h.by_outcome.failure ?? 0) +
+      (metrics.auth_events_24h.by_outcome.blocked ?? 0)
+    : 0;
+  const truncated = metrics
+    ? metrics.limits.accounts_truncated ||
+      metrics.limits.sessions_truncated ||
+      metrics.limits.events_truncated
+    : false;
 
   return (
-    <main className="account-main admin-main" id="main-content">
-      <section className="account-hero admin-hero" aria-labelledby="admin-heading">
-        <div>
-          <p className="eyebrow">Administration</p>
-          <h1 id="admin-heading">Control center</h1>
-          <p>
-            Administrative access is decided by the Account API using the Azure auth UUID, active
-            account state, canonical role, and returned capabilities.
-          </p>
-        </div>
-        <div className={`admin-role-badge admin-role-badge--${me.role.effective}`}>
-          {formatAdminLabel(me.role.effective)}
-        </div>
-      </section>
+    <>
+      <PageHeader
+        eyebrow="Administration"
+        title="Control center"
+        titleId="admin-heading"
+        description="Accounts, sessions and security events across Quantify Terminal, at a glance."
+        meta={
+          metrics ? (
+            <Timestamp value={metrics.generated_at} now={now} prefix="Updated" />
+          ) : undefined
+        }
+      />
 
-      {access.status === "forbidden" && (
-        <section className="admin-state-panel" aria-labelledby="admin-forbidden-heading">
-          <p className="account-card__label">Access denied</p>
-          <h2 id="admin-forbidden-heading">This account is not authorized for administration</h2>
-          <p>
-            The Account API returned an active account without the required administration
-            capability.
-          </p>
-          <Link className="button" href="/account">
-            Return to account
-          </Link>
-        </section>
-      )}
+      <div className="page-content">
+        <AdminGate access={access} section="Dashboard">
+          {authorized && authorized.degraded.length > 0 && (
+            <Callout tone="attention" role="status" title="Some panels couldn't load">
+              {authorized.degraded.map((item) => DEGRADED_LABELS[item]).join(" and ")}{" "}
+              {authorized.degraded.length === 1 ? "is" : "are"} temporarily unavailable. Everything
+              else on this page is current; refresh in a moment to try again.
+            </Callout>
+          )}
 
-      {access.status === "mfa-required" && (
-        <section className="admin-state-panel" aria-labelledby="admin-mfa-heading">
-          <p className="account-card__label">Additional verification</p>
-          <h2 id="admin-mfa-heading">A verified second factor is required</h2>
-          <p>
-            Owner, Admin, and Support access requires an AAL2 session before privileged views are
-            shown.
-          </p>
-          <Link className="button button--primary" href="/account/security">
-            Open security settings
-          </Link>
-        </section>
-      )}
+          {metrics && (
+            <>
+              <StatGrid columns={4} label="Accounts">
+                <Stat label="Total accounts" value={formatNumber(metrics.accounts.total)} />
+                <Stat label="Active accounts" value={formatNumber(metrics.accounts.active)} />
+                <Stat label="New in 24h" value={formatNumber(metrics.accounts.created_24h)} />
+                <Stat label="Signed in 24h" value={formatNumber(metrics.accounts.logged_in_24h)} />
+              </StatGrid>
+              <StatGrid columns={4} label="Sessions and events">
+                <Stat label="Active sessions" value={formatNumber(metrics.sessions.active)} />
+                <Stat
+                  label="Desktop sessions"
+                  value={formatNumber(metrics.sessions.by_source.desktop ?? 0)}
+                />
+                <Stat
+                  label="Portal sessions"
+                  value={formatNumber(metrics.sessions.by_source.portal ?? 0)}
+                />
+                <Stat label="Auth events 24h" value={formatNumber(metrics.auth_events_24h.total)} />
+                <Stat
+                  label="Flagged events"
+                  value={formatNumber(flaggedEvents)}
+                  tone={flaggedEvents > 0 ? "danger" : "default"}
+                  hint="Failed or blocked in the last 24h"
+                />
+                <Stat label="Expired sessions" value={formatNumber(metrics.sessions.expired)} />
+                <Stat label="Revoked sessions" value={formatNumber(metrics.sessions.revoked)} />
+                <Stat
+                  label="Coverage"
+                  value={truncated ? "Partial" : "Complete"}
+                  text
+                  hint={
+                    truncated
+                      ? `Counts stop at ${formatNumber(metrics.limits.row_limit)} rows`
+                      : "All rows counted"
+                  }
+                />
+              </StatGrid>
+            </>
+          )}
 
-      {access.status === "authorized" && (
-        <>
-          <section className="admin-summary-grid" aria-label="Administration summary">
-            <article className="admin-card">
-              <p className="account-card__label">Operator</p>
-              <h2>{me.user.email}</h2>
-              <dl className="account-details">
-                <div>
-                  <dt>Account ID</dt>
-                  <dd className="account-id">{me.user.user_id}</dd>
-                </div>
-                <div>
-                  <dt>Environment</dt>
-                  <dd>{formatAdminLabel(me.environment)}</dd>
-                </div>
-              </dl>
-            </article>
-            <article className="admin-card">
-              <p className="account-card__label">Role authority</p>
-              <dl className="account-metrics">
-                <div>
-                  <dt>Effective role</dt>
-                  <dd>{formatAdminLabel(me.role.effective)}</dd>
-                </div>
-                <div>
-                  <dt>Role mismatch</dt>
-                  <dd>{formatAdminLabel(me.role.mismatch)}</dd>
-                </div>
-                <div>
-                  <dt>Break-glass</dt>
-                  <dd>{me.role.break_glass ? "In use" : "No"}</dd>
-                </div>
-              </dl>
-            </article>
-            <article className="admin-card">
-              <p className="account-card__label">Role report</p>
-              <dl className="account-metrics">
-                <div>
-                  <dt>Status</dt>
-                  <dd>{roleReportStatus(access)}</dd>
-                </div>
-                <div>
-                  <dt>Total users</dt>
-                  <dd>{formatAdminNumber(roleReport?.total_users)}</dd>
-                </div>
-                <div>
-                  <dt>Blocking entries</dt>
-                  <dd>{formatAdminNumber(roleReport?.entries.length)}</dd>
-                </div>
-              </dl>
-              {roleReport && (
-                <div className="admin-card__actions">
-                  <Link className="button" href="/admin/roles">
-                    Open role report
-                  </Link>
-                </div>
-              )}
-            </article>
-          </section>
+          <div className="card-grid card-grid--2">
+            <Card eyebrow="Your access" title={me.user.email} titleId="admin-access-heading">
+              <div className="identity__badges">
+                <RoleBadge role={me.role.effective} />
+                <EnvBadge environment={me.environment} />
+                <StatusPill
+                  value={me.role.mismatch}
+                  tone={mismatchTone(me.role.mismatch)}
+                  label={mismatchLabel(me.role.mismatch)}
+                />
+              </div>
+              <ul className="chip-list" aria-label="Granted permissions" style={{ marginTop: 16 }}>
+                {me.capabilities.map((capability) => (
+                  <li className="chip" key={capability}>
+                    {capabilityLabel(capability)}
+                  </li>
+                ))}
+              </ul>
+            </Card>
 
-          <AdminMetricsSummary metrics={access.metrics} />
-
-          <section className="admin-section" aria-labelledby="admin-capabilities-heading">
-            <div className="admin-section__heading">
-              <p className="account-card__label">Capabilities</p>
-              <h2 id="admin-capabilities-heading">Backend-granted controls</h2>
-            </div>
-            <ul className="admin-token-list">
-              {me.capabilities.map((capability) => (
-                <li key={capability}>{capability}</li>
-              ))}
-            </ul>
-          </section>
+            <Card
+              eyebrow="Role integrity"
+              title={roleReportStatus(roleReport)}
+              titleId="admin-role-integrity-heading"
+              important={Boolean(roleReport) && !roleReport?.legacy_retirement_ready}
+              actions={
+                roleReport ? (
+                  <ButtonLink href="/admin/roles">Open role report</ButtonLink>
+                ) : undefined
+              }
+            >
+              <KeyValue columns={2}>
+                <KeyValueRow label="Accounts">{formatNumber(roleReport?.total_users)}</KeyValueRow>
+                <KeyValueRow label="Needs review">
+                  {formatNumber(roleReport?.entries.length)}
+                </KeyValueRow>
+              </KeyValue>
+            </Card>
+          </div>
 
           {roleReport && (
-            <section className="admin-section" aria-labelledby="admin-role-report-heading">
-              <div className="admin-section__heading">
-                <p className="account-card__label">Reconciliation</p>
-                <h2 id="admin-role-report-heading">Role-store differences</h2>
-              </div>
-              <div className="admin-report-grid">
-                <div>
-                  <span>Blob entries</span>
-                  <strong>{formatAdminNumber(roleReport.legacy_blob_entry_count)}</strong>
-                </div>
-                <div>
-                  <span>Unparsable</span>
-                  <strong>{formatAdminNumber(roleReport.legacy_unparsable_entry_count)}</strong>
-                </div>
-                <div>
-                  <span>Bootstrap admins</span>
-                  <strong>{formatAdminNumber(roleReport.legacy_bootstrap_count)}</strong>
-                </div>
-                <div>
-                  <span>Legacy entries</span>
-                  <strong>{formatAdminNumber(roleReport.legacy_entry_count)}</strong>
-                </div>
-              </div>
-
-              {roleReport.entries.length > 0 ? (
-                <div className="admin-table-wrap">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>User</th>
-                        <th>Effective</th>
-                        <th>Database</th>
-                        <th>Legacy</th>
-                        <th>Mismatch</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {roleReport.entries.map((entry) => (
-                        <tr key={entry.user_id}>
-                          <td className="account-id">{entry.user_id}</td>
-                          <td>{formatAdminLabel(entry.effective_role)}</td>
-                          <td>
-                            {entry.database_role ? formatAdminLabel(entry.database_role) : "None"}
-                          </td>
-                          <td>
-                            {entry.legacy_role ? formatAdminLabel(entry.legacy_role) : "None"}
-                          </td>
-                          <td>{formatAdminLabel(entry.mismatch)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="admin-empty-state">
-                  No blocking role-store differences were returned by the Account API.
-                </p>
-              )}
-            </section>
+            <Section
+              id="admin-role-report"
+              title="Needs review"
+              eyebrow="Reconciliation"
+              description="Accounts whose stored role and legacy registry entry disagree."
+            >
+              <DataTable
+                columns={REVIEW_COLUMNS}
+                caption="Role records needing review"
+                isEmpty={roleReport.entries.length === 0}
+                empty={<EmptyState title="No role differences need review." compact />}
+              >
+                {roleReport.entries.map((entry) => (
+                  <tr key={entry.user_id}>
+                    <td>
+                      <ShortId value={entry.user_id} href={`/admin/users/${entry.user_id}`} />
+                    </td>
+                    <td>{roleLabel(entry.effective_role)}</td>
+                    <td>{entry.database_role ? roleLabel(entry.database_role) : "None"}</td>
+                    <td>{entry.legacy_role ? roleLabel(entry.legacy_role) : "None"}</td>
+                    <td>
+                      <StatusPill
+                        value={entry.mismatch}
+                        tone={mismatchTone(entry.mismatch)}
+                        label={mismatchLabel(entry.mismatch)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </DataTable>
+            </Section>
           )}
-        </>
-      )}
-    </main>
+        </AdminGate>
+      </div>
+    </>
   );
 }

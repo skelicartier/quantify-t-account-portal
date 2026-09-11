@@ -3,6 +3,7 @@ import Link from "next/link";
 import { login, verifyLoginChallenge } from "@/app/login/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
+import { Callout } from "@/components/ui/callout";
 import { sanitizeNextPath } from "@/lib/auth/login";
 
 export const metadata = {
@@ -18,18 +19,40 @@ type LoginPageProps = {
   }>;
 };
 
+const NOTICES: Record<string, { tone: "neutral" | "success" | "attention"; text: string }> = {
+  "logout-incomplete": {
+    tone: "attention",
+    text: "This browser is signed out, but the session could not be fully closed on the server. Sign in again only on a trusted device.",
+  },
+  "invalid-auth-link": {
+    tone: "attention",
+    text: "This confirmation or recovery link is invalid or has expired. Request a new email and try again.",
+  },
+  "invalid-confirm-link": {
+    tone: "attention",
+    text: "This confirmation or recovery link is invalid or has expired. Request a new email and try again.",
+  },
+  "email-confirmed": {
+    tone: "success",
+    text: "Your email address is confirmed. Sign in to continue.",
+  },
+  "password-updated": {
+    tone: "success",
+    text: "Your password was updated. Sign in with the new password.",
+  },
+  "mfa-required": {
+    tone: "neutral",
+    text: "This account requires an authenticator code. Sign in with your password to continue to the code step.",
+  },
+};
+
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const parameters = await searchParams;
   const requestedPath = Array.isArray(parameters.next) ? parameters.next[0] : parameters.next;
-  const notice = Array.isArray(parameters.notice) ? parameters.notice[0] : parameters.notice;
+  const noticeKey = Array.isArray(parameters.notice) ? parameters.notice[0] : parameters.notice;
   const nextPath = sanitizeNextPath(requestedPath);
-  const providerLogoutIncomplete = notice === "logout-incomplete";
-  const invalidAuthLink = notice === "invalid-auth-link";
-  const invalidConfirmLink = notice === "invalid-confirm-link";
-  const emailConfirmed = notice === "email-confirmed";
-  const passwordUpdated = notice === "password-updated";
-  const mfaRequired = notice === "mfa-required";
-  // Turnstile site key would come from Azure config if needed
+  const notice = noticeKey ? NOTICES[noticeKey] : undefined;
+  // Turnstile enforcement is not enabled for this deployment; the field stays inert.
   const turnstileSiteKey = "";
 
   return (
@@ -38,33 +61,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       title="Sign in to Quantify Terminal"
       description="Use the same verified account that connects your desktop terminal."
     >
-      {providerLogoutIncomplete && (
-        <div className="auth-alert" role="status">
-          This browser is signed out, but provider session cleanup could not be confirmed. Sign in
-          again only on a trusted device.
-        </div>
-      )}
-      {(invalidAuthLink || invalidConfirmLink) && (
-        <div className="auth-alert" role="status">
-          This confirmation or recovery link is invalid or has expired. Request a new email and try
-          again.
-        </div>
-      )}
-      {emailConfirmed && (
-        <div className="auth-alert auth-alert--success" role="status">
-          Your email address is confirmed. Sign in to continue.
-        </div>
-      )}
-      {passwordUpdated && (
-        <div className="auth-alert auth-alert--success" role="status">
-          Your password was updated. Sign in with the new password.
-        </div>
-      )}
-
-      {mfaRequired && (
-        <div className="auth-alert" role="status">
-          This account requires an authenticator code. Sign in with your password to continue to the
-          code step.
+      {notice && (
+        <div className="auth-form">
+          <Callout tone={notice.tone} role="status" compact>
+            {notice.text}
+          </Callout>
         </div>
       )}
 
