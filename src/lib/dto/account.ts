@@ -25,7 +25,7 @@ export type AccountIdentity = {
 };
 
 const identitySchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   email: z.string().nullable().optional(),
   created_at: z.string().nullable().optional(),
   last_sign_in_at: z.string().nullable().optional(),
@@ -33,7 +33,7 @@ const identitySchema = z.object({
 });
 
 const profileSchema = z.object({
-  user_id: z.string().uuid(),
+  user_id: z.guid(),
   first_name: z.string().nullable().optional(),
   last_name: z.string().nullable().optional(),
   is_active: z.boolean().nullable().optional(),

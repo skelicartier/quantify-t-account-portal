@@ -37,6 +37,7 @@ import {
   type AccountApiAdminReports,
   type AccountApiAdminReleaseStatus,
   type AccountApiAdminUserDetail,
+  type AccountApiAdminUserFilters,
   type AccountApiAdminUsers,
   type AccountApiMe,
   type AccountApiRoleReport,
@@ -89,6 +90,9 @@ export type AdminUsersAccess =
       assurance: AssuranceState;
       /** `null` when the directory read failed; the page shows an inline retry state. */
       users: AccountApiAdminUsers | null;
+      /** `null` when the metrics read failed; the KPI strip and charts are simply absent. */
+      metrics: AccountApiAdminMetrics | null;
+      filters: AccountApiAdminUserFilters;
       limit: number;
       offset: number;
     }
@@ -387,7 +391,11 @@ export const getAdminRoleReportAccess = cache(
 );
 
 export const getAdminUsersAccess = cache(
-  async (limit: number, offset: number): Promise<AdminUsersAccess> => {
+  async (
+    limit: number,
+    offset: number,
+    filters: AccountApiAdminUserFilters = {},
+  ): Promise<AdminUsersAccess> => {
     const { accessToken, me } = await currentAccountApiIdentity("/admin/users");
 
     if (!hasAdminPortalAccess(me)) return { status: "forbidden", me };
@@ -397,17 +405,53 @@ export const getAdminUsersAccess = cache(
       return { status: "mfa-required", me, assurance };
     }
 
-    let users: AccountApiAdminUsers | null;
-    try {
-      users = await fetchAccountApiAdminUsers(accessToken, { limit, offset });
-    } catch (error) {
-      if (error instanceof AccountApiRequestError && error.status === 401) throw error;
-      users = null;
+    // The directory and the KPI strip fail independently; a metrics outage must never
+    // hide the accounts and vice versa.
+    const [usersResult, metricsResult] = await Promise.allSettled([
+      fetchAccountApiAdminUsers(accessToken, { limit, offset, ...filters }),
+      fetchAccountApiAdminMetrics(accessToken),
+    ]);
+    for (const result of [usersResult, metricsResult]) {
+      if (
+        result.status === "rejected" &&
+        result.reason instanceof AccountApiRequestError &&
+        result.reason.status === 401
+      ) {
+        throw result.reason;
+      }
     }
+    const users = usersResult.status === "fulfilled" ? usersResult.value : null;
+    const metrics = metricsResult.status === "fulfilled" ? metricsResult.value : null;
 
-    return { status: "authorized", me, assurance, users, limit, offset };
+    return { status: "authorized", me, assurance, users, metrics, filters, limit, offset };
   },
 );
+
+export type AdminUsersExportAccess =
+  | { status: "authorized"; me: AccountApiMe; accessToken: string }
+  | { status: "mfa-required"; me: AccountApiMe }
+  | { status: "forbidden"; me: AccountApiMe }
+  | { status: "unauthenticated" };
+
+/**
+ * The CSV download applies the directory's gates but must not redirect the way pages do
+ * — a route handler answers with a status the browser can act on instead.
+ */
+export async function getAdminUsersExportAccess(): Promise<AdminUsersExportAccess> {
+  let identity: Awaited<ReturnType<typeof currentAccountApiIdentity>>;
+  try {
+    identity = await currentAccountApiIdentity("/admin/users");
+  } catch {
+    return { status: "unauthenticated" };
+  }
+  const { accessToken, me } = identity;
+  if (!hasAdminPortalAccess(me)) return { status: "forbidden", me };
+  const assurance = await getCurrentAssurance();
+  if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    return { status: "mfa-required", me };
+  }
+  return { status: "authorized", me, accessToken };
+}
 
 export const getAdminUserDetailAccess = cache(
   async (userId: string): Promise<AdminUserDetailAccess> => {

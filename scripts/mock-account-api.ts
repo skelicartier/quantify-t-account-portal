@@ -127,6 +127,30 @@ function correlation(): string {
   return `qt-${randomUUID().replace(/-/gu, "")}`;
 }
 
+/** Thirty days of deterministic daily aggregates so charts render the same every run. */
+function metricSeries() {
+  const days = 30;
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const dates = Array.from({ length: days }, (_, index) => {
+    const day = new Date(today.getTime() - (days - 1 - index) * 86_400_000);
+    return day.toISOString().slice(0, 10);
+  });
+  const wave = (index: number, base: number, amp: number) =>
+    Math.max(0, Math.round(base + amp * Math.sin(index / 3) + ((index * 7) % 5)));
+  return {
+    days,
+    signups: dates.map((date, index) => ({ date, count: wave(index, 11, 6) })),
+    sign_ins: dates.map((date, index) => ({ date, count: wave(index, 110, 40) })),
+    auth_events: dates.map((date, index) => ({
+      date,
+      success: wave(index, 260, 90),
+      failure: wave(index, 6, 5),
+      blocked: index % 9 === 0 ? 2 : 0,
+    })),
+  };
+}
+
 function roleProjection(userId: string) {
   const effective = roles[userId] ?? "user";
   const owner = effective === "owner";
@@ -531,7 +555,17 @@ const server = createServer(async (request, response) => {
     return ok(response, {
       generated_at: iso(1),
       window: { hours: 24, since: iso(60 * 24) },
-      accounts: { total: 1284, active: 1231, inactive: 53, created_24h: 18, logged_in_24h: 412 },
+      accounts: {
+        total: 1284,
+        active: 1231,
+        inactive: 53,
+        created_24h: 18,
+        logged_in_24h: 412,
+        created_7d: 96,
+        created_30d: 341,
+        logged_in_7d: 803,
+      },
+      series: metricSeries(),
       sessions: {
         total: 3120,
         active: 611,
@@ -561,14 +595,26 @@ const server = createServer(async (request, response) => {
     if (!requires("account:read-any")) return;
     const limit = Number(url.searchParams.get("limit") ?? 50);
     const offset = Number(url.searchParams.get("offset") ?? 0);
-    const page = PEOPLE.slice(offset, offset + limit).map(summary);
+    const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+    const status = url.searchParams.get("status") ?? "";
+    if (status && status !== "active" && status !== "inactive") {
+      return fail(response, 400, "malformed_request", "expected active or inactive");
+    }
+    const matching = PEOPLE.filter((p) => {
+      if (q && !`${p.email} ${p.first} ${p.last}`.toLowerCase().includes(q)) return false;
+      if (status === "active" && !p.active) return false;
+      if (status === "inactive" && p.active) return false;
+      return true;
+    });
+    const page = matching.slice(offset, offset + limit).map(summary);
     return ok(response, {
       generated_at: iso(0),
       pagination: {
         limit,
         offset,
-        has_more: offset + limit < PEOPLE.length,
-        next_offset: offset + limit < PEOPLE.length ? offset + limit : null,
+        has_more: offset + limit < matching.length,
+        next_offset: offset + limit < matching.length ? offset + limit : null,
+        total: matching.length,
       },
       users: page,
     });

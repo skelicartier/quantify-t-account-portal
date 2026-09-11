@@ -57,3 +57,18 @@ describe("search params", () => {
     expect(countActiveFilters(filters)).toBe(2);
   });
 });
+
+describe("parseUserFilters", () => {
+  it("keeps a trimmed search and a known status, dropping anything else", async () => {
+    const { parseUserFilters } = await import("@/lib/search-params");
+    expect(parseUserFilters({ q: "  owner ", status: "Active" })).toEqual({
+      q: "owner",
+      status: "active",
+    });
+    expect(parseUserFilters({ q: ["first", "second"], status: "sleeping" })).toEqual({
+      q: "first",
+    });
+    expect(parseUserFilters({})).toEqual({});
+    expect(parseUserFilters({ q: "x".repeat(200) }).q).toHaveLength(120);
+  });
+});

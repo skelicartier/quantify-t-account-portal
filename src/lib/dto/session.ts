@@ -36,8 +36,8 @@ const nullableTextSchema = z.string().nullable();
 
 const sessionRowSchema = z
   .object({
-    id: z.string().uuid(),
-    user_id: z.string().uuid(),
+    id: z.guid(),
+    user_id: z.guid(),
     source: sourceSchema,
     provider: sourceSchema,
     client_instance_id: z.string().max(256).nullable(),
@@ -52,9 +52,9 @@ const sessionRowSchema = z
 
 const activityRowSchema = z
   .object({
-    id: z.string().uuid(),
-    user_id: z.string().uuid(),
-    session_id: z.string().uuid().nullable(),
+    id: z.guid(),
+    user_id: z.guid(),
+    session_id: z.guid().nullable(),
     event_type: eventTypeSchema,
     outcome: z.enum(["success", "failure", "blocked", "unknown"]),
     source: sourceSchema,

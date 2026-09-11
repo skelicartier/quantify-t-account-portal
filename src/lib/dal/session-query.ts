@@ -51,7 +51,7 @@ async function currentVerifiedUserId(
 
   const userId = identity?.id;
   if (!userId) return null;
-  if (!z.string().uuid().safeParse(userId).success) throw unavailable();
+  if (!z.guid().safeParse(userId).success) throw unavailable();
   return userId;
 }
 

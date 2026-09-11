@@ -62,3 +62,16 @@ export function buildPageHref(
   }
   return `${path}?${params.toString()}`;
 }
+
+export type UserDirectoryFilters = {
+  q?: string | undefined;
+  status?: "active" | "inactive" | undefined;
+};
+
+/** The directory's search box and status filter; anything unrecognised is dropped. */
+export function parseUserFilters(params: SearchParams): UserDirectoryFilters {
+  const q = (firstSearchValue(params.q) ?? "").trim().slice(0, 120);
+  const rawStatus = (firstSearchValue(params.status) ?? "").trim().toLowerCase();
+  const status = rawStatus === "active" || rawStatus === "inactive" ? rawStatus : undefined;
+  return { ...(q ? { q } : {}), ...(status ? { status } : {}) };
+}

@@ -1,17 +1,22 @@
+import { Download, Search } from "lucide-react";
 import Link from "next/link";
 
 import { AdminGate } from "@/components/admin/admin-gate";
 import { PageHeader } from "@/components/shell/page-header";
 import { RoleBadge } from "@/components/ui/badge";
-import { ButtonLink } from "@/components/ui/button";
+import { BarChart } from "@/components/ui/bar-chart";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Field, Input, Select } from "@/components/ui/field";
 import { Pagination } from "@/components/ui/pagination";
+import { Stat, StatGrid } from "@/components/ui/stat";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Timestamp } from "@/components/ui/timestamp";
 import type { AdminUsersAccess } from "@/lib/admin/access";
-import { formatLabel } from "@/lib/format";
+import type { AccountApiAdminMetrics, AccountApiAdminUserFilters } from "@/lib/admin/account-api";
+import { formatLabel, formatNumber } from "@/lib/format";
 import { buildPageHref } from "@/lib/search-params";
 
 type AdminUsersProps = {
@@ -33,8 +38,88 @@ function accountName(user: { display_name: string; email: string }): string {
   return user.display_name || user.email || "Unnamed account";
 }
 
+function filterQuery(filters: AccountApiAdminUserFilters): Record<string, string | undefined> {
+  return { q: filters.q, status: filters.status };
+}
+
+function exportHref(filters: AccountApiAdminUserFilters): string {
+  const params = new URLSearchParams();
+  if (filters.q) params.set("q", filters.q);
+  if (filters.status) params.set("status", filters.status);
+  const query = params.toString();
+  return query ? `/admin/users/export?${query}` : "/admin/users/export";
+}
+
+function UsersAnalytics({ metrics }: { metrics: AccountApiAdminMetrics }) {
+  const series = metrics.series;
+  const hasSeries = series !== undefined && series.signups.length > 0;
+  return (
+    <>
+      <StatGrid columns={6} label="Account totals">
+        <Stat label="Total accounts" value={formatNumber(metrics.accounts.total)} />
+        <Stat label="Active" value={formatNumber(metrics.accounts.active)} />
+        <Stat label="New in 24h" value={formatNumber(metrics.accounts.created_24h)} />
+        <Stat label="New this week" value={formatNumber(metrics.accounts.created_7d ?? 0)} />
+        <Stat label="New in 30 days" value={formatNumber(metrics.accounts.created_30d ?? 0)} />
+        <Stat label="Signed in 24h" value={formatNumber(metrics.accounts.logged_in_24h)} />
+      </StatGrid>
+      {hasSeries && (
+        <section className="section" aria-labelledby="admin-users-analytics-heading">
+          <div className="section__header">
+            <div>
+              <p className="eyebrow">Analytics</p>
+              <h2 id="admin-users-analytics-heading">Last {series.days} days</h2>
+              <p className="section__desc">
+                Daily counts in UTC; the whole window is aggregated in the database.
+              </p>
+            </div>
+          </div>
+          <div className="chart-grid chart-grid--3">
+            <BarChart
+              title="New accounts"
+              description="per day"
+              segments={[{ key: "count", label: "Accounts" }]}
+              points={series.signups.map((point) => ({
+                label: point.date,
+                values: { count: point.count },
+              }))}
+            />
+            <BarChart
+              title="Accounts signing in"
+              description="per day, by last sign-in"
+              segments={[{ key: "count", label: "Accounts", tone: "success" }]}
+              points={series.sign_ins.map((point) => ({
+                label: point.date,
+                values: { count: point.count },
+              }))}
+            />
+            <BarChart
+              title="Authentication events"
+              description="per day, by outcome"
+              segments={[
+                { key: "success", label: "Success", tone: "success" },
+                { key: "failure", label: "Failed", tone: "danger" },
+                { key: "blocked", label: "Blocked", tone: "attention" },
+              ]}
+              points={series.auth_events.map((point) => ({
+                label: point.date,
+                values: { success: point.success, failure: point.failure, blocked: point.blocked },
+              }))}
+            />
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
 export function AdminUsers({ access, now }: AdminUsersProps) {
-  const users = access.status === "authorized" ? access.users : null;
+  const authorized = access.status === "authorized" ? access : null;
+  const users = authorized?.users ?? null;
+  const metrics = authorized?.metrics ?? null;
+  const filters = authorized?.filters ?? {};
+  const filtered = Boolean(filters.q || filters.status);
+  const total = users?.pagination.total;
 
   return (
     <>
@@ -46,11 +131,21 @@ export function AdminUsers({ access, now }: AdminUsersProps) {
         meta={
           users ? <Timestamp value={users.generated_at} now={now} prefix="Updated" /> : undefined
         }
+        actions={
+          authorized ? (
+            <ButtonLink href={exportHref(filters)}>
+              <Download size={14} aria-hidden="true" />
+              Export CSV
+            </ButtonLink>
+          ) : undefined
+        }
       />
 
       <div className="page-content">
         <AdminGate access={access} section="Users">
-          {access.status === "authorized" && !users && (
+          {metrics && <UsersAnalytics metrics={metrics} />}
+
+          {authorized && !users && (
             <Callout tone="danger" role="status" title="The directory couldn't be loaded">
               The account service didn&apos;t answer in time. Nothing was changed; refresh to try
               again.
@@ -62,61 +157,110 @@ export function AdminUsers({ access, now }: AdminUsersProps) {
             </Callout>
           )}
 
-          {users && (
+          {authorized && (
             <section className="section" aria-labelledby="admin-users-table-heading">
               <div className="section__header">
                 <div>
                   <p className="eyebrow">Directory</p>
                   <h2 id="admin-users-table-heading">Accounts</h2>
+                  {typeof total === "number" && (
+                    <p className="section__desc">
+                      {formatNumber(total)} {total === 1 ? "account" : "accounts"}
+                      {filtered ? " match" : ""}
+                    </p>
+                  )}
                 </div>
-                <Pagination
-                  offset={users.pagination.offset}
-                  limit={users.pagination.limit}
-                  returned={users.users.length}
-                  hasMore={users.pagination.has_more}
-                  nextOffset={users.pagination.next_offset}
-                  buildHref={(offset, limit) => buildPageHref("/admin/users", offset, limit)}
-                  noun="accounts"
-                />
-              </div>
-              <DataTable
-                columns={COLUMNS}
-                caption="Accounts"
-                isEmpty={users.users.length === 0}
-                empty={
-                  <EmptyState
-                    title="No accounts on this page."
-                    description="Try the previous page or reset the limit."
+                {users && (
+                  <Pagination
+                    offset={users.pagination.offset}
+                    limit={users.pagination.limit}
+                    returned={users.users.length}
+                    hasMore={users.pagination.has_more}
+                    nextOffset={users.pagination.next_offset}
+                    buildHref={(offset, limit) =>
+                      buildPageHref("/admin/users", offset, limit, filterQuery(filters))
+                    }
+                    noun="accounts"
                   />
-                }
-              >
-                {users.users.map(({ user, role }) => (
-                  <tr key={user.user_id}>
-                    <td>
-                      <span className="data-table__primary">{accountName(user)}</span>
-                      <span className="data-table__secondary">{user.email || "No email"}</span>
-                    </td>
-                    <td>
-                      <StatusPill value={user.is_active ? "active" : "inactive"} />
-                    </td>
-                    <td>
-                      <RoleBadge role={role.effective} />
-                    </td>
-                    <td>{formatLabel(user.subscription_tier || "free")}</td>
-                    <td>
-                      <Timestamp value={user.last_login_at} now={now} fallback="Never" />
-                    </td>
-                    <td>
-                      <Timestamp value={user.created_at} mode="date" fallback="Unknown" />
-                    </td>
-                    <td className="data-table__actions">
-                      <Link className="row-link" href={`/admin/users/${user.user_id}`}>
-                        Open
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </DataTable>
+                )}
+              </div>
+
+              <form className="filter-bar" method="get" action="/admin/users" role="search">
+                <Field id="admin-users-q" label="Search">
+                  <Input
+                    id="admin-users-q"
+                    name="q"
+                    type="search"
+                    defaultValue={filters.q ?? ""}
+                    placeholder="Email or name"
+                    maxLength={120}
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field id="admin-users-status" label="Status">
+                  <Select id="admin-users-status" name="status" defaultValue={filters.status ?? ""}>
+                    <option value="">All</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </Select>
+                </Field>
+                <div className="inline-actions">
+                  <Button type="submit" variant="primary">
+                    <Search size={14} aria-hidden="true" />
+                    Apply
+                  </Button>
+                  {filtered && (
+                    <ButtonLink href="/admin/users" variant="ghost">
+                      Clear
+                    </ButtonLink>
+                  )}
+                </div>
+              </form>
+
+              {users && (
+                <DataTable
+                  columns={COLUMNS}
+                  caption="Accounts"
+                  isEmpty={users.users.length === 0}
+                  empty={
+                    <EmptyState
+                      title={filtered ? "No accounts match." : "No accounts on this page."}
+                      description={
+                        filtered
+                          ? "Try a shorter search or clear the status filter."
+                          : "Try the previous page or reset the limit."
+                      }
+                    />
+                  }
+                >
+                  {users.users.map(({ user, role }) => (
+                    <tr key={user.user_id}>
+                      <td>
+                        <span className="data-table__primary">{accountName(user)}</span>
+                        <span className="data-table__secondary">{user.email || "No email"}</span>
+                      </td>
+                      <td>
+                        <StatusPill value={user.is_active ? "active" : "inactive"} />
+                      </td>
+                      <td>
+                        <RoleBadge role={role.effective} />
+                      </td>
+                      <td>{formatLabel(user.subscription_tier || "free")}</td>
+                      <td>
+                        <Timestamp value={user.last_login_at} now={now} fallback="Never" />
+                      </td>
+                      <td>
+                        <Timestamp value={user.created_at} mode="date" fallback="Unknown" />
+                      </td>
+                      <td className="data-table__actions">
+                        <Link className="row-link" href={`/admin/users/${user.user_id}`}>
+                          Open
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </DataTable>
+              )}
             </section>
           )}
         </AdminGate>

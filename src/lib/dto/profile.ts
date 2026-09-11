@@ -19,12 +19,12 @@ export type AccountProfileDto = {
 };
 
 const identitySchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   email: z.string().nullable().optional(),
 });
 
 const profileSchema = z.object({
-  user_id: z.string().uuid(),
+  user_id: z.guid(),
   first_name: z.string(),
   last_name: z.string(),
   phone: z.string(),

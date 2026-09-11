@@ -1,6 +1,7 @@
 import { AdminGate } from "@/components/admin/admin-gate";
 import { PageHeader } from "@/components/shell/page-header";
 import { EnvBadge, RoleBadge } from "@/components/ui/badge";
+import { BarChart } from "@/components/ui/bar-chart";
 import { ButtonLink } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card, Section } from "@/components/ui/card";
@@ -116,6 +117,36 @@ export function AdminDashboard({ access, now }: AdminDashboardProps) {
                   }
                 />
               </StatGrid>
+              {metrics.series && metrics.series.signups.length > 0 && (
+                <div className="chart-grid">
+                  <BarChart
+                    title="New accounts"
+                    description={`per day, last ${metrics.series.days} days`}
+                    segments={[{ key: "count", label: "Accounts" }]}
+                    points={metrics.series.signups.map((point) => ({
+                      label: point.date,
+                      values: { count: point.count },
+                    }))}
+                  />
+                  <BarChart
+                    title="Authentication events"
+                    description={`per day, last ${metrics.series.days} days`}
+                    segments={[
+                      { key: "success", label: "Success", tone: "success" },
+                      { key: "failure", label: "Failed", tone: "danger" },
+                      { key: "blocked", label: "Blocked", tone: "attention" },
+                    ]}
+                    points={metrics.series.auth_events.map((point) => ({
+                      label: point.date,
+                      values: {
+                        success: point.success,
+                        failure: point.failure,
+                        blocked: point.blocked,
+                      },
+                    }))}
+                  />
+                </div>
+              )}
             </>
           )}
 

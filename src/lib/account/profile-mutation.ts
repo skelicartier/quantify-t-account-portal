@@ -4,7 +4,7 @@ export const PROFILE_UPDATE_RPC = "update_my_app_profile_v2";
 
 const mutationResultSchema = z
   .object({
-    user_id: z.string().uuid(),
+    user_id: z.guid(),
     profile_version: z.number().int().positive(),
     updated_at: z.string().datetime({ offset: true }),
   })

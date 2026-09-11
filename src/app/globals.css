@@ -1970,6 +1970,151 @@
     gap: 12px;
   }
 
+  /* charts */
+  .chart {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    margin: 0;
+    padding: 16px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  .chart__caption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+  }
+
+  .chart__title {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .chart__desc {
+    color: var(--quiet);
+    font-size: 12px;
+  }
+
+  .chart__total {
+    margin-left: auto;
+    color: var(--text);
+    font-family: var(--font-heading);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .chart__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    color: var(--quiet);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .chart__legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .chart__legend-item::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    background: var(--muted);
+  }
+
+  .chart__legend-item--success::before {
+    background: var(--success);
+  }
+
+  .chart__legend-item--danger::before {
+    background: var(--danger);
+  }
+
+  .chart__legend-item--attention::before {
+    background: var(--attention);
+  }
+
+  .chart__svg {
+    display: block;
+    width: 100%;
+    height: 120px;
+    overflow: visible;
+  }
+
+  .chart__baseline {
+    stroke: var(--line-strong);
+    stroke-width: 1;
+  }
+
+  .chart__bar {
+    fill: var(--muted);
+  }
+
+  .chart__bar--success {
+    fill: var(--success);
+  }
+
+  .chart__bar--danger {
+    fill: var(--danger);
+  }
+
+  .chart__bar--attention {
+    fill: var(--attention);
+  }
+
+  .chart__bar--empty {
+    fill: var(--line);
+  }
+
+  .chart__axis {
+    fill: var(--quiet);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.04em;
+  }
+
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .chart-grid--3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .filter-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 10px;
+    align-items: end;
+    margin-bottom: 14px;
+  }
+
+  @media (max-width: 980px) {
+    .chart-grid--3 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 720px) {
+    .chart-grid,
+    .chart-grid--3,
+    .filter-bar {
+      grid-template-columns: 1fr;
+    }
+  }
+
   /* qr + misc — the QR stays dark-on-white so scanners read it. */
   .qr-frame {
     width: 100%;

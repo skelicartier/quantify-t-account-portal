@@ -128,7 +128,7 @@ export const accountApiMeSchema = z
     correlation_id: correlationSchema,
     user: z
       .object({
-        user_id: z.string().uuid(),
+        user_id: z.guid(),
         email: z.string().email().max(254),
         is_active: z.boolean(),
       })
@@ -153,7 +153,7 @@ const profileVersionSchema = z.number().int().nonnegative();
 
 const accountProfileSchema = z
   .object({
-    user_id: z.string().uuid(),
+    user_id: z.guid(),
     first_name: z.string().max(80),
     last_name: z.string().max(80),
     email: z.string().max(254),
@@ -179,7 +179,7 @@ const accountProfileSchema = z
 
 const accountProfileMutationReceiptSchema = z
   .object({
-    user_id: z.string().uuid(),
+    user_id: z.guid(),
     profile_version: profileVersionSchema,
     updated_at: z.string().max(64),
   })
@@ -203,7 +203,7 @@ export const accountApiProfileUpdateSchema = z
 
 const roleReportEntrySchema = z
   .object({
-    user_id: z.string().uuid(),
+    user_id: z.guid(),
     effective_role: roleSchema,
     database_role: nullableRoleSchema,
     legacy_role: nullableRoleSchema,
@@ -234,6 +234,31 @@ const metricCounterSchema = z
   .record(z.string().min(1).max(64), z.number().int().nonnegative())
   .refine((value) => Object.keys(value).length <= 64);
 
+const metricDaySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
+
+const metricCountPointSchema = z
+  .object({ date: metricDaySchema, count: z.number().int().nonnegative() })
+  .strict();
+
+const metricOutcomePointSchema = z
+  .object({
+    date: metricDaySchema,
+    success: z.number().int().nonnegative(),
+    failure: z.number().int().nonnegative(),
+    blocked: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/** Daily aggregates for the trailing window; nothing per-account is carried. */
+const metricSeriesSchema = z
+  .object({
+    days: z.number().int().nonnegative().max(366),
+    signups: z.array(metricCountPointSchema).max(366),
+    sign_ins: z.array(metricCountPointSchema).max(366),
+    auth_events: z.array(metricOutcomePointSchema).max(366),
+  })
+  .strict();
+
 const adminUserRoleSchema = z
   .object({
     effective: roleSchema,
@@ -248,7 +273,7 @@ const adminUserSummarySchema = z
   .object({
     user: z
       .object({
-        user_id: z.string().uuid(),
+        user_id: z.guid(),
         email: z.string().max(254),
         first_name: z.string().max(80),
         last_name: z.string().max(80),
@@ -266,8 +291,8 @@ const adminUserSummarySchema = z
 
 const adminSessionSchema = z
   .object({
-    id: z.string().uuid(),
-    user_id: z.string().uuid(),
+    id: z.guid(),
+    user_id: z.guid(),
     source: z.string().min(1).max(32),
     provider: z.string().min(1).max(32),
     client_instance_id: z.string().max(256).nullable(),
@@ -282,9 +307,9 @@ const adminSessionSchema = z
 
 const adminActivitySchema = z
   .object({
-    id: z.string().uuid(),
-    user_id: z.string().uuid().nullable(),
-    session_id: z.string().uuid().nullable(),
+    id: z.guid(),
+    user_id: z.guid().nullable(),
+    session_id: z.guid().nullable(),
     event_type: z.string().min(1).max(96),
     outcome: z.enum(["success", "failure", "blocked", "unknown"]),
     source: z.string().min(1).max(32),
@@ -295,7 +320,7 @@ const adminActivitySchema = z
 
 const accountActivitySchema = adminActivitySchema
   .extend({
-    user_id: z.string().uuid(),
+    user_id: z.guid(),
   })
   .strict();
 
@@ -333,8 +358,12 @@ export const accountApiAdminMetricsSchema = z
         inactive: z.number().int().nonnegative(),
         created_24h: z.number().int().nonnegative(),
         logged_in_24h: z.number().int().nonnegative(),
+        created_7d: z.number().int().nonnegative().optional(),
+        created_30d: z.number().int().nonnegative().optional(),
+        logged_in_7d: z.number().int().nonnegative().optional(),
       })
       .strict(),
+    series: metricSeriesSchema.optional(),
     sessions: z
       .object({
         total: z.number().int().nonnegative(),
@@ -463,6 +492,7 @@ export const accountApiAdminUsersSchema = z
         offset: z.number().int().nonnegative().max(100000),
         has_more: z.boolean(),
         next_offset: z.number().int().nonnegative().max(100100).nullable(),
+        total: z.number().int().nonnegative().optional(),
       })
       .strict(),
     users: z.array(adminUserSummarySchema).max(100),
@@ -514,9 +544,9 @@ export const accountApiAdminUserSessionRevokeSchema = z
 const adminAuditEventSchema = z
   .object({
     id: z.string().max(64),
-    subject_user_id: z.string().uuid().nullable(),
-    actor_user_id: z.string().uuid().nullable(),
-    session_id: z.string().uuid().nullable(),
+    subject_user_id: z.guid().nullable(),
+    actor_user_id: z.guid().nullable(),
+    session_id: z.guid().nullable(),
     event_type: z.string().min(1).max(96),
     outcome: z.enum(["success", "failure", "blocked", "unknown"]),
     source: z.string().min(1).max(32),
@@ -562,7 +592,7 @@ const adminReportDownloadSchema = z
 
 const adminReportJobSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     report_type: z.literal("audit-events"),
     format: z.literal("csv"),
     filters: z.record(z.string().min(1).max(32), z.string().max(160)),
@@ -649,7 +679,7 @@ const accountExportDownloadSchema = z
 
 const accountExportJobSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     format: z.literal("json"),
     status: z.enum(["queued", "retry", "ready", "failed", "expired"]),
     requested_at: z.string().max(64),
@@ -667,7 +697,7 @@ const accountExportJobSchema = z
 
 const accountDeletionRequestSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     status: z.enum(["pending", "cancelled", "processing", "completed", "failed", "blocked"]),
     requested_at: z.string().max(64),
     scheduled_delete_at: z.string().max(64),
@@ -799,7 +829,7 @@ const notificationSchema = z
 const notificationTargetSchema = z
   .object({
     mode: z.enum(["all", "active", "selected"]),
-    user_ids: z.array(z.string().uuid()).max(5000),
+    user_ids: z.array(z.guid()).max(5000),
     emails: z.array(z.string().email().max(254)).max(5000),
   })
   .strict();
@@ -848,7 +878,7 @@ export const accountApiAdminNotificationsUpdateSchema = z
 
 const notificationEmailJobSchema = z
   .object({
-    id: z.string().uuid(),
+    id: z.guid(),
     subject: z.string().max(140),
     body: z.string().max(4000),
     target: notificationTargetSchema,
@@ -991,10 +1021,20 @@ type AccountApiFetchOptions = {
   query?: Readonly<Record<string, string>>;
 };
 
-type AccountApiAdminUsersOptions = AccountApiFetchOptions & {
-  limit?: number;
-  offset?: number;
+export const ADMIN_USER_STATUS_FILTERS = ["active", "inactive"] as const;
+export type AdminUserStatusFilter = (typeof ADMIN_USER_STATUS_FILTERS)[number];
+
+export type AccountApiAdminUserFilters = {
+  /** Case-insensitive substring match on email, first name or last name. */
+  q?: string | undefined;
+  status?: AdminUserStatusFilter | undefined;
 };
+
+type AccountApiAdminUsersOptions = AccountApiFetchOptions &
+  AccountApiAdminUserFilters & {
+    limit?: number;
+    offset?: number;
+  };
 
 export type AccountApiAdminAuditFilters = {
   actor_user_id?: string;
@@ -1315,12 +1355,15 @@ export async function fetchAccountApiAdminUsers(
   accessToken: string,
   options: AccountApiAdminUsersOptions = {},
 ): Promise<AccountApiAdminUsers> {
-  const { limit = 50, offset = 0, ...fetchOptions } = options;
-  const query = {
+  const { limit = 50, offset = 0, q, status, ...fetchOptions } = options;
+  const query: Record<string, string> = {
     ...(fetchOptions.query ?? {}),
     limit: String(limit),
     offset: String(offset),
   };
+  const text = (q ?? "").trim();
+  if (text) query.q = text.slice(0, 120);
+  if (status) query.status = status;
   const payload = await fetchAccountApiJson("admin/users", accessToken, {
     ...fetchOptions,
     query,
@@ -1333,7 +1376,7 @@ export async function fetchAccountApiAdminUser(
   userId: string,
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAdminUserDetail> {
-  const parsedUserId = z.string().uuid().safeParse(userId.trim().toLowerCase());
+  const parsedUserId = z.guid().safeParse(userId.trim().toLowerCase());
   if (!parsedUserId.success) throw new AccountApiUnavailableError();
   const payload = await fetchAccountApiJson(
     `admin/users/${encodeURIComponent(parsedUserId.data)}`,
@@ -1413,7 +1456,7 @@ export async function fetchAccountApiAdminReportDownload(
   reportId: string,
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAdminReportDownload> {
-  const parsedReportId = z.string().uuid().safeParse(reportId.trim().toLowerCase());
+  const parsedReportId = z.guid().safeParse(reportId.trim().toLowerCase());
   if (!parsedReportId.success) throw new AccountApiUnavailableError();
   const payload = await fetchAccountApiJson(
     `admin/reports/${encodeURIComponent(parsedReportId.data)}/download`,
@@ -1471,7 +1514,7 @@ export async function fetchAccountApiAccountExportDownload(
   exportId: string,
   options: AccountApiFetchOptions = {},
 ): Promise<AccountApiAccountExportDownload> {
-  const parsedExportId = z.string().uuid().safeParse(exportId.trim().toLowerCase());
+  const parsedExportId = z.guid().safeParse(exportId.trim().toLowerCase());
   if (!parsedExportId.success) throw new AccountApiUnavailableError();
   const payload = await fetchAccountApiJson(
     `account/exports/${encodeURIComponent(parsedExportId.data)}/download`,
@@ -1515,7 +1558,7 @@ export async function cancelAccountApiAccountDeletion(
   body: AccountApiAccountDeletionCancelBody,
   options: AccountApiFetchOptions & { idempotencyKey: string },
 ): Promise<AccountApiAccountDeletionResult> {
-  const parsedRequestId = z.string().uuid().safeParse(body.request_id.trim().toLowerCase());
+  const parsedRequestId = z.guid().safeParse(body.request_id.trim().toLowerCase());
   if (!parsedRequestId.success) throw new AccountApiUnavailableError();
   const payload = await postAccountApiJson(
     "account/deletion/cancel",
@@ -1543,7 +1586,7 @@ export async function setAccountApiAdminUserActive(
   isActive: boolean,
   options: AccountApiFetchOptions & { idempotencyKey: string },
 ): Promise<AccountApiAdminUserActivation> {
-  const parsedUserId = z.string().uuid().safeParse(userId.trim().toLowerCase());
+  const parsedUserId = z.guid().safeParse(userId.trim().toLowerCase());
   if (!parsedUserId.success) throw new AccountApiUnavailableError();
   const payload = await postAccountApiJson(
     `admin/users/${encodeURIComponent(parsedUserId.data)}/activation`,
@@ -1569,7 +1612,7 @@ export async function setAccountApiAdminUserRole(
   role: AssignableRole,
   options: AccountApiFetchOptions & { idempotencyKey: string },
 ): Promise<AccountApiAdminUserActivation> {
-  const parsedUserId = z.string().uuid().safeParse(userId.trim().toLowerCase());
+  const parsedUserId = z.guid().safeParse(userId.trim().toLowerCase());
   const parsedRole = z.enum(ASSIGNABLE_ROLES).safeParse(role);
   if (!parsedUserId.success || !parsedRole.success) throw new AccountApiUnavailableError();
   const route = `admin/users/${encodeURIComponent(parsedUserId.data)}/role`;
@@ -1583,8 +1626,8 @@ export async function revokeAccountApiAdminUserSession(
   sessionId: string,
   options: AccountApiFetchOptions & { idempotencyKey: string; reason?: string },
 ): Promise<AccountApiAdminUserSessionRevoke> {
-  const parsedUserId = z.string().uuid().safeParse(userId.trim().toLowerCase());
-  const parsedSessionId = z.string().uuid().safeParse(sessionId.trim().toLowerCase());
+  const parsedUserId = z.guid().safeParse(userId.trim().toLowerCase());
+  const parsedSessionId = z.guid().safeParse(sessionId.trim().toLowerCase());
   if (!parsedUserId.success || !parsedSessionId.success) throw new AccountApiUnavailableError();
   const { reason = "admin-revoked", ...fetchOptions } = options;
   const payload = await postAccountApiJson(

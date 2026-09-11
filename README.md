@@ -71,6 +71,8 @@ npm run check:console-ui                           # screenshots → test-result
 
 The console shares quantifyterminal.com's palette: the signed-in shell defaults to the dark theme and offers a per-device dark/light switch in the sidebar (stored in the `qt-console-theme` cookie by the `setConsoleTheme` Server Action). The sign-in, sign-up and recovery pages are always dark. Space Grotesk (headings) and JetBrains Mono (identifiers, timestamps, micro labels) are shipped with the app from `src/app/fonts/` under the SIL Open Font License, so no request ever leaves for a font CDN and the `font-src 'self'` policy holds. The favicon is the marketing site's.
 
+`/admin/users` opens with account KPIs and 30-day daily charts (signups, sign-ins, authentication outcomes) from `admin/metrics`, supports `?q=` (email or name) and `?status=active|inactive` filters that the API applies server-side, and offers a CSV export at `/admin/users/export` (same gates as the page, formula-safe cells, up to 5,000 rows).
+
 Owners (`roles:write`) change another account's role from `/admin/users/[userId]`; the Account API refuses self-changes, demoting the last active Owner, and changing an account pinned by the break-glass configuration.
 
 ## Deployment
