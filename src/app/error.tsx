@@ -1,5 +1,6 @@
 "use client";
 
+import { AuthLegal } from "@/components/auth/auth-shell";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 
@@ -21,7 +22,7 @@ export default function RootError({
   reset: () => void;
 }) {
   return (
-    <main className="auth" id="main-content">
+    <main className="auth auth--console" id="main-content">
       <section className="auth__panel" aria-labelledby="root-error-heading">
         <div className="auth__header">
           <h1 className="auth__title" id="root-error-heading">
@@ -43,8 +44,9 @@ export default function RootError({
             Go to sign in
           </ButtonLink>
         </div>
-        {error.digest && <p className="auth__legal">Reference {error.digest}</p>}
+        {error.digest && <p className="auth__note quiet">Reference {error.digest}</p>}
       </section>
+      <AuthLegal />
     </main>
   );
 }

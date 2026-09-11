@@ -29,6 +29,8 @@ vi.mock("@/lib/admin/access", () => ({
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/account",
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
 }));
 
 const account = {

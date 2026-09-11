@@ -34,7 +34,12 @@ describe("signup Server Action", () => {
 
     const result = await signup(INITIAL_SIGNUP_STATE, signupFormData());
 
-    expect(signUp).toHaveBeenCalledWith("new.user@example.com", "twelve-character-password", "", "");
+    expect(signUp).toHaveBeenCalledWith(
+      "new.user@example.com",
+      "twelve-character-password",
+      "",
+      "",
+    );
     expect(result.status).toBe("accepted");
     expect(JSON.stringify(result)).not.toContain("twelve-character-password");
     expect(JSON.stringify(result)).not.toContain("turnstile-response");

@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
 
+import { readConsoleTheme } from "@/lib/dal/theme";
+
 import "./globals.css";
 
 // Both faces ship with the app (variable WOFF2, SIL OFL — see src/app/fonts), so the
@@ -42,9 +44,16 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  // The signed-in console's theme; the sign-in pages ignore it, the error and not-found
+  // pages follow it so a light console never drops someone onto a black screen.
+  const theme = await readConsoleTheme();
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${jetbrainsMono.variable}`}>
+    <html
+      lang="en"
+      className={`${spaceGrotesk.variable} ${jetbrainsMono.variable}`}
+      data-theme={theme}
+    >
       <body>
         <a className="skip-link" href="#main-content">
           Skip to main content

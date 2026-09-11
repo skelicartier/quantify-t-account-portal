@@ -130,6 +130,16 @@ async function main() {
       console.log("  ✓ mobile menu open");
     }
     if (viewport.name === "desktop") {
+      // Live search: type, wait for the result set to change in place, capture.
+      await page.goto(`${BASE}/admin/users`, { waitUntil: "networkidle" });
+      await page.getByRole("searchbox", { name: "Search" }).fill("priya");
+      await page.waitForURL(/q=priya/u, { timeout: 15_000 });
+      await page.getByRole("table", { name: "Accounts" }).getByText("Priya Natarajan").waitFor();
+      await page.screenshot({ path: join(OUT, "admin-users-search-desktop.png"), fullPage: true });
+      const result = await check(page, "/admin/users?q=priya @desktop");
+      problems += result.serious + (result.overflow > 1 ? 1 : 0);
+      console.log("  ✓ /admin/users live search");
+
       // The light console is a per-device choice; the sign-in pages stay dark regardless.
       await page.goto(`${BASE}/account`, { waitUntil: "networkidle" });
       await switchTheme(page, "Light");

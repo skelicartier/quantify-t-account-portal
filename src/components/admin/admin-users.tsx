@@ -1,15 +1,15 @@
-import { Download, Search } from "lucide-react";
+import { Download } from "lucide-react";
 import Link from "next/link";
 
 import { AdminGate } from "@/components/admin/admin-gate";
+import { UsersDirectory } from "@/components/admin/users-directory";
 import { PageHeader } from "@/components/shell/page-header";
 import { RoleBadge } from "@/components/ui/badge";
 import { BarChart } from "@/components/ui/bar-chart";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Field, Input, Select } from "@/components/ui/field";
 import { Pagination } from "@/components/ui/pagination";
 import { Stat, StatGrid } from "@/components/ui/stat";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -36,10 +36,6 @@ const COLUMNS = [
 
 function accountName(user: { display_name: string; email: string }): string {
   return user.display_name || user.email || "Unnamed account";
-}
-
-function filterQuery(filters: AccountApiAdminUserFilters): Record<string, string | undefined> {
-  return { q: filters.q, status: filters.status };
 }
 
 function exportHref(filters: AccountApiAdminUserFilters): string {
@@ -120,6 +116,7 @@ export function AdminUsers({ access, now }: AdminUsersProps) {
   const filters = authorized?.filters ?? {};
   const filtered = Boolean(filters.q || filters.status);
   const total = users?.pagination.total;
+  const limit = authorized?.limit ?? 50;
 
   return (
     <>
@@ -177,92 +174,65 @@ export function AdminUsers({ access, now }: AdminUsersProps) {
                     returned={users.users.length}
                     hasMore={users.pagination.has_more}
                     nextOffset={users.pagination.next_offset}
-                    buildHref={(offset, limit) =>
-                      buildPageHref("/admin/users", offset, limit, filterQuery(filters))
+                    buildHref={(offset, pageLimit) =>
+                      buildPageHref("/admin/users", offset, pageLimit, {
+                        q: filters.q,
+                        status: filters.status,
+                      })
                     }
                     noun="accounts"
                   />
                 )}
               </div>
 
-              <form className="filter-bar" method="get" action="/admin/users" role="search">
-                <Field id="admin-users-q" label="Search">
-                  <Input
-                    id="admin-users-q"
-                    name="q"
-                    type="search"
-                    defaultValue={filters.q ?? ""}
-                    placeholder="Email, name or account ID"
-                    maxLength={120}
-                    autoComplete="off"
-                  />
-                </Field>
-                <Field id="admin-users-status" label="Status">
-                  <Select id="admin-users-status" name="status" defaultValue={filters.status ?? ""}>
-                    <option value="">All</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </Select>
-                </Field>
-                <div className="inline-actions">
-                  <Button type="submit" variant="primary">
-                    <Search size={14} aria-hidden="true" />
-                    Apply
-                  </Button>
-                  {filtered && (
-                    <ButtonLink href="/admin/users" variant="ghost">
-                      Clear
-                    </ButtonLink>
-                  )}
-                </div>
-              </form>
-
-              {users && (
-                <DataTable
-                  columns={COLUMNS}
-                  caption="Accounts"
-                  isEmpty={users.users.length === 0}
-                  empty={
-                    <EmptyState
-                      title={filtered ? "No accounts match." : "No accounts on this page."}
-                      description={
-                        filtered
-                          ? "Try a shorter search or clear the status filter."
-                          : "Try the previous page or reset the limit."
-                      }
-                    />
-                  }
-                >
-                  {users.users.map(({ user, role }) => (
-                    <tr key={user.user_id}>
-                      <td>
-                        <span className="data-table__primary">{accountName(user)}</span>
-                        <span className="data-table__secondary">
-                          {user.display_name ? user.email || "No email" : "No name on file"}
-                        </span>
-                      </td>
-                      <td>
-                        <StatusPill value={user.is_active ? "active" : "inactive"} />
-                      </td>
-                      <td>
-                        <RoleBadge role={role.effective} />
-                      </td>
-                      <td>{formatLabel(user.subscription_tier || "free")}</td>
-                      <td>
-                        <Timestamp value={user.last_login_at} now={now} fallback="Never" />
-                      </td>
-                      <td>
-                        <Timestamp value={user.created_at} mode="date" fallback="Unknown" />
-                      </td>
-                      <td className="data-table__actions">
-                        <Link className="row-link" href={`/admin/users/${user.user_id}`}>
-                          Open
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </DataTable>
-              )}
+              <UsersDirectory filters={filters} limit={limit}>
+                {users && (
+                  <DataTable
+                    columns={COLUMNS}
+                    caption="Accounts"
+                    isEmpty={users.users.length === 0}
+                    empty={
+                      <EmptyState
+                        title={filtered ? "No accounts match." : "No accounts on this page."}
+                        description={
+                          filtered
+                            ? "Try a shorter search or clear the status filter."
+                            : "Try the previous page or reset the limit."
+                        }
+                      />
+                    }
+                  >
+                    {users.users.map(({ user, role }) => (
+                      <tr key={user.user_id}>
+                        <td>
+                          <span className="data-table__primary">{accountName(user)}</span>
+                          <span className="data-table__secondary">
+                            {user.display_name ? user.email || "No email" : "No name on file"}
+                          </span>
+                        </td>
+                        <td>
+                          <StatusPill value={user.is_active ? "active" : "inactive"} />
+                        </td>
+                        <td>
+                          <RoleBadge role={role.effective} />
+                        </td>
+                        <td>{formatLabel(user.subscription_tier || "free")}</td>
+                        <td>
+                          <Timestamp value={user.last_login_at} now={now} fallback="Never" />
+                        </td>
+                        <td>
+                          <Timestamp value={user.created_at} mode="date" fallback="Unknown" />
+                        </td>
+                        <td className="data-table__actions">
+                          <Link className="row-link" href={`/admin/users/${user.user_id}`}>
+                            Open
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </DataTable>
+                )}
+              </UsersDirectory>
             </section>
           )}
         </AdminGate>

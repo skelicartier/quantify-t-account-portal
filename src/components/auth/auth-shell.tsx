@@ -29,19 +29,26 @@ export function AuthShell({ title, description, children }: AuthShellProps) {
         </div>
         {children}
       </section>
-      <p className="auth__legal">
-        <a href={MARKETING_SITE} rel="noreferrer">
-          quantifyterminal.com
-        </a>
-        <span aria-hidden="true">·</span>
-        <a href={`${MARKETING_SITE}/privacy`} rel="noreferrer">
-          Privacy
-        </a>
-        <span aria-hidden="true">·</span>
-        <a href={`${MARKETING_SITE}/terms`} rel="noreferrer">
-          Terms
-        </a>
-      </p>
+      <AuthLegal />
     </main>
+  );
+}
+
+/** The single legal line at the foot of every page that sits outside the console shell. */
+export function AuthLegal() {
+  return (
+    <p className="auth__legal">
+      <a href={MARKETING_SITE} rel="noreferrer">
+        quantifyterminal.com
+      </a>
+      <span aria-hidden="true">·</span>
+      <a href={`${MARKETING_SITE}/privacy`} rel="noreferrer">
+        Privacy
+      </a>
+      <span aria-hidden="true">·</span>
+      <a href={`${MARKETING_SITE}/terms`} rel="noreferrer">
+        Terms
+      </a>
+    </p>
   );
 }

@@ -6,6 +6,8 @@ const navigation = vi.hoisted(() => ({ pathname: "/account" }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
 }));
 
 const LINKS = [

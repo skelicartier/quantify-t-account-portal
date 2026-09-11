@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { AuthLegal } from "@/components/auth/auth-shell";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { ButtonLink } from "@/components/ui/button";
 
@@ -7,7 +8,7 @@ export const metadata: Metadata = { title: "Page not found" };
 
 export default function NotFound() {
   return (
-    <main className="auth" id="main-content">
+    <main className="auth auth--console" id="main-content">
       <section className="auth__panel" aria-labelledby="not-found-heading">
         <div className="auth__brand">
           <BrandMark />
@@ -30,6 +31,7 @@ export default function NotFound() {
           </ButtonLink>
         </div>
       </section>
+      <AuthLegal />
     </main>
   );
 }

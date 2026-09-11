@@ -1,5 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
 
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/admin/users",
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+}));
+
 import { AdminUsers } from "@/components/admin/admin-users";
 import type {
   AccountApiAdminMetrics,
@@ -215,7 +221,7 @@ describe("AdminUsers", () => {
       "href",
       "/admin/users?offset=25&limit=25&q=owner&status=active",
     );
-    expect(screen.getByRole("link", { name: "Clear" })).toHaveAttribute("href", "/admin/users");
+    expect(screen.getByRole("button", { name: "Clear" })).toBeEnabled();
     expect(screen.getByRole("link", { name: "Export CSV" })).toHaveAttribute(
       "href",
       "/admin/users/export?q=owner&status=active",

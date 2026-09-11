@@ -1,7 +1,9 @@
 "use client";
 
-import { createContext, startTransition, useContext, useOptimistic } from "react";
+import { Suspense, createContext, startTransition, useContext, useOptimistic } from "react";
 import type { ReactNode } from "react";
+
+import { RouteProgress } from "@/components/shell/route-progress";
 
 import type { ShellSection } from "@/components/shell/shell-types";
 import { DEFAULT_CONSOLE_THEME } from "@/lib/theme";
@@ -45,6 +47,9 @@ export function ThemeScope({ section, theme, action, children }: ThemeScopeProps
   return (
     <ThemeContext.Provider value={{ theme: optimisticTheme, setTheme }}>
       <div className="shell" data-section={section} data-theme={optimisticTheme}>
+        <Suspense fallback={null}>
+          <RouteProgress />
+        </Suspense>
         {children}
       </div>
     </ThemeContext.Provider>
