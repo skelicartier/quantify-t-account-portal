@@ -57,9 +57,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <AuthShell
-      eyebrow="Secure account access"
       title="Sign in to Quantify Terminal"
-      description="Use the same verified account that connects your desktop terminal."
+      description="Use the account that connects your desktop terminal."
     >
       {notice && (
         <div className="auth-form">
@@ -76,7 +75,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         turnstileSiteKey={turnstileSiteKey}
       />
 
-      <p className="auth-card__footer">
+      <p className="auth__switch">
         Need a Quantify Terminal account? <Link href="/signup">Create an account</Link>
       </p>
     </AuthShell>

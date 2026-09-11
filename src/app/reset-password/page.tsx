@@ -19,13 +19,12 @@ export default async function ResetPasswordPage({
 
   return (
     <AuthShell
-      eyebrow="Verified recovery"
       title="Choose a new password"
-      description="Your recovery link must still be valid before the password can be changed."
+      description="Your recovery link must still be valid to change the password."
     >
       <ResetPasswordForm action={resetPassword} token={token} />
 
-      <p className="auth-card__footer">
+      <p className="auth__switch">
         Link expired? <Link href="/forgot-password">Request another recovery email</Link>
       </p>
     </AuthShell>

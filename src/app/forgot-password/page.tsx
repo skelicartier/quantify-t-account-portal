@@ -15,13 +15,12 @@ export default function ForgotPasswordPage() {
 
   return (
     <AuthShell
-      eyebrow="Account recovery"
       title="Reset your password"
       description="We'll email a one-time recovery link to your verified address."
     >
       <RecoveryRequestForm action={requestPasswordRecovery} turnstileSiteKey={turnstileSiteKey} />
 
-      <p className="auth-card__footer">
+      <p className="auth__switch">
         Remember your password? <Link href="/login">Return to sign in</Link>
       </p>
     </AuthShell>

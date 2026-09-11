@@ -60,7 +60,7 @@ function LoginChallengeForm({
       </form>
 
       {state.message && (
-        <Callout tone="danger" role="alert" compact className="auth-card__hint">
+        <Callout tone="danger" role="alert" compact className="auth__note">
           {state.message}
         </Callout>
       )}
@@ -127,15 +127,10 @@ export function LoginForm({ action, challengeAction, nextPath, turnstileSiteKey 
       </form>
 
       {state.message && (
-        <Callout tone="danger" role="alert" compact className="auth-card__hint">
+        <Callout tone="danger" role="alert" compact className="auth__note">
           {state.message}
         </Callout>
       )}
-
-      <p className="auth-card__hint">
-        Sign-in uses a server-managed session. Your password and session tokens are never returned
-        to the browser page.
-      </p>
     </>
   );
 }

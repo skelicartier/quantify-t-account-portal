@@ -15,13 +15,12 @@ export default function SignupPage() {
 
   return (
     <AuthShell
-      eyebrow="New account"
       title="Create your account"
-      description="One verified Quantify account for this console and your desktop terminal."
+      description="One account for this console and your desktop terminal."
     >
       <SignupForm action={signup} turnstileSiteKey={turnstileSiteKey} />
 
-      <p className="auth-card__footer">
+      <p className="auth__switch">
         Already have an account? <Link href="/login">Sign in</Link>
       </p>
     </AuthShell>

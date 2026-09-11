@@ -123,7 +123,7 @@ export function SignupForm({ action, turnstileSiteKey }: SignupFormProps) {
       </form>
 
       {state.message && (
-        <Callout tone="danger" role="alert" compact className="auth-card__hint">
+        <Callout tone="danger" role="alert" compact className="auth__note">
           {state.message}
         </Callout>
       )}

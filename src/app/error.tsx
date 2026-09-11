@@ -22,32 +22,29 @@ export default function RootError({
 }) {
   return (
     <main className="auth" id="main-content">
-      <div className="auth__main">
-        <div className="auth__stack">
-          <section className="auth-card" aria-labelledby="root-error-heading">
-            <p className="eyebrow">Quantify Terminal</p>
-            <h1 className="auth-card__title" id="root-error-heading">
-              This secure view could not load
-            </h1>
-            <p className="auth-card__desc">
-              The account service did not finish the request, so no changes were applied. Your
-              current session remains protected.
-            </p>
-            <div className="auth-form">
-              <Callout tone="danger" compact>
-                Refresh to try again. If the problem continues, sign in again from the login page.
-              </Callout>
-              <Button variant="primary" block onClick={() => reset()}>
-                Refresh
-              </Button>
-              <ButtonLink href="/login" block>
-                Go to sign in
-              </ButtonLink>
-            </div>
-            {error.digest && <p className="auth-card__hint">Reference {error.digest}</p>}
-          </section>
+      <section className="auth__panel" aria-labelledby="root-error-heading">
+        <div className="auth__header">
+          <h1 className="auth__title" id="root-error-heading">
+            This secure view could not load
+          </h1>
+          <p className="auth__desc">
+            The account service did not finish the request, so no changes were applied. Your current
+            session remains protected.
+          </p>
         </div>
-      </div>
+        <div className="auth-form">
+          <Callout tone="danger" compact className="auth__note">
+            Refresh to try again. If the problem continues, sign in again from the login page.
+          </Callout>
+          <Button variant="primary" block onClick={() => reset()}>
+            Refresh
+          </Button>
+          <ButtonLink href="/login" block>
+            Go to sign in
+          </ButtonLink>
+        </div>
+        {error.digest && <p className="auth__legal">Reference {error.digest}</p>}
+      </section>
     </main>
   );
 }
