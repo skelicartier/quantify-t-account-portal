@@ -344,16 +344,23 @@
   .brand__mark {
     display: grid;
     place-items: center;
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     flex: 0 0 auto;
-    color: var(--text);
-    background: var(--panel-raised);
-    border: 1px solid var(--line-strong);
-    font-family: var(--font-heading);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
+  }
+
+  .brand__mark-img {
+    width: 32px;
+    height: 32px;
+  }
+
+  .brand__mark-img--light,
+  .shell[data-theme="light"] .brand__mark-img--dark {
+    display: none;
+  }
+
+  .shell[data-theme="light"] .brand__mark-img--light {
+    display: block;
   }
 
   .brand__name {
