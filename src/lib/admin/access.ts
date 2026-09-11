@@ -444,6 +444,32 @@ export type AdminUsersExportAccess =
   | { status: "forbidden"; me: AccountApiMe }
   | { status: "unauthenticated" };
 
+export type AdminRecipientSearchAccess = AdminUsersExportAccess;
+
+/**
+ * The recipient picker behind the notification and email composers. It reads the
+ * directory, so it needs the same administration and second-factor gates as the
+ * directory page, plus the notifications capability the composers themselves require —
+ * an administrator who cannot queue email has no reason to search for recipients.
+ */
+export async function getAdminRecipientSearchAccess(): Promise<AdminRecipientSearchAccess> {
+  let identity: Awaited<ReturnType<typeof currentAccountApiIdentity>>;
+  try {
+    identity = await currentAccountApiIdentity("/admin/email");
+  } catch {
+    return { status: "unauthenticated" };
+  }
+  const { accessToken, me } = identity;
+  if (!hasAdminPortalAccess(me) || !canManageNotifications(me)) {
+    return { status: "forbidden", me };
+  }
+  const assurance = await getCurrentAssurance();
+  if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    return { status: "mfa-required", me };
+  }
+  return { status: "authorized", me, accessToken };
+}
+
 /**
  * The CSV download applies the directory's gates but must not redirect the way pages do
  * — a route handler answers with a status the browser can act on instead.

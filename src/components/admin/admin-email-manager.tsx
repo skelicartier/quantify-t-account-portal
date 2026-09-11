@@ -3,6 +3,7 @@
 import { Send } from "lucide-react";
 import { useActionState, useState } from "react";
 
+import { RecipientPicker, type RecipientAccount } from "@/components/admin/recipient-picker";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Section } from "@/components/ui/card";
@@ -88,7 +89,7 @@ function JobDetail({
 
 export function AdminEmailManager({ queue, action, now }: Props) {
   const [email, setEmail] = useState(blank);
-  const [userIds, setUserIds] = useState("");
+  const [accounts, setAccounts] = useState<RecipientAccount[]>([]);
   const [emails, setEmails] = useState("");
   const [state, formAction, pending] = useActionState(action, INITIAL_NOTIFICATION_EMAIL_STATE);
   const selectors = (value: string) => [...new Set(value.split(/[\s,;]+/u).filter(Boolean))];
@@ -98,7 +99,7 @@ export function AdminEmailManager({ queue, action, now }: Props) {
     ...email,
     target: {
       mode: email.target.mode,
-      user_ids: email.target.mode === "selected" ? selectors(userIds) : [],
+      user_ids: email.target.mode === "selected" ? accounts.map((account) => account.id) : [],
       emails: email.target.mode === "selected" ? selectors(emails) : [],
     },
   };
@@ -170,22 +171,21 @@ export function AdminEmailManager({ queue, action, now }: Props) {
               </label>
               {email.target.mode === "selected" && (
                 <>
-                  <label className="field">
-                    <span className="field__label">Account IDs</span>
-                    <textarea
-                      className="textarea"
-                      rows={3}
-                      maxLength={190000}
-                      value={userIds}
-                      onChange={(event) => setUserIds(event.target.value)}
+                  <div className="form-grid__span">
+                    <RecipientPicker
+                      idPrefix="email-recipients"
+                      selected={accounts}
+                      onChange={setAccounts}
+                      disabled={pending || quotaFull}
                     />
-                  </label>
-                  <label className="field">
+                  </div>
+                  <label className="field form-grid__span">
                     <span className="field__label">Email addresses</span>
                     <textarea
                       className="textarea"
                       rows={3}
                       maxLength={190000}
+                      placeholder="Addresses outside the directory, one per line"
                       value={emails}
                       onChange={(event) => setEmails(event.target.value)}
                     />

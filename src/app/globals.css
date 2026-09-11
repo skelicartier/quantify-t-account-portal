@@ -1035,7 +1035,8 @@
   .select:disabled,
   .textarea:disabled {
     color: var(--muted);
-    background: var(--panel);
+    /* Colour only: the shorthand would reset the select's chevron to a repeating tile. */
+    background-color: var(--panel);
     cursor: not-allowed;
   }
 
@@ -1651,6 +1652,154 @@
     background: var(--surface);
     font-size: 12px;
     font-weight: 500;
+  }
+
+  .chip--recipient {
+    gap: 8px;
+    color: var(--text);
+  }
+
+  .chip__remove {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--quiet);
+  }
+
+  .chip__remove:hover,
+  .chip__remove:focus-visible {
+    color: var(--danger);
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  /* recipient picker */
+  .recipients {
+    display: grid;
+    gap: 8px;
+  }
+
+  .recipients .chip-list {
+    margin-bottom: 4px;
+  }
+
+  .recipients__search {
+    position: relative;
+  }
+
+  .recipients__search .input {
+    padding-left: 36px;
+  }
+
+  /* The picker clears with its own chips; the browser's blue cancel button is off-palette. */
+  .recipients__search .input::-webkit-search-cancel-button,
+  .recipients__search .input::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .recipients__search-icon {
+    position: absolute;
+    top: 50%;
+    left: 13px;
+    transform: translateY(-50%);
+    color: var(--quiet);
+    pointer-events: none;
+  }
+
+  .recipients__results:empty {
+    display: none;
+  }
+
+  .recipients__list {
+    display: grid;
+    gap: 2px;
+    max-height: 264px;
+    margin: 0;
+    padding: 4px;
+    overflow-y: auto;
+    list-style: none;
+    border: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  .recipients__result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .recipients__result:hover,
+  .recipients__result:focus-visible {
+    background: var(--panel-soft);
+    outline: none;
+  }
+
+  .recipients__result[aria-pressed="true"] {
+    color: var(--muted);
+  }
+
+  .recipients__result:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .recipients__result-text {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .recipients__result-name {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .recipients__result-email {
+    color: var(--quiet);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .recipients__result-state {
+    flex: 0 0 auto;
+    color: var(--quiet);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .recipients__result[aria-pressed="true"] .recipients__result-state {
+    color: var(--accent);
+  }
+
+  .recipients__status {
+    color: var(--quiet);
+    font-size: 12px;
+  }
+
+  .recipients__status--error {
+    color: var(--danger);
   }
 
   /* callout */
@@ -2295,14 +2444,27 @@
     justify-content: center;
   }
 
-  .auth__brand .brand__mark,
-  .auth__brand .brand__mark-img {
-    width: 40px;
-    height: 40px;
+  .auth__wordmark {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 10px;
+    color: var(--text);
+    font-family: var(--font-heading);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    text-decoration: none;
   }
 
-  .auth__brand .brand__name {
-    display: none;
+  .auth__wordmark span + span {
+    color: var(--quiet);
+    font-weight: 600;
+  }
+
+  .auth__wordmark:hover span + span,
+  .auth__wordmark:focus-visible span + span {
+    color: var(--text);
   }
 
   .auth__header {

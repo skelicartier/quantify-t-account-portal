@@ -3,6 +3,7 @@
 import { Copy, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { useActionState, useState } from "react";
 
+import { RecipientPicker, type RecipientAccount } from "@/components/admin/recipient-picker";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Section } from "@/components/ui/card";
@@ -100,7 +101,10 @@ function NotificationEditor({
   onClose: () => void;
 }) {
   const [note, setNote] = useState(initial);
-  const [userIds, setUserIds] = useState(initial.target.user_ids.join("\n"));
+  // Ids saved on an existing notice come back without names; the picker shows them as ids.
+  const [accounts, setAccounts] = useState<RecipientAccount[]>(() =>
+    initial.target.user_ids.map((id) => ({ id, email: "", name: "", active: true })),
+  );
   const [emails, setEmails] = useState(initial.target.emails.join("\n"));
   const [state, formAction, pending] = useActionState(action, INITIAL_NOTIFICATION_STATE);
   const set = <K extends keyof NotificationInput>(key: K, value: NotificationInput[K]) =>
@@ -110,7 +114,7 @@ function NotificationEditor({
     ...note,
     target: {
       mode: note.target.mode,
-      user_ids: note.target.mode === "selected" ? selectors(userIds) : [],
+      user_ids: note.target.mode === "selected" ? accounts.map((account) => account.id) : [],
       emails: note.target.mode === "selected" ? selectors(emails) : [],
     },
   };
@@ -226,22 +230,21 @@ function NotificationEditor({
           </label>
           {note.target.mode === "selected" && (
             <>
-              <label className="field">
-                <span className="field__label">Account IDs</span>
-                <textarea
-                  className="textarea"
-                  rows={3}
-                  maxLength={190000}
-                  value={userIds}
-                  onChange={(event) => setUserIds(event.target.value)}
+              <div className="form-grid__span">
+                <RecipientPicker
+                  idPrefix="notification-recipients"
+                  selected={accounts}
+                  onChange={setAccounts}
+                  disabled={pending}
                 />
-              </label>
-              <label className="field">
+              </div>
+              <label className="field form-grid__span">
                 <span className="field__label">Email addresses</span>
                 <textarea
                   className="textarea"
                   rows={3}
                   maxLength={190000}
+                  placeholder="Addresses outside the directory, one per line"
                   value={emails}
                   onChange={(event) => setEmails(event.target.value)}
                 />

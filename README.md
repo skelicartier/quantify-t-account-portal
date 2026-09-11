@@ -74,6 +74,8 @@ The console shares quantifyterminal.com's palette: the signed-in shell defaults 
 
 `/admin/users` opens with account KPIs and 30-day daily charts (signups, sign-ins, authentication outcomes) from `admin/metrics`, supports `?q=` (email or name) and `?status=active|inactive` filters that the API applies server-side, and offers a CSV export at `/admin/users/export` (same gates as the page, formula-safe cells, up to 5,000 rows).
 
+`/admin/notifications` and `/admin/email` target selected accounts through a directory picker: the composer searches `/admin/users/search?q=` (same gates as the email page, 20 results, never cached) by name or email and keeps the chosen accounts as removable chips, so nobody pastes account ids. Addresses outside the directory still go in the email-addresses box.
+
 Owners (`roles:write`) change another account's role from `/admin/users/[userId]`; the Account API refuses self-changes, demoting the last active Owner, and changing an account pinned by the break-glass configuration.
 
 ## Deployment

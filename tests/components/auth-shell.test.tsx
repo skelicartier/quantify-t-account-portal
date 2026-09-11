@@ -10,7 +10,12 @@ describe("AuthShell", () => {
       </AuthShell>,
     );
 
-    expect(screen.getByRole("link", { name: /quantify terminal account home/i })).toBeVisible();
+    const wordmark = screen.getByRole("link", { name: /quantify terminal account home/i });
+    expect(wordmark).toBeVisible();
+    expect(wordmark).toHaveAttribute("href", "/login");
+    expect(wordmark).toHaveTextContent(/quantify\s*terminal/i);
+    // The brand is typographic on the credential surface: no image mark.
+    expect(document.querySelector("img")).toBeNull();
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled();
     expect(screen.queryByText(/soc 2/i)).not.toBeInTheDocument();

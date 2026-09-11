@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { afterEach, vi } from "vitest";
 import { AdminEmailManager } from "@/components/admin/admin-email-manager";
 import { AdminNotificationManager } from "@/components/admin/admin-notification-manager";
 import { AccountNotifications } from "@/components/account/account-notifications";
@@ -186,6 +187,81 @@ it("queues email with selected recipients and renders current jobs", async () =>
     body: "A scheduled account email.",
     target: { mode: "selected", emails: ["owner@example.test"], user_ids: [] },
   });
+});
+
+function jsonResponse(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    redirected: false,
+    headers: { get: (name: string) => (name === "content-type" ? "application/json" : null) },
+    json: async () => body,
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+it("picks email recipients from the directory search instead of raw account ids", async () => {
+  const user = userEvent.setup();
+  const fetchMock = vi.fn(async (input: string) => {
+    expect(input).toBe("/admin/users/search?q=pri");
+    return jsonResponse({
+      accounts: [
+        {
+          id: "9d3f5b71-4c6e-4a8b-9c0d-1e3f5a7b9c33",
+          email: "priya@example.test",
+          name: "Priya Natarajan",
+          active: true,
+        },
+      ],
+      has_more: false,
+    });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const action = vi.fn(async () => ({ status: "success" as const, message: "Email queued." }));
+  render(<AdminEmailManager queue={emailQueue} action={action} />);
+
+  await user.selectOptions(screen.getByRole("combobox", { name: "Recipients" }), "selected");
+  expect(screen.queryByRole("textbox", { name: "Account IDs" })).not.toBeInTheDocument();
+  await user.type(screen.getByRole("searchbox", { name: "Accounts" }), "pri");
+  const result = await screen.findByRole("button", { name: /Priya Natarajan/u });
+  expect(result).toHaveAttribute("aria-pressed", "false");
+  await user.click(result);
+
+  expect(screen.getByRole("list", { name: "Selected accounts" })).toHaveTextContent(
+    "Priya Natarajan (priya@example.test)",
+  );
+  expect(result).toHaveAttribute("aria-pressed", "true");
+  await user.type(screen.getByRole("textbox", { name: "Subject" }), "Hello");
+  await user.type(screen.getByRole("textbox", { name: "Body" }), "Directory pick.");
+  await user.click(screen.getByRole("button", { name: "Queue email" }));
+
+  await waitFor(() => expect(action).toHaveBeenCalled());
+  const data = action.mock.calls[0] as unknown as [unknown, FormData];
+  expect(JSON.parse(String(data[1].get("email")))).toMatchObject({
+    target: { mode: "selected", user_ids: ["9d3f5b71-4c6e-4a8b-9c0d-1e3f5a7b9c33"], emails: [] },
+  });
+
+  await user.click(
+    screen.getByRole("button", { name: "Remove Priya Natarajan (priya@example.test)" }),
+  );
+  expect(screen.queryByRole("list", { name: "Selected accounts" })).not.toBeInTheDocument();
+});
+
+it("tells the administrator to sign in again when the search is refused", async () => {
+  const user = userEvent.setup();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => jsonResponse({ error: "unauthenticated" }, 401)),
+  );
+  render(<AdminEmailManager queue={emailQueue} action={vi.fn()} />);
+
+  await user.selectOptions(screen.getByRole("combobox", { name: "Recipients" }), "selected");
+  await user.type(screen.getByRole("searchbox", { name: "Accounts" }), "zed");
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Sign in again to search accounts.");
 });
 
 it("disables email queueing when the quota is full", () => {

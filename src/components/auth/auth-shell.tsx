@@ -1,6 +1,5 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
-
-import { BrandMark } from "@/components/brand/brand-mark";
 
 type AuthShellProps = {
   title: string;
@@ -13,15 +12,23 @@ type AuthShellProps = {
 const MARKETING_SITE = "https://www.quantifyterminal.com";
 
 /**
- * The credential surface: one narrow column on the dark canvas — mark, heading, form —
- * and a single legal line at the foot. No chrome competes with the form.
+ * The credential surface: one narrow column on the dark canvas — wordmark, heading,
+ * form — and a single legal line at the foot. No chrome competes with the form; the
+ * brand is typographic only, no image.
  */
 export function AuthShell({ title, description, themed = false, children }: AuthShellProps) {
   return (
     <main className={themed ? "auth auth--console" : "auth"} id="main-content">
       <section className="auth__panel" aria-labelledby="auth-heading">
         <div className="auth__brand">
-          <BrandMark />
+          <Link
+            className="auth__wordmark"
+            href="/login"
+            aria-label="Quantify Terminal account home"
+          >
+            <span>Quantify</span>
+            <span>Terminal</span>
+          </Link>
         </div>
         <div className="auth__header">
           <h1 className="auth__title" id="auth-heading">
