@@ -396,18 +396,18 @@
     line-height: 1.05;
   }
 
-  .brand__name strong {
+  .brand__name strong,
+  .brand__name span {
+    color: var(--text);
+    font-family: var(--font-heading);
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.14em;
+    text-transform: uppercase;
   }
 
   .brand__name span {
-    margin-top: 3px;
-    color: var(--quiet);
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.16em;
+    margin-top: 2px;
   }
 
   /* The frame: sidebar pinned to the left edge for the full height, content beside it. */
@@ -2447,7 +2447,7 @@
   .auth__wordmark {
     display: inline-flex;
     align-items: baseline;
-    gap: 10px;
+    gap: 0.6em;
     color: var(--text);
     font-family: var(--font-heading);
     font-size: 13px;
@@ -2457,14 +2457,16 @@
     text-decoration: none;
   }
 
-  .auth__wordmark span + span {
-    color: var(--quiet);
-    font-weight: 600;
+  .auth__wordmark span {
+    /* Both words carry the same weight, size and colour: one mark, not a name and a tagline. */
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
   }
 
-  .auth__wordmark:hover span + span,
-  .auth__wordmark:focus-visible span + span {
-    color: var(--text);
+  .auth__wordmark:hover,
+  .auth__wordmark:focus-visible {
+    color: var(--accent);
   }
 
   .auth__header {
