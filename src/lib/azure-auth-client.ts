@@ -41,23 +41,28 @@ export class AzureAuthError extends Error {
   readonly status: number;
   readonly code: string | null;
   readonly correlationId: string | null;
+  /** The API's typed `details` for the code (for example `account_exists` says whether the account is verified). */
+  readonly details: Readonly<Record<string, unknown>>;
 
   constructor({
     status,
     code,
     message,
     correlationId,
+    details = {},
   }: {
     status: number;
     code: string | null;
     message: string;
     correlationId: string | null;
+    details?: Record<string, unknown>;
   }) {
     super(message);
     this.name = "AzureAuthError";
     this.status = status;
     this.code = code;
     this.correlationId = correlationId;
+    this.details = details;
   }
 }
 
@@ -102,7 +107,7 @@ export class AzureAuthClient {
     if (!res.ok || (data && typeof data === "object" && (data as { ok?: unknown }).ok === false)) {
       const error =
         data && typeof data === "object" && "error" in data
-          ? (data as { error?: { code?: unknown; message?: unknown } }).error
+          ? (data as { error?: { code?: unknown; message?: unknown; details?: unknown } }).error
           : null;
       const correlationId =
         data &&
@@ -116,6 +121,10 @@ export class AzureAuthClient {
         message:
           typeof error?.message === "string" ? error.message : "Authentication request failed.",
         correlationId,
+        details:
+          error?.details && typeof error.details === "object"
+            ? (error.details as Record<string, unknown>)
+            : {},
       });
     }
 

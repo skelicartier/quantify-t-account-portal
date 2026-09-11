@@ -35,13 +35,13 @@ const TASK7_CONFIRM_ROUTE = `
   async function GET(request) {
     const tokens = new URL(request.url).searchParams.getAll("token");
     const token = tokens.length === 1 ? tokens[0]?.trim() : "";
-    if (!token || token.length > 4_096) return Response.redirect("/login?notice=invalid-confirm-link");
+    if (!token || token.length > 4_096) return Response.redirect("/auth/confirmed?reason=invalid-confirm-link");
     try {
       const config = getAzureAuthConfig();
       await new AzureAuthClient(config.apiUrl).confirmEmail(token);
-      return Response.redirect("/login?notice=email-confirmed");
+      return Response.redirect("/auth/confirmed");
     } catch {}
-    return Response.redirect("/login?notice=invalid-confirm-link");
+    return Response.redirect("/auth/confirmed?reason=invalid-confirm-link");
   }
 `;
 

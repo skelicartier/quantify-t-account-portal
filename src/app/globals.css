@@ -2473,6 +2473,31 @@
     text-align: center;
   }
 
+  .auth__code-label {
+    color: var(--quiet);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .auth__code {
+    margin: -6px 0 4px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-align: center;
+  }
+
+  .auth__code-inline {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+
   .auth__title {
     font-size: 24px;
     letter-spacing: -0.02em;

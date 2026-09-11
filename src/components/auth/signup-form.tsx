@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 
 import { TurnstileField } from "@/components/auth/turnstile-field";
@@ -140,7 +141,26 @@ export function SignupForm({ action, turnstileSiteKey, nextPath }: SignupFormPro
         </Button>
       </form>
 
-      {state.message && (
+      {state.status === "exists" && (
+        <Callout
+          tone="attention"
+          role="alert"
+          compact
+          className="auth__note"
+          title={
+            state.account?.confirmed === false
+              ? "This email is already registered"
+              : "You already have an account"
+          }
+        >
+          {state.message}{" "}
+          <Link href={nextPath ? `/login?next=${encodeURIComponent(nextPath)}` : "/login"}>
+            Sign in
+          </Link>{" "}
+          or <Link href="/forgot-password">reset your password</Link>.
+        </Callout>
+      )}
+      {state.status === "error" && state.message && (
         <Callout tone="danger" role="alert" compact className="auth__note">
           {state.message}
         </Callout>

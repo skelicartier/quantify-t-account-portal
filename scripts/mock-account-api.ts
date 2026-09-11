@@ -356,8 +356,18 @@ function send(response: ServerResponse, status: number, payload: Record<string, 
   response.end(body);
 }
 
-function fail(response: ServerResponse, status: number, code: string, message: string) {
-  send(response, status, { ok: false, correlation_id: correlation(), error: { code, message } });
+function fail(
+  response: ServerResponse,
+  status: number,
+  code: string,
+  message: string,
+  details: Record<string, unknown> = {},
+) {
+  send(response, status, {
+    ok: false,
+    correlation_id: correlation(),
+    error: { code, message, details },
+  });
 }
 
 function ok(response: ServerResponse, payload: Record<string, unknown>, status = 200) {
@@ -378,8 +388,32 @@ function authUser(userId: string) {
   };
 }
 
-/** Pending desktop handoff codes, keyed by the code itself (the real API stores a hash). */
-const handoffs = new Map<string, { userId: string; challenge: string }>();
+/** Desktop sign-in requests, keyed by the handoff id itself (the real API stores a hash). */
+type MockHandoff = {
+  challenge: string;
+  status: "pending" | "approved" | "denied" | "redeemed";
+  userId: string | null;
+  userCode: string;
+  deviceName: string;
+  intent: "login" | "signup";
+  createdAt: string;
+  expiresAt: string;
+  approvedAt: string | null;
+};
+const handoffs = new Map<string, MockHandoff>();
+
+function handoffDto(entry: MockHandoff) {
+  return {
+    status: entry.status,
+    user_code: entry.userCode,
+    device_name: entry.deviceName,
+    client: "desktop",
+    intent: entry.intent,
+    created_at: entry.createdAt,
+    expires_at: entry.expiresAt,
+    approved_at: entry.approvedAt,
+  };
+}
 
 function bearer(request: IncomingMessage): string | null {
   const header = String(request.headers.authorization ?? "");
@@ -430,18 +464,86 @@ const server = createServer(async (request, response) => {
     });
   }
   if (route === "auth/logout") return ok(response, {});
-  if (route === "auth/handoff/redeem") {
-    // The desktop app redeems a one-time code with the verifier behind its challenge.
-    const code = String(json.code ?? "");
-    const pending = handoffs.get(code);
-    handoffs.delete(code);
+  if (route === "auth/signup") {
+    const email = String(json.email ?? "")
+      .trim()
+      .toLowerCase();
+    const password = String(json.password ?? "");
+    if (!email || password.length < 8)
+      return fail(response, 400, "malformed_request", "email and password are required");
+    const existing = PEOPLE.find((candidate) => candidate.email === email);
+    if (existing) {
+      return fail(
+        response,
+        409,
+        "account_exists",
+        "An account with this email address already exists. Sign in or reset your password.",
+        {
+          confirmed: existing.email !== "leo@example.test",
+          confirmation_resent: existing.email === "leo@example.test",
+        },
+      );
+    }
+    return ok(response, {
+      user: {
+        id: randomUUID(),
+        email,
+        first_name: String(json.first_name ?? ""),
+        email_confirmed: false,
+      },
+      session: null,
+    });
+  }
+  if (route === "auth/handoff/begin") {
+    // The desktop app starts a browser sign-in: a challenge in, an id and a code out.
+    const challenge = String(json.challenge ?? "");
+    const intent = json.intent === "signup" ? "signup" : "login";
+    if (!/^[A-Za-z0-9_-]{43}$/u.test(challenge) || json.client !== "desktop")
+      return fail(response, 400, "malformed_request", "Expected a desktop client challenge.");
+    const id = randomBytes(32).toString("base64url");
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const code = Array.from(
+      { length: 8 },
+      () => alphabet[Math.floor(Math.random() * alphabet.length)],
+    ).join("");
+    handoffs.set(id, {
+      challenge,
+      status: "pending",
+      userId: null,
+      userCode: `${code.slice(0, 4)}-${code.slice(4)}`,
+      deviceName: String(json.device_name ?? "").slice(0, 120),
+      intent,
+      createdAt: iso(0),
+      expiresAt: iso(intent === "signup" ? -30 : -10),
+      approvedAt: null,
+    });
+    const entry = handoffs.get(id)!;
+    return ok(response, {
+      handoff_id: id,
+      user_code: entry.userCode,
+      expires_at: entry.expiresAt,
+      poll_interval_seconds: 2,
+    });
+  }
+  if (route === "auth/handoff/poll") {
+    // The app polls with its verifier; the first poll after approval mints its session.
+    const id = String(json.handoff_id ?? "");
     const verifier = String(json.verifier ?? "");
-    if (!pending || pending.challenge !== createHash("sha256").update(verifier).digest("base64url"))
+    const entry = handoffs.get(id);
+    if (
+      !entry ||
+      entry.status === "redeemed" ||
+      entry.challenge !== createHash("sha256").update(verifier).digest("base64url")
+    )
       return fail(response, 401, "unauthenticated", "handoff invalid");
-    const p = person(pending.userId);
+    if (entry.status !== "approved" || !entry.userId)
+      return ok(response, { status: entry.status, expires_at: entry.expiresAt });
+    entry.status = "redeemed";
+    const p = person(entry.userId);
     const token = `mock-${p.role}-${randomUUID()}`;
     tokens.set(token, p.id);
     return ok(response, {
+      status: "approved",
       user: authUser(p.id),
       session: { access_token: token, refresh_token: `refresh-${token}`, expires_in: 3600 },
     });
@@ -452,13 +554,30 @@ const server = createServer(async (request, response) => {
   const persona = roles[userId] ?? "user";
   const me = person(userId);
 
-  if (route === "auth/handoff/start") {
-    const challenge = String(json.challenge ?? "");
-    if (!/^[A-Za-z0-9_-]{43}$/u.test(challenge) || json.client !== "desktop")
-      return fail(response, 400, "malformed_request", "Expected a desktop client challenge.");
-    const code = randomBytes(32).toString("base64url");
-    handoffs.set(code, { userId, challenge });
-    return ok(response, { code, expires_at: iso(-2) });
+  const handoffMatch = route.match(
+    /^auth\/handoff\/([A-Za-z0-9_-]{32,128})(?:\/(approve|deny))?$/u,
+  );
+  if (handoffMatch) {
+    const entry = handoffs.get(handoffMatch[1]!);
+    if (!entry) return fail(response, 404, "not_found", "No such request.");
+    const decision = handoffMatch[2];
+    if (!decision) {
+      if (method !== "GET") return fail(response, 405, "method_not_allowed", "GET only.");
+      return ok(response, handoffDto(entry));
+    }
+    if (method !== "POST") return fail(response, 405, "method_not_allowed", "POST only.");
+    if (entry.status !== "pending")
+      return fail(response, 409, "revision_conflict", "That request is no longer pending.", {
+        handoff: entry.status,
+      });
+    if (decision === "approve") {
+      entry.status = "approved";
+      entry.userId = userId;
+      entry.approvedAt = iso(0);
+    } else {
+      entry.status = "denied";
+    }
+    return ok(response, handoffDto(entry));
   }
   if (route === "auth/user") return ok(response, { user: authUser(userId) });
   if (route === "auth/user/profile") return ok(response, { profile: profile(userId) });

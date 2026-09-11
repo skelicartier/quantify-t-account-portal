@@ -1256,40 +1256,63 @@ export async function fetchAccountApiMe(
   return parseAccountApiPayload(accountApiMeSchema, payload, "me", "GET");
 }
 
-export const DESKTOP_HANDOFF_CLIENT = "desktop";
+const HANDOFF_ID_PATTERN = /^[A-Za-z0-9_-]{32,128}$/u;
 
-export const accountApiHandoffStartSchema = z
+/** A browser→desktop sign-in request as the console may see it: never the challenge. */
+export const accountApiHandoffSchema = z
   .object({
     ok: z.literal(true),
     correlation_id: correlationSchema,
-    code: z.string().min(16).max(128),
-    expires_at: z.string().min(1).max(64),
+    status: z.enum(["pending", "approved", "denied", "redeemed", "expired"]),
+    user_code: z.string().min(1).max(16),
+    device_name: z.string().max(120),
+    client: z.string().max(16),
+    intent: z.enum(["login", "signup"]),
+    created_at: z.string().max(64),
+    expires_at: z.string().max(64),
+    approved_at: z.string().max(64).nullable(),
   })
   .strict();
 
-export type AccountApiHandoffStart = z.infer<typeof accountApiHandoffStartSchema>;
+export type AccountApiHandoff = z.infer<typeof accountApiHandoffSchema>;
 
-/**
- * Mints the one-time code the desktop app redeems, together with its PKCE verifier, for
- * a session of its own. The code is bound to the caller's account and to the challenge.
- */
-export async function startAccountApiHandoff(
+function handoffRoute(handoffId: string, suffix = ""): string {
+  const id = handoffId.trim();
+  if (!HANDOFF_ID_PATTERN.test(id)) throw new AccountApiUnavailableError();
+  return `auth/handoff/${encodeURIComponent(id)}${suffix}`;
+}
+
+/** The pending request the app opened this page for, for the signed-in visitor to judge. */
+export async function fetchAccountApiHandoff(
   accessToken: string,
-  input: { challenge: string },
+  handoffId: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiHandoff> {
+  const route = handoffRoute(handoffId);
+  const payload = await fetchAccountApiJson(route, accessToken, options);
+  return parseAccountApiPayload(accountApiHandoffSchema, payload, route, "GET");
+}
+
+/** Binds the request to the visitor's account; the app's next poll signs it in. */
+export async function approveAccountApiHandoff(
+  accessToken: string,
+  handoffId: string,
   options: AccountApiFetchOptions & { idempotencyKey: string },
-): Promise<AccountApiHandoffStart> {
-  const payload = await postAccountApiJson(
-    "auth/handoff/start",
-    accessToken,
-    { challenge: input.challenge, client: DESKTOP_HANDOFF_CLIENT },
-    options,
-  );
-  return parseAccountApiPayload(
-    accountApiHandoffStartSchema,
-    payload,
-    "auth/handoff/start",
-    "POST",
-  );
+): Promise<AccountApiHandoff> {
+  const route = handoffRoute(handoffId, "/approve");
+  const payload = await postAccountApiJson(route, accessToken, {}, options);
+  return parseAccountApiPayload(accountApiHandoffSchema, payload, route, "POST");
+}
+
+/** "Not you?": cancels the request so the app stops waiting. */
+export async function denyAccountApiHandoff(
+  accessToken: string,
+  handoffId: string,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiHandoff> {
+  const route = handoffRoute(handoffId, "/deny");
+  const payload = await postAccountApiJson(route, accessToken, {}, options);
+  return parseAccountApiPayload(accountApiHandoffSchema, payload, route, "POST");
 }
 
 export async function fetchAccountApiProfile(

@@ -6,8 +6,7 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "font-src 'self' data:",
-  // The desktop handoff answers a form post with a redirect to the app's loopback listener.
-  "form-action 'self' http://127.0.0.1:*",
+  "form-action 'self'",
   "frame-ancestors 'none'",
   "img-src 'self' data: blob:",
   "object-src 'none'",

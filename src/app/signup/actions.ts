@@ -33,6 +33,34 @@ const SERVICE_ERROR_STATE: SignupActionState = {
 };
 
 /**
+ * The API says the address already has an account (`account_exists`). Say so — the
+ * form offers sign-in and reset — and, for an account that was never verified, whether
+ * a fresh confirmation link just went out.
+ */
+function existingAccountState(error: unknown): SignupActionState | null {
+  const record = error && typeof error === "object" ? (error as Record<string, unknown>) : null;
+  if (record?.code !== "account_exists") return null;
+  const details =
+    record.details && typeof record.details === "object"
+      ? (record.details as Record<string, unknown>)
+      : {};
+  const confirmed = details.confirmed !== false;
+  const confirmationResent = details.confirmation_resent === true;
+  let message = "An account with this email address already exists.";
+  if (!confirmed) {
+    message = confirmationResent
+      ? "This email is already registered but not yet verified. We've sent you a new confirmation link — check your inbox."
+      : "This email is already registered but not yet verified. Sign in to request a new confirmation link.";
+  }
+  return {
+    status: "exists",
+    message,
+    fieldErrors: EMPTY_FIELD_ERRORS,
+    account: { confirmed, confirmationResent },
+  };
+}
+
+/**
  * Lets /auth/confirm send the visitor back to the waiting desktop app once the email is
  * confirmed. The confirmation link itself is built by the Account API, so the handoff
  * travels in a short-lived cookie in the browser the app opened.
@@ -70,7 +98,7 @@ export async function signup(
       parsed.data.lastName,
     );
 
-    if (result.error) return SERVICE_ERROR_STATE;
+    if (result.error) return existingAccountState(result.error) ?? SERVICE_ERROR_STATE;
     if (returnTo) await rememberDesktopConnectReturn(returnTo);
     return ACCEPTED_SIGNUP_STATE;
   } catch (e) {

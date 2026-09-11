@@ -12,9 +12,7 @@ vi.mock("@/app/login/actions", () => ({
 
 import LoginPage from "@/app/login/page";
 
-const STATE = "c2VjcmV0LXN0YXRlLWZyb20tdGhlLWFwcA";
-const CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-const PATH = `/connect/desktop?state=${STATE}&port=53321&challenge=${CHALLENGE}`;
+const PATH = "/connect/desktop?handoff=c2VjcmV0LWhhbmRvZmYtaWQtZnJvbS10aGUtYXBw";
 
 describe("LoginPage", () => {
   it("tells a visitor the desktop app sent that they will be returned to it", async () => {

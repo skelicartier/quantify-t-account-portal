@@ -52,8 +52,10 @@ const signupSchema = z
   });
 
 export type SignupActionState = {
-  status: "idle" | "error" | "accepted";
+  status: "idle" | "error" | "accepted" | "exists";
   message: string | null;
+  /** Set with `status: "exists"`: whether the existing account is verified and whether a fresh link went out. */
+  account?: { confirmed: boolean; confirmationResent: boolean };
   fieldErrors: {
     fullName: string[];
     email: string[];

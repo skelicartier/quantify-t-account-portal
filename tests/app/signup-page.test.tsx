@@ -6,9 +6,7 @@ vi.mock("@/app/signup/actions", () => ({ signup: mocks.signup }));
 
 import SignupPage from "@/app/signup/page";
 
-const STATE = "c2VjcmV0LXN0YXRlLWZyb20tdGhlLWFwcA";
-const CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-const PATH = `/connect/desktop?state=${STATE}&port=53321&challenge=${CHALLENGE}`;
+const PATH = "/connect/desktop?handoff=c2VjcmV0LWhhbmRvZmYtaWQtZnJvbS10aGUtYXBw";
 
 describe("SignupPage", () => {
   it("carries a desktop handoff through sign-up and back to sign-in", async () => {

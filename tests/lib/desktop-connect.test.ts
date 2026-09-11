@@ -6,55 +6,44 @@ import {
   isDesktopConnectNextPath,
   isDesktopConnectPath,
   loginPathForDesktopConnect,
-  loopbackCallbackUrl,
   parseDesktopConnectParams,
   readDesktopConnectReturn,
 } from "@/lib/auth/desktop-connect";
 
-const STATE = "c2VjcmV0LXN0YXRlLWZyb20tdGhlLWFwcA";
-const CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-const PATH = `/connect/desktop?state=${STATE}&port=53321&challenge=${CHALLENGE}`;
+const HANDOFF = "c2VjcmV0LWhhbmRvZmYtaWQtZnJvbS10aGUtYXBw";
+const PATH = `/connect/desktop?handoff=${HANDOFF}`;
 
 describe("desktop connect handoff", () => {
-  it("parses a well-formed handoff from a query string or a form", () => {
-    expect(
-      parseDesktopConnectParams(
-        new URLSearchParams({ state: STATE, port: "53321", challenge: CHALLENGE }),
-      ),
-    ).toEqual({ state: STATE, port: 53321, challenge: CHALLENGE });
+  it("parses a well-formed handoff id from a query string or a form", () => {
+    expect(parseDesktopConnectParams(new URLSearchParams({ handoff: HANDOFF }))).toEqual({
+      handoff: HANDOFF,
+    });
 
     const formData = new FormData();
-    formData.set("state", STATE);
-    formData.set("port", "1024");
-    formData.set("challenge", CHALLENGE);
-    expect(parseDesktopConnectParams(formData)?.port).toBe(1024);
+    formData.set("handoff", HANDOFF);
+    expect(parseDesktopConnectParams(formData)).toEqual({ handoff: HANDOFF });
   });
 
   it.each([
-    ["missing state", { port: "53321", challenge: CHALLENGE }],
-    ["short state", { state: "abc", port: "53321", challenge: CHALLENGE }],
-    ["padded state", { state: `${STATE}==`, port: "53321", challenge: CHALLENGE }],
-    ["privileged port", { state: STATE, port: "443", challenge: CHALLENGE }],
-    ["port above range", { state: STATE, port: "65536", challenge: CHALLENGE }],
-    ["non-numeric port", { state: STATE, port: "53321x", challenge: CHALLENGE }],
-    ["short challenge", { state: STATE, port: "53321", challenge: CHALLENGE.slice(1) }],
-    [
-      "challenge with a slash",
-      { state: STATE, port: "53321", challenge: `${CHALLENGE.slice(0, 42)}/` },
-    ],
+    ["missing id", {}],
+    ["short id", { handoff: "abc" }],
+    ["padded id", { handoff: `${HANDOFF}==` }],
+    ["id with a slash", { handoff: `${HANDOFF.slice(0, 40)}/ab` }],
+    ["overlong id", { handoff: "a".repeat(129) }],
+    ["legacy loopback parameters", { state: HANDOFF, port: "53321", challenge: "c".repeat(43) }],
   ])("refuses a handoff with a %s", (_label, params) => {
     expect(parseDesktopConnectParams(new URLSearchParams(params))).toBeNull();
   });
 
-  it("refuses repeated parameters", () => {
-    const params = new URLSearchParams({ state: STATE, port: "53321", challenge: CHALLENGE });
-    params.append("port", "53322");
+  it("refuses a repeated parameter", () => {
+    const params = new URLSearchParams({ handoff: HANDOFF });
+    params.append("handoff", HANDOFF);
 
     expect(parseDesktopConnectParams(params)).toBeNull();
   });
 
   it("builds the canonical page path and recognises it as a return destination", () => {
-    const path = desktopConnectPath({ state: STATE, port: 53321, challenge: CHALLENGE });
+    const path = desktopConnectPath({ handoff: HANDOFF });
 
     expect(path).toBe(PATH);
     expect(isDesktopConnectNextPath(path)).toBe(true);
@@ -66,26 +55,23 @@ describe("desktop connect handoff", () => {
 
   it("canonicalises an untrusted next value only when it is a valid handoff", () => {
     expect(desktopConnectNextPath(`${PATH}&extra=1`)).toBe(PATH);
-    expect(
-      desktopConnectNextPath(`/connect/desktop?port=53321&challenge=${CHALLENGE}&state=${STATE}`),
-    ).toBe(PATH);
     expect(desktopConnectNextPath("/connect/desktop")).toBeNull();
-    expect(
-      desktopConnectNextPath(`/connect/desktop?state=${STATE}&port=80&challenge=${CHALLENGE}`),
-    ).toBeNull();
+    expect(desktopConnectNextPath("/connect/desktop?handoff=short")).toBeNull();
     expect(desktopConnectNextPath(`https://evil.example${PATH}`)).toBeNull();
     expect(desktopConnectNextPath(`//evil.example${PATH}`)).toBeNull();
     expect(desktopConnectNextPath("/account")).toBeNull();
     expect(desktopConnectNextPath(null)).toBeNull();
   });
 
-  it("only ever sends the browser to the loopback listener", () => {
-    const url = new URL(loopbackCallbackUrl(53321, "one-time code&x", STATE));
-
-    expect(url.origin).toBe("http://127.0.0.1:53321");
-    expect(url.pathname).toBe("/callback");
-    expect(url.searchParams.get("code")).toBe("one-time code&x");
-    expect(url.searchParams.get("state")).toBe(STATE);
+  it("never names a loopback or port anywhere in the contract", () => {
+    const sources = Object.entries({
+      desktopConnectPath,
+      desktopConnectNextPath,
+      loginPathForDesktopConnect,
+    }).map(([, fn]) => fn.toString());
+    for (const source of sources) {
+      expect(source).not.toMatch(/127\.0\.0\.1|localhost|callback|port/u);
+    }
   });
 
   it("carries the handoff into the sign-in URL", () => {

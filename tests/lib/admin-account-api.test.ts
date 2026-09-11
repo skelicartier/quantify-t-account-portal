@@ -47,7 +47,9 @@ import {
   ROLE_REPORT_CAPABILITY,
   setAccountApiAdminUserActive,
   setAccountApiAdminUserRole,
-  startAccountApiHandoff,
+  approveAccountApiHandoff,
+  denyAccountApiHandoff,
+  fetchAccountApiHandoff,
   enqueueAccountApiAdminNotificationEmail,
   enqueueAccountApiAdminReport,
   updateAccountApiAdminNotifications,
@@ -1187,50 +1189,88 @@ describe("Account API client", () => {
     expect(url.toString()).not.toMatch(/token|password|passcode|pin/iu);
   });
 
-  it("starts a desktop handoff bound to the app's challenge", async () => {
-    const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-    const fetcher = vi.fn<TestFetcher>(async () =>
-      jsonResponse({
-        ok: true,
-        correlation_id: "qt-handoff",
-        code: "one-time-code-1234567890",
-        expires_at: "2026-09-11T10:02:00Z",
-      }),
-    );
+  const HANDOFF = "c2VjcmV0LWhhbmRvZmYtaWQtZnJvbS10aGUtYXBw";
+  const handoffAnswer = {
+    ok: true,
+    correlation_id: "qt-handoff",
+    status: "pending",
+    user_code: "K7X4-P2M9",
+    device_name: "Aaryan's MacBook Pro",
+    client: "desktop",
+    intent: "login",
+    created_at: "2026-09-12T00:00:00Z",
+    expires_at: "2026-09-12T00:10:00Z",
+    approved_at: null,
+  };
 
-    const result = await startAccountApiHandoff(
-      "bearer-token",
-      { challenge },
-      {
-        environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
-        fetcher,
-        idempotencyKey: "portal-handoff-1",
-      },
-    );
+  it("reads a pending desktop handoff by its id", async () => {
+    const fetcher = vi.fn<TestFetcher>(async () => jsonResponse(handoffAnswer));
 
-    expect(result.code).toBe("one-time-code-1234567890");
+    const result = await fetchAccountApiHandoff("bearer-token", HANDOFF, {
+      environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+      fetcher,
+    });
+
+    expect(result.status).toBe("pending");
+    expect(result.user_code).toBe("K7X4-P2M9");
     const [url, init] = firstFetchCall(fetcher);
-    expect(url.toString()).toBe(`${ACCOUNT_API_URL}/auth/handoff/start`);
-    expect(init.method).toBe("POST");
-    expect(init.body).toBe(JSON.stringify({ challenge, client: "desktop" }));
+    expect(url.toString()).toBe(`${ACCOUNT_API_URL}/auth/handoff/${HANDOFF}`);
+    expect(init.method ?? "GET").toBe("GET");
     expect(init.headers).toMatchObject({ Authorization: "Bearer bearer-token" });
   });
 
-  it("fails closed when the handoff answer carries no code", async () => {
+  it("approves and denies a handoff through their own routes", async () => {
     const fetcher = vi.fn<TestFetcher>(async () =>
-      jsonResponse({ ok: true, correlation_id: "qt-handoff", expires_at: "2026-09-11T10:02:00Z" }),
+      jsonResponse({ ...handoffAnswer, status: "approved", approved_at: "2026-09-12T00:00:30Z" }),
+    );
+
+    const approved = await approveAccountApiHandoff("bearer-token", HANDOFF, {
+      environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+      fetcher,
+      idempotencyKey: "portal-handoff-1",
+    });
+    expect(approved.status).toBe("approved");
+    const [url, init] = firstFetchCall(fetcher);
+    expect(url.toString()).toBe(`${ACCOUNT_API_URL}/auth/handoff/${HANDOFF}/approve`);
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe("{}");
+    expect(init.headers).toMatchObject({
+      Authorization: "Bearer bearer-token",
+      "Idempotency-Key": "portal-handoff-1",
+    });
+
+    const denier = vi.fn<TestFetcher>(async () =>
+      jsonResponse({ ...handoffAnswer, status: "denied" }),
+    );
+    const denied = await denyAccountApiHandoff("bearer-token", HANDOFF, {
+      environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+      fetcher: denier,
+      idempotencyKey: "portal-handoff-2",
+    });
+    expect(denied.status).toBe("denied");
+    expect(firstFetchCall(denier)[0].toString()).toBe(
+      `${ACCOUNT_API_URL}/auth/handoff/${HANDOFF}/deny`,
+    );
+  });
+
+  it("fails closed on a malformed handoff id or an answer with a secret in it", async () => {
+    const fetcher = vi.fn<TestFetcher>(async () =>
+      jsonResponse({ ...handoffAnswer, challenge: "c".repeat(43) }),
     );
 
     await expect(
-      startAccountApiHandoff(
-        "bearer-token",
-        { challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM" },
-        {
-          environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
-          fetcher,
-          idempotencyKey: "portal-handoff-2",
-        },
-      ),
+      fetchAccountApiHandoff("bearer-token", "short", {
+        environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+        fetcher,
+      }),
+    ).rejects.toBeInstanceOf(AccountApiUnavailableError);
+    expect(fetcher).not.toHaveBeenCalled();
+
+    await expect(
+      fetchAccountApiHandoff("bearer-token", HANDOFF, {
+        environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+        fetcher,
+      }),
     ).rejects.toBeInstanceOf(AccountApiUnavailableError);
   });
 

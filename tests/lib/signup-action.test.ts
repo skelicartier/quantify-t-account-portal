@@ -16,8 +16,7 @@ vi.mock("next/headers", () => ({
 
 import { signup } from "@/app/signup/actions";
 
-const HANDOFF_PATH =
-  "/connect/desktop?state=c2VjcmV0LXN0YXRlLWZyb20tdGhlLWFwcA&port=53321&challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+const HANDOFF_PATH = "/connect/desktop?handoff=c2VjcmV0LWhhbmRvZmYtaWQtZnJvbS10aGUtYXBw";
 
 function signupFormData(): FormData {
   const formData = new FormData();
@@ -52,13 +51,41 @@ describe("signup Server Action", () => {
     expect(JSON.stringify(result)).not.toContain("turnstile-response");
   });
 
-  it("returns the same accepted state for an existing address handled by the API", async () => {
-    const signUp = vi.fn().mockResolvedValue({ data: { user: null, session: null }, error: null });
+  it("says so when the address already has an account, and whether a new link went out", async () => {
+    const signUp = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        status: 409,
+        code: "account_exists",
+        message: "An account with this email address already exists.",
+        details: { confirmed: true, confirmation_resent: false },
+      },
+    });
     mocks.createServerAzureClient.mockResolvedValue({ signUp });
 
-    const duplicateResult = await signup(INITIAL_SIGNUP_STATE, signupFormData());
+    const existing = await signup(INITIAL_SIGNUP_STATE, signupFormData());
+    expect(existing).toMatchObject({
+      status: "exists",
+      account: { confirmed: true, confirmationResent: false },
+    });
+    expect(existing.message).toMatch(/already exists/u);
 
-    expect(duplicateResult.status).toBe("accepted");
+    signUp.mockResolvedValue({
+      data: null,
+      error: {
+        status: 409,
+        code: "account_exists",
+        message: "already",
+        details: { confirmed: false, confirmation_resent: true },
+      },
+    });
+    const unverified = await signup(INITIAL_SIGNUP_STATE, signupFormData());
+    expect(unverified).toMatchObject({
+      status: "exists",
+      account: { confirmed: false, confirmationResent: true },
+    });
+    expect(unverified.message).toMatch(/not verified|new confirmation/iu);
+    expect(mocks.cookieSet).not.toHaveBeenCalled();
   });
 
   it("rejects invalid input before creating an Azure client", async () => {

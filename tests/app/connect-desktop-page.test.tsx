@@ -2,24 +2,60 @@ import { render, screen } from "@testing-library/react";
 
 const mocks = vi.hoisted(() => ({
   getDesktopConnectIdentity: vi.fn(),
+  fetchAccountApiHandoff: vi.fn(),
   connectDesktop: vi.fn(),
+  cancelDesktopConnect: vi.fn(),
   logout: vi.fn(),
+  redirect: vi.fn((destination: string): never => {
+    throw new Error(`NEXT_REDIRECT:${destination}`);
+  }),
 }));
 
 vi.mock("@/lib/admin/access", () => ({
   getDesktopConnectIdentity: mocks.getDesktopConnectIdentity,
 }));
-vi.mock("@/app/connect/desktop/actions", () => ({ connectDesktop: mocks.connectDesktop }));
+vi.mock("@/lib/admin/account-api", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/admin/account-api")>("@/lib/admin/account-api");
+  return { ...actual, fetchAccountApiHandoff: mocks.fetchAccountApiHandoff };
+});
+vi.mock("@/app/connect/desktop/actions", () => ({
+  connectDesktop: mocks.connectDesktop,
+  cancelDesktopConnect: mocks.cancelDesktopConnect,
+}));
 vi.mock("@/app/account/actions", () => ({ logout: mocks.logout }));
+vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
 import ConnectDesktopPage from "@/app/connect/desktop/page";
+import { AccountApiRequestError } from "@/lib/admin/account-api";
 
-const STATE = "c2VjcmV0LXN0YXRlLWZyb20tdGhlLWFwcA";
-const CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-const PATH = `/connect/desktop?state=${STATE}&port=53321&challenge=${CHALLENGE}`;
+const HANDOFF = "c2VjcmV0LWhhbmRvZmYtaWQtZnJvbS10aGUtYXBw";
+const PATH = `/connect/desktop?handoff=${HANDOFF}`;
+
+const pending = {
+  ok: true as const,
+  correlation_id: "qt-handoff",
+  status: "pending" as const,
+  user_code: "K7X4-P2M9",
+  device_name: "Aaryan's MacBook Pro",
+  client: "desktop",
+  intent: "login" as const,
+  created_at: "2026-09-12T00:00:00Z",
+  expires_at: "2026-09-12T00:10:00Z",
+  approved_at: null,
+};
 
 function page(searchParams: Record<string, string | string[] | undefined>) {
   return ConnectDesktopPage({ searchParams: Promise.resolve(searchParams) });
+}
+
+function apiError(status: number): AccountApiRequestError {
+  return new AccountApiRequestError({
+    status,
+    code: "refused",
+    message: "provider detail",
+    correlationId: null,
+  });
 }
 
 describe("ConnectDesktopPage", () => {
@@ -38,24 +74,26 @@ describe("ConnectDesktopPage", () => {
         environment: "production",
       },
     });
+    mocks.fetchAccountApiHandoff.mockResolvedValue(pending);
   });
 
-  it("asks the signed-in visitor to connect the waiting app", async () => {
-    render(await page({ state: STATE, port: "53321", challenge: CHALLENGE }));
+  it("shows the signed-in visitor the request's code and device before they decide", async () => {
+    render(await page({ handoff: HANDOFF }));
 
     expect(mocks.getDesktopConnectIdentity).toHaveBeenCalledWith(PATH);
+    expect(mocks.fetchAccountApiHandoff).toHaveBeenCalledWith("console-token", HANDOFF);
     expect(
       screen.getByRole("heading", { name: "Connect Quantify Terminal on this computer" }),
     ).toBeVisible();
+    expect(screen.getByText("K7X4-P2M9")).toBeVisible();
+    expect(screen.getByText("Aaryan's MacBook Pro")).toBeVisible();
     expect(screen.getByText("owner@example.test")).toBeVisible();
-    expect(screen.getByText("127.0.0.1:53321")).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/127\.0\.0\.1|localhost/u);
 
     const connect = screen.getByRole("button", { name: "Connect" });
-    const form = connect.closest("form");
-    expect(form).not.toBeNull();
-    expect(form?.querySelector('input[name="state"]')).toHaveValue(STATE);
-    expect(form?.querySelector('input[name="port"]')).toHaveValue("53321");
-    expect(form?.querySelector('input[name="challenge"]')).toHaveValue(CHALLENGE);
+    expect(connect.closest("form")?.querySelector('input[name="handoff"]')).toHaveValue(HANDOFF);
+    const cancel = screen.getByRole("button", { name: "Cancel request" });
+    expect(cancel.closest("form")?.querySelector('input[name="handoff"]')).toHaveValue(HANDOFF);
 
     const signOut = screen.getByRole("button", { name: "Sign out" });
     expect(signOut.closest("form")?.querySelector('input[name="next"]')).toHaveValue(PATH);
@@ -64,9 +102,10 @@ describe("ConnectDesktopPage", () => {
   });
 
   it("explains an incomplete link without looking up the session", async () => {
-    render(await page({ state: STATE }));
+    render(await page({}));
 
     expect(mocks.getDesktopConnectIdentity).not.toHaveBeenCalled();
+    expect(mocks.fetchAccountApiHandoff).not.toHaveBeenCalled();
     expect(
       screen.getByRole("heading", { name: "This connection link is incomplete" }),
     ).toBeVisible();
@@ -78,8 +117,10 @@ describe("ConnectDesktopPage", () => {
   });
 
   it("refuses repeated or malformed parameters", async () => {
-    render(await page({ state: STATE, port: ["53321", "53322"], challenge: CHALLENGE }));
+    render(await page({ handoff: [HANDOFF, HANDOFF] }));
+    expect(mocks.getDesktopConnectIdentity).not.toHaveBeenCalled();
 
+    render(await page({ handoff: "short" }));
     expect(mocks.getDesktopConnectIdentity).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
   });
@@ -87,8 +128,40 @@ describe("ConnectDesktopPage", () => {
   it("lets the identity guard send a signed-out visitor to sign in", async () => {
     mocks.getDesktopConnectIdentity.mockRejectedValueOnce(new Error("NEXT_REDIRECT:/login"));
 
-    await expect(page({ state: STATE, port: "53321", challenge: CHALLENGE })).rejects.toThrow(
-      "NEXT_REDIRECT:/login",
+    await expect(page({ handoff: HANDOFF })).rejects.toThrow("NEXT_REDIRECT:/login");
+  });
+
+  it("goes back through sign-in when the Account API session has ended", async () => {
+    mocks.fetchAccountApiHandoff.mockRejectedValueOnce(apiError(401));
+
+    await expect(page({ handoff: HANDOFF })).rejects.toThrow(
+      `NEXT_REDIRECT:/login?next=${encodeURIComponent(PATH)}`,
     );
+  });
+
+  it.each([
+    ["an unknown request", apiError(404), "This sign-in request has expired"],
+    ["an expired request", { ...pending, status: "expired" }, "This sign-in request has expired"],
+    ["an approved request", { ...pending, status: "approved" }, "Already connected"],
+    ["a redeemed request", { ...pending, status: "redeemed" }, "Already connected"],
+    ["a cancelled request", { ...pending, status: "denied" }, "This request was cancelled"],
+  ])("explains %s instead of offering Connect", async (_label, answer, heading) => {
+    if (answer instanceof Error) mocks.fetchAccountApiHandoff.mockRejectedValueOnce(answer);
+    else mocks.fetchAccountApiHandoff.mockResolvedValueOnce(answer);
+
+    render(await page({ handoff: HANDOFF }));
+
+    expect(screen.getByRole("heading", { name: heading })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+  });
+
+  it("asks the visitor to reload when the service is unavailable", async () => {
+    mocks.fetchAccountApiHandoff.mockRejectedValueOnce(apiError(503));
+
+    render(await page({ handoff: HANDOFF }));
+
+    expect(
+      screen.getByRole("heading", { name: "The connection service is unavailable" }),
+    ).toBeVisible();
   });
 });

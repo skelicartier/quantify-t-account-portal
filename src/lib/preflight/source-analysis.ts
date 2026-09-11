@@ -360,7 +360,7 @@ export function analyzePortalAuthLifecycle({
         "token.length > 4_096",
         "getAzureAuthConfig",
         "confirmEmail(token)",
-        "email-confirmed",
+        "/auth/confirmed",
         "invalid-confirm-link",
       ]) &&
       confirmConfigIndex >= 0 &&

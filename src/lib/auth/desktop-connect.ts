@@ -1,11 +1,11 @@
 /**
  * The browser handoff behind the desktop app's "Sign in with browser".
  *
- * The app generates a `state` and a PKCE verifier, listens on a loopback port, and opens
- * `/connect/desktop?state&port&challenge`. Once the visitor is signed in and clicks
- * Connect, the console asks the Account API for a one-time code bound to the challenge
- * and sends the browser to `http://127.0.0.1:<port>/callback?code&state`, where the app
- * redeems the code with its verifier. Only the loopback host is ever a redirect target,
+ * The app asks the Account API to begin a handoff (a PKCE challenge in, an opaque id and
+ * a short user code out), opens `/connect/desktop?handoff=<id>` and polls the API with
+ * the id and its verifier. Here the signed-in visitor sees the code and the requesting
+ * device and approves (or cancels) the request; the app's next poll then signs it in.
+ * The browser is never redirected anywhere, nothing listens on the visitor's computer,
  * and the verifier never leaves the app.
  */
 
@@ -15,23 +15,18 @@ export const DESKTOP_CONNECT_PATH = "/connect/desktop";
 export const DESKTOP_CONNECT_RETURN_COOKIE = "qt-connect-return";
 export const DESKTOP_CONNECT_RETURN_MAX_AGE_SECONDS = 30 * 60;
 
-const STATE_PATTERN = /^[A-Za-z0-9_-]{16,128}$/u;
-const CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
-const PORT_PATTERN = /^\d{4,5}$/u;
-const MIN_PORT = 1024;
-const MAX_PORT = 65_535;
+const HANDOFF_ID_PATTERN = /^[A-Za-z0-9_-]{32,128}$/u;
 const PLACEHOLDER_ORIGIN = "https://console.quantifyterminal.invalid";
 
 export type DesktopConnectParams = {
-  state: string;
-  port: number;
-  challenge: string;
+  handoff: string;
 };
 
-export type DesktopConnectActionState = {
-  status: "idle" | "error";
-  message: string | null;
-};
+export type DesktopConnectActionState =
+  | { status: "idle"; message: null }
+  | { status: "error"; message: string }
+  | { status: "connected"; message: null; userCode: string }
+  | { status: "cancelled"; message: null };
 
 export const INITIAL_DESKTOP_CONNECT_STATE: DesktopConnectActionState = {
   status: "idle",
@@ -53,20 +48,14 @@ function single(source: ParamSource, name: string): string | null {
 }
 
 /**
- * The three handoff parameters, or null unless every one is present exactly once and
- * well-formed: the app's `state`, an unprivileged loopback `port`, and the 43-character
- * base64url SHA-256 challenge of a verifier the app keeps to itself.
+ * The handoff id, or null unless it is present exactly once and shaped like one. The id
+ * is opaque to the console: it identifies a pending request on the Account API and is
+ * useless without the verifier the app keeps to itself.
  */
 export function parseDesktopConnectParams(source: ParamSource): DesktopConnectParams | null {
-  const state = single(source, "state");
-  const port = single(source, "port");
-  const challenge = single(source, "challenge");
-  if (state === null || port === null || challenge === null) return null;
-  if (!STATE_PATTERN.test(state) || !CHALLENGE_PATTERN.test(challenge)) return null;
-  if (!PORT_PATTERN.test(port)) return null;
-  const portNumber = Number(port);
-  if (portNumber < MIN_PORT || portNumber > MAX_PORT) return null;
-  return { state, port: portNumber, challenge };
+  const handoff = single(source, "handoff");
+  if (handoff === null || !HANDOFF_ID_PATTERN.test(handoff)) return null;
+  return { handoff };
 }
 
 export function isDesktopConnectPath(pathname: string): boolean {
@@ -75,11 +64,7 @@ export function isDesktopConnectPath(pathname: string): boolean {
 
 /** The canonical page path for a handoff, safe to carry as a post-login `next`. */
 export function desktopConnectPath(params: DesktopConnectParams): string {
-  const query = new URLSearchParams({
-    state: params.state,
-    port: String(params.port),
-    challenge: params.challenge,
-  });
+  const query = new URLSearchParams({ handoff: params.handoff });
   return `${DESKTOP_CONNECT_PATH}?${query.toString()}`;
 }
 
@@ -110,12 +95,6 @@ export function desktopConnectNextPath(value: unknown): string | null {
 
 export function loginPathForDesktopConnect(nextPath: string): string {
   return `/login?next=${encodeURIComponent(nextPath)}`;
-}
-
-/** Where the browser goes once the code exists: the app's loopback listener, never anywhere else. */
-export function loopbackCallbackUrl(port: number, code: string, state: string): string {
-  const query = new URLSearchParams({ code, state });
-  return `http://127.0.0.1:${port}/callback?${query.toString()}`;
 }
 
 /** The pending handoff remembered by the return cookie, if the cookie carries a valid one. */

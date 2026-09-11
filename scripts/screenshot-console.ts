@@ -10,7 +10,6 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { createServer } from "node:http";
 import { join } from "node:path";
 
 import AxeBuilder from "@axe-core/playwright";
@@ -20,31 +19,26 @@ const BASE = process.argv[2] ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0
 const API = process.env.QT_ACCOUNT_API_URL ?? "http://127.0.0.1:7071/api/v1";
 const OUT = join("test-results", "console");
 
-// The desktop handoff, played the way the app plays it: a PKCE pair, a state, and a
-// loopback listener that receives the one-time code.
+// The desktop handoff, played the way the app plays it: a PKCE pair, a begin call, the
+// console's connect page, and a poll with the verifier once the request is approved.
 const VERIFIER = randomBytes(32).toString("base64url");
 const CHALLENGE = createHash("sha256").update(VERIFIER).digest("base64url");
-const STATE = randomBytes(24).toString("base64url");
 
-async function loopbackListener(): Promise<{
-  port: number;
-  callback: Promise<URL>;
-  close(): void;
-}> {
-  let resolveCallback: (url: URL) => void = () => undefined;
-  const callback = new Promise<URL>((resolve) => {
-    resolveCallback = resolve;
+async function beginHandoff(): Promise<{ handoff_id: string; user_code: string }> {
+  const response = await fetch(`${API}/auth/handoff/begin`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      challenge: CHALLENGE,
+      client: "desktop",
+      intent: "login",
+      device_name: "Aaryan's MacBook Pro",
+    }),
   });
-  const server = createServer((request, response) => {
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    response.end("<p>You're signed in. Return to Quantify Terminal.</p>");
-    resolveCallback(new URL(request.url ?? "/", "http://127.0.0.1"));
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : 0;
-  return { port, callback, close: () => server.close() };
+  if (!response.ok) throw new Error(`handoff begin answered ${response.status}`);
+  return (await response.json()) as { handoff_id: string; user_code: string };
 }
+
 const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 900 },
   { name: "phone", width: 412, height: 915 },
@@ -169,40 +163,37 @@ async function main() {
       problems += result.serious + (result.overflow > 1 ? 1 : 0);
       console.log("  ✓ /admin/users live search");
 
-      // The desktop handoff end to end: the connect page, Connect, the loopback callback
-      // carrying the code and state, and the code redeemed with the verifier.
-      const listener = await loopbackListener();
-      await page.goto(
-        `${BASE}/connect/desktop?state=${STATE}&port=${listener.port}&challenge=${CHALLENGE}`,
-        { waitUntil: "networkidle" },
-      );
+      // The desktop handoff end to end: begin, the connect page showing the code and
+      // device, Connect, and the app's poll answered with a session — no loopback.
+      const begun = await beginHandoff();
+      await page.goto(`${BASE}/connect/desktop?handoff=${begun.handoff_id}`, {
+        waitUntil: "networkidle",
+      });
       await page.getByRole("button", { name: "Connect" }).waitFor();
+      await page.getByText(begun.user_code).waitFor();
       await page.screenshot({ path: join(OUT, "connect-desktop-desktop.png"), fullPage: true });
       const connectResult = await check(page, "/connect/desktop @desktop");
       problems += connectResult.serious + (connectResult.overflow > 1 ? 1 : 0);
       await page.getByRole("button", { name: "Connect" }).click();
-      const callbackUrl = await listener.callback;
-      listener.close();
-      const code = callbackUrl.searchParams.get("code") ?? "";
-      if (
-        callbackUrl.pathname !== "/callback" ||
-        callbackUrl.searchParams.get("state") !== STATE ||
-        !code
-      ) {
+      await page.getByText(/signing you in on this computer/iu).waitFor();
+      await page.screenshot({
+        path: join(OUT, "connect-desktop-connected-desktop.png"),
+        fullPage: true,
+      });
+      const polled = await fetch(`${API}/auth/handoff/poll`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handoff_id: begun.handoff_id, verifier: VERIFIER }),
+      });
+      const outcome = (await polled.json()) as {
+        status?: string;
+        session?: { access_token?: string };
+      };
+      if (!polled.ok || outcome.status !== "approved" || !outcome.session?.access_token) {
         console.warn(
-          `  ! /connect/desktop: unexpected callback ${callbackUrl.pathname}${callbackUrl.search}`,
+          `  ! /connect/desktop: poll answered ${polled.status} ${outcome.status ?? ""}`,
         );
         problems += 1;
-      } else {
-        const redeemed = await fetch(`${API}/auth/handoff/redeem`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ code, verifier: VERIFIER }),
-        });
-        if (!redeemed.ok) {
-          console.warn(`  ! /connect/desktop: redeem answered ${redeemed.status}`);
-          problems += 1;
-        }
       }
       await page.goto(`${BASE}/connect/desktop`, { waitUntil: "networkidle" });
       await page.getByRole("heading", { name: /connection link is incomplete/i }).waitFor();
@@ -210,7 +201,18 @@ async function main() {
         path: join(OUT, "connect-desktop-invalid-desktop.png"),
         fullPage: true,
       });
-      console.log("  ✓ /connect/desktop handoff, callback and redeem");
+      // The pages the confirmation email lands on.
+      for (const [slug, path] of [
+        ["auth-confirmed", "/auth/confirmed"],
+        ["auth-confirmed-invalid", "/auth/confirmed?reason=invalid-confirm-link"],
+      ] as const) {
+        await page.goto(`${BASE}${path}`, { waitUntil: "networkidle" });
+        await page.getByRole("heading").first().waitFor();
+        await page.screenshot({ path: join(OUT, `${slug}-desktop.png`), fullPage: true });
+        const confirmedResult = await check(page, `${path} @desktop`);
+        problems += confirmedResult.serious + (confirmedResult.overflow > 1 ? 1 : 0);
+      }
+      console.log("  ✓ /connect/desktop handoff, approval and poll; /auth/confirmed");
 
       // The light console is a per-device choice; the sign-in pages stay dark regardless.
       await page.goto(`${BASE}/account`, { waitUntil: "networkidle" });
@@ -241,7 +243,8 @@ async function main() {
   // A visitor the desktop app sent here signs in first and is told they'll be returned.
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
-  await page.goto(`${BASE}/connect/desktop?state=${STATE}&port=53321&challenge=${CHALLENGE}`, {
+  const signedOutHandoff = await beginHandoff();
+  await page.goto(`${BASE}/connect/desktop?handoff=${signedOutHandoff.handoff_id}`, {
     waitUntil: "networkidle",
   });
   await page.waitForURL(/\/login\?next=/u, { timeout: 15_000 });

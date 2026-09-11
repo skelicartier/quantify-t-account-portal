@@ -58,10 +58,14 @@ describe("desktop handoff route policy", () => {
     expect(isProtectedPortalPath("/connect/desktop/extra")).toBe(false);
 
     const destination = buildLoginRedirectUrl(
-      new URL("https://console.quantifyterminal.com/connect/desktop?state=abc&port=53321"),
+      new URL(
+        "https://console.quantifyterminal.com/connect/desktop?handoff=c2VjcmV0LWhhbmRvZmYtaWQtZnJvbS10aGUtYXBw",
+      ),
     );
 
     expect(destination.pathname).toBe("/login");
-    expect(destination.searchParams.get("next")).toBe("/connect/desktop?state=abc&port=53321");
+    expect(destination.searchParams.get("next")).toBe(
+      "/connect/desktop?handoff=c2VjcmV0LWhhbmRvZmYtaWQtZnJvbS10aGUtYXBw",
+    );
   });
 });

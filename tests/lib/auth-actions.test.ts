@@ -141,8 +141,7 @@ describe("authentication Server Actions", () => {
 });
 
 describe("desktop handoff through sign-in and sign-out", () => {
-  const HANDOFF_PATH =
-    "/connect/desktop?state=c2VjcmV0LXN0YXRlLWZyb20tdGhlLWFwcA&port=53321&challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+  const HANDOFF_PATH = "/connect/desktop?handoff=c2VjcmV0LWhhbmRvZmYtaWQtZnJvbS10aGUtYXBw";
   const HANDOFF_QUERY = new URLSearchParams({ next: HANDOFF_PATH }).toString();
 
   beforeEach(() => {
