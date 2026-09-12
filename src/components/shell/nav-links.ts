@@ -19,6 +19,7 @@ import {
   UserCog,
   UserRound,
   Users,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 
@@ -56,4 +57,5 @@ export const ADMIN_LINKS: readonly NavLink[] = [
   { href: "/admin/credentials", label: "Platform credentials", icon: KeyRound },
   { href: "/admin/releases", label: "Releases", icon: Rocket },
   { href: "/admin/roles", label: "Roles", icon: UserCog },
+  { href: "/admin/access", label: "Access control", icon: UsersRound },
 ];

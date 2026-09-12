@@ -38,6 +38,7 @@ import {
   SUBSCRIPTION_CHANGED_EVENT,
   SUBSCRIPTION_WRITE_CAPABILITY,
   SUPPORT_MANAGE_CAPABILITY,
+  fetchAccountApiAdminStaff,
   fetchAccountApiAdminSupport,
   fetchAccountApiAdminSupportConversation,
   SUPPORT_READ_ALL_CAPABILITY,
@@ -59,6 +60,7 @@ import {
   type AccountApiAdminUserEntitlements,
   type AccountApiAdminUserUsage,
   type AccountApiAdminSecrets,
+  type AccountApiAdminStaff,
   type AccountApiAdminSupport,
   type AccountApiAdminSupportConversation,
   type AccountApiMe,
@@ -261,6 +263,30 @@ export type AdminSecretsAccess =
       me: AccountApiMe;
       assurance: AssuranceState;
       capability: typeof SECRETS_READ_CAPABILITY;
+    };
+
+/**
+ * Access control: who is staff.
+ *
+ * `canGrant` is what the service said this caller may do, not what their role suggests.
+ * Reading the directory needs only console access; changing it is a separate capability,
+ * and a page that guessed would offer a control the API refuses.
+ */
+export type AdminStaffAccess =
+  | {
+      status: "authorized";
+      me: AccountApiMe;
+      assurance: AssuranceState;
+      staff: AccountApiAdminStaff;
+    }
+  | { status: "unavailable"; me: AccountApiMe; assurance: AssuranceState }
+  | { status: "mfa-required"; me: AccountApiMe; assurance: AssuranceState }
+  | { status: "forbidden"; me: AccountApiMe }
+  | {
+      status: "capability-required";
+      me: AccountApiMe;
+      assurance: AssuranceState;
+      capability: typeof ADMIN_ENTRY_CAPABILITY;
     };
 
 /**
@@ -989,6 +1015,31 @@ export const getAdminSecretsAccess = cache(async (): Promise<AdminSecretsAccess>
     };
   } catch (error) {
     // A session that ended is the caller's problem to solve, not a service outage.
+    if (error instanceof AccountApiRequestError && error.status === 401) throw error;
+    return { status: "unavailable", me, assurance };
+  }
+});
+
+export const getAdminStaffAccess = cache(async (): Promise<AdminStaffAccess> => {
+  const { accessToken, me } = await currentAccountApiIdentity("/admin/access");
+
+  if (!hasAdminPortalAccess(me)) return { status: "forbidden", me };
+
+  const assurance = await getCurrentAssurance();
+  if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    return { status: "mfa-required", me, assurance };
+  }
+
+  try {
+    return {
+      status: "authorized",
+      me,
+      assurance,
+      // Carries the capability matrix and this caller's own permissions, so nothing about
+      // who-can-do-what is decided here.
+      staff: await fetchAccountApiAdminStaff(accessToken),
+    };
+  } catch (error) {
     if (error instanceof AccountApiRequestError && error.status === 401) throw error;
     return { status: "unavailable", me, assurance };
   }

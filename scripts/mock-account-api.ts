@@ -1751,6 +1751,120 @@ const server = createServer(async (request, response) => {
       unread: summary.unread,
     };
   };
+  const CAPABILITY_MATRIX: Record<string, string[]> = {
+    owner: [
+      "account:read-any",
+      "account:read-self",
+      "audit:read",
+      "audit:write",
+      "configuration:read",
+      "credentials:read-status",
+      "notifications:write",
+      "releases:read-status",
+      "roles:read-report",
+      "roles:write",
+      "secrets:read",
+      "secrets:write",
+      "sessions:revoke-any",
+      "staff:write",
+      "subscription:write",
+      "support:manage",
+      "support:read",
+      "support:read-all",
+      "support:reply",
+      "users:set-active",
+    ],
+    admin: [
+      "account:read-any",
+      "account:read-self",
+      "audit:read",
+      "audit:write",
+      "notifications:write",
+      "roles:read-report",
+      "secrets:read",
+      "sessions:revoke-any",
+      "staff:write",
+      "subscription:write",
+      "support:manage",
+      "support:read",
+      "support:read-all",
+      "support:reply",
+      "users:set-active",
+    ],
+    support_manager: [
+      "account:read-any",
+      "account:read-self",
+      "audit:read",
+      "audit:write",
+      "support:manage",
+      "support:read",
+      "support:read-all",
+      "support:reply",
+    ],
+    billing_manager: ["account:read-any", "account:read-self", "audit:write", "subscription:write"],
+    auditor: [
+      "account:read-any",
+      "account:read-self",
+      "audit:read",
+      "configuration:read",
+      "roles:read-report",
+    ],
+    support: [
+      "account:read-any",
+      "account:read-self",
+      "audit:read",
+      "audit:write",
+      "support:read",
+      "support:reply",
+    ],
+    user: ["account:read-self"],
+  };
+  const GRANTABLE = ["support_manager", "billing_manager", "auditor", "support", "user"];
+  const staffMember = (person: (typeof PEOPLE)[number], role: string) => ({
+    user_id: person.id,
+    email: person.email,
+    display_name: `${person.first} ${person.last}`,
+    is_active: person.active,
+    role,
+    capabilities: CAPABILITY_MATRIX[role] ?? [],
+    mismatch: "match",
+    break_glass: false,
+    profile_readable: true,
+  });
+  if (route === "admin/staff") {
+    if (!requires("account:read-any")) return;
+    return ok(response, {
+      generated_at: iso(0),
+      members: [
+        staffMember(PEOPLE[0]!, "owner"),
+        staffMember(PEOPLE[1]!, "admin"),
+        staffMember(PEOPLE[2]!, "support_manager"),
+      ],
+      roles: Object.keys(CAPABILITY_MATRIX).map((role) => ({
+        role,
+        capabilities: CAPABILITY_MATRIX[role]!,
+        grantable: GRANTABLE.includes(role),
+      })),
+      grantable_roles: GRANTABLE,
+      can_grant: caps.includes("staff:write"),
+      can_assign_any_role: caps.includes("roles:write"),
+      legacy_readable: true,
+    });
+  }
+  const staffWrite = route.match(/^admin\/staff\/([0-9a-f-]{36})$/u);
+  if (staffWrite) {
+    if (!requires("staff:write")) return;
+    const requested = String(json.role ?? "");
+    if (!GRANTABLE.includes(requested)) {
+      return fail(response, 400, "malformed_request", "That is not a role this route sets.");
+    }
+    return ok(response, {
+      member: { ...staffMember(PEOPLE[3]!, requested), user_id: staffWrite[1]! },
+      changed: true,
+      event: { id: randomUUID(), event_type: "account.role_changed" },
+      replayed: false,
+    });
+  }
   if (route === "admin/support") {
     if (!requires("support:read")) return;
     // The service narrows the queue before it answers; the mock does the same, or the

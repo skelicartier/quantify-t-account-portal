@@ -24,6 +24,7 @@ const LINKS = [
   { href: "/admin/credentials", name: "Platform credentials" },
   { href: "/admin/releases", name: "Releases" },
   { href: "/admin/roles", name: "Roles" },
+  { href: "/admin/access", name: "Access control" },
 ] as const;
 
 describe("AdminNavigation", () => {

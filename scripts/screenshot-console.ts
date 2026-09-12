@@ -72,6 +72,7 @@ const ROUTES = [
   "/admin/credentials",
   "/admin/releases",
   "/admin/roles",
+  "/admin/access",
 ] as const;
 
 const LIGHT_ROUTES = [

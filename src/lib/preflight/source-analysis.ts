@@ -25,6 +25,7 @@ export const SAME_ORIGIN_SERVER_ACTION_PATHS = [
   "src/app/account/preferences/actions.ts",
   "src/app/account/profile/actions.ts",
   "src/app/account/security/actions.ts",
+  "src/app/admin/access/actions.ts",
   "src/app/admin/email/actions.ts",
   "src/app/admin/notifications/actions.ts",
   "src/app/admin/reports/actions.ts",

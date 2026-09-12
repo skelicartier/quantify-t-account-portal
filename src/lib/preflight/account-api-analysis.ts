@@ -115,6 +115,11 @@ export const CONSTRUCT_ONLY_PROPERTIES: readonly string[] = [
   // shape where reading and writing share one capability, and the shape where the console
   // writes to a name the catalogue does not know.
   "managedSecretRoutes",
+  // Requires both staff routes, the grantable ceiling, the shared rank guard and the
+  // derived ladder. It cannot prove the ceiling is applied on every path; it does reject
+  // the shape where staffing and role assignment share one capability, and the shape where
+  // the ladder is a hand-kept copy that a new role can fall out of.
+  "staffAccessRoutes",
   // Requires the customer and desk route constants, the four capability constants, and
   // the module's own visibility and projection functions. It cannot prove that every
   // handler routes reads through `visible_to`; it does reject the shape where a customer
@@ -471,14 +476,32 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
       ]) &&
       // Every mutating route claims the key first: the desktop app-state upsert, the two
       // subscription writes the console drives, the three credential writes, and the four
-      // support sends. The floor is the current count, not a comfortable margin below it,
-      // which is the point — a route added without a key drops the property instead of
-      // hiding under the slack.
-      occursAtLeast(modules.app, "require_key(request)", 23) &&
+      // support sends, and the staff grant. The floor is the current count, not a
+      // comfortable margin below it, which is the point — a route added without a key
+      // drops the property instead of hiding under the slack.
+      occursAtLeast(modules.app, "require_key(request)", 24) &&
       includesAll(modules.app, ["replay_or_reserve", "scope_for("]) &&
       // The reservation must precede the side effect. Recording afterwards misses the case
       // the module exists for: a request killed between the write and the record.
       reservesBeforeMutating(modules.app),
+    staffAccessRoutes:
+      includesAll(modules.app, [
+        'ADMIN_STAFF_ROUTE = "admin/staff"',
+        'ADMIN_STAFF_MEMBER_ROUTE = "admin/staff/{user_id}"',
+        // The ceiling that makes this route safe to hold without `roles:write`: an Admin
+        // may staff a desk and may not mint somebody at their own level.
+        "GRANTABLE_STAFF_ROLES",
+        "def _admin_staff_member",
+        "_can_change_role(",
+        // Rank derived from the canonical list, so a role added later is not silently the
+        // weakest thing in the ladder.
+        "role: index for index, role in enumerate(capabilities_module.CANONICAL_ROLES)",
+      ]) &&
+      includesAll(modules.capabilities, [
+        'MANAGE_STAFF = "staff:write"',
+        'MANAGE_ROLES = "roles:write"',
+        "STAFF_ROLES",
+      ]),
     supportDeskRoutes:
       includesAll(modules.app, [
         'SUPPORT_CONVERSATIONS_ROUTE = "support/conversations"',

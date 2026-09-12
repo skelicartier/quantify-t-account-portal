@@ -111,6 +111,14 @@ export type AccountApiEvidence = {
    */
   managedSecretRoutes: boolean;
   /**
+   * Access control: a staff directory and a grant that cannot mint an Owner or an Admin.
+   * Pinned because the console's claim — that an Admin can staff a desk without being able
+   * to promote somebody to their own level — is a claim about a ceiling that lives
+   * upstream, and a route that dropped it would make the page's promise false without a
+   * line of portal code changing.
+   */
+  staffAccessRoutes: boolean;
+  /**
    * The support desk: a customer's own conversations, and the desk's queue behind four
    * separate capabilities. Pinned because the console's claim here is a claim about who
    * upstream lets read what — a conversation carries whatever a customer pasted into it,

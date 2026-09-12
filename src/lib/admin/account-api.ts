@@ -683,6 +683,66 @@ export const accountApiAdminSupportConversationSchema = z
   })
   .strict();
 
+// -------------------------------------------------------------------- access control
+/**
+ * Who is staff, and what each role permits.
+ *
+ * The capability lists arrive from the service rather than being described here. A console
+ * that keeps its own copy of who-can-do-what drifts silently, and the direction it drifts
+ * is always towards claiming more than is true.
+ */
+const staffMemberSchema = z
+  .object({
+    user_id: z.string().min(1).max(64),
+    email: z.string().max(320),
+    display_name: z.string().max(240),
+    is_active: z.boolean(),
+    role: roleSchema,
+    capabilities: z.array(z.string().max(64)).max(64),
+    mismatch: z.string().max(64),
+    break_glass: z.boolean(),
+    /** False when the account's profile row could not be read; the row is still named. */
+    profile_readable: z.boolean(),
+  })
+  .strict();
+
+const staffRoleCatalogueSchema = z
+  .object({
+    role: roleSchema,
+    capabilities: z.array(z.string().max(64)).max(64),
+    grantable: z.boolean(),
+  })
+  .strict();
+
+export const accountApiAdminStaffSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    generated_at: z.string().min(1).max(64),
+    members: z.array(staffMemberSchema).max(500),
+    roles: z.array(staffRoleCatalogueSchema).max(32),
+    grantable_roles: z.array(roleSchema).max(32),
+    can_grant: z.boolean(),
+    can_assign_any_role: z.boolean(),
+    legacy_readable: z.boolean(),
+  })
+  .strict();
+
+export const accountApiAdminStaffWriteSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    member: staffMemberSchema,
+    /** False when the account already held the role, so the trail counts changes. */
+    changed: z.boolean(),
+    event: z
+      .object({ id: z.string().max(64), event_type: z.string().max(64) })
+      .strict()
+      .nullable(),
+    replayed: z.boolean(),
+  })
+  .strict();
+
 export const accountApiAdminReleaseStatusSchema = z
   .object({
     ok: z.literal(true),
@@ -1344,6 +1404,10 @@ export type AccountApiAdminMetrics = z.infer<typeof accountApiAdminMetricsSchema
 export type AccountApiAdminConfiguration = z.infer<typeof accountApiAdminConfigurationSchema>;
 export type AccountApiAdminCredentialStatus = z.infer<typeof accountApiAdminCredentialStatusSchema>;
 export type AccountApiAdminReleaseStatus = z.infer<typeof accountApiAdminReleaseStatusSchema>;
+export type AccountApiAdminStaff = z.infer<typeof accountApiAdminStaffSchema>;
+export type AccountApiAdminStaffWrite = z.infer<typeof accountApiAdminStaffWriteSchema>;
+export type AccountApiStaffMember = z.infer<typeof staffMemberSchema>;
+export type AccountApiStaffRoleCatalogue = z.infer<typeof staffRoleCatalogueSchema>;
 export type AccountApiSupportSummary = z.infer<typeof accountApiSupportSummarySchema>;
 export type AccountApiSupportConversation = z.infer<typeof accountApiSupportConversationSchema>;
 export type AccountApiAdminSupport = z.infer<typeof accountApiAdminSupportSchema>;
@@ -1874,6 +1938,43 @@ function supportRoute(conversationId: string, suffix = ""): string {
 }
 
 /** The queue, already narrowed upstream to what this caller may read. */
+/** The staff directory: everyone who is not a plain account, and what their role permits. */
+export async function fetchAccountApiAdminStaff(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiAdminStaff> {
+  const payload = await fetchAccountApiJson("admin/staff", accessToken, options);
+  return parseAccountApiPayload(accountApiAdminStaffSchema, payload, "admin/staff", "GET");
+}
+
+/**
+ * Grant or remove a staff role.
+ *
+ * Owner and Admin are not sendable here: the service refuses them, and the type refuses
+ * them first so the refusal is visible where the call is written rather than at run time.
+ */
+export async function setAccountApiAdminStaffRole(
+  accessToken: string,
+  userId: string,
+  body: { role: AssignableRole; reason?: string },
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiAdminStaffWrite> {
+  const candidate = z.guid().safeParse(userId.trim().toLowerCase());
+  if (!candidate.success) throw new AccountApiUnavailableError();
+  const route = `admin/staff/${encodeURIComponent(candidate.data)}`;
+  const payload = await postAccountApiJson(route, accessToken, body, options);
+  return parseAccountApiPayload(accountApiAdminStaffWriteSchema, payload, route, "POST");
+}
+
+/** The staff roles the desk-staffing route may grant; Owner and Admin need `roles:write`. */
+export const GRANTABLE_STAFF_ROLES = [
+  "support_manager",
+  "billing_manager",
+  "auditor",
+  "support",
+  "user",
+] as const satisfies readonly AssignableRole[];
+
 export async function fetchAccountApiAdminSupport(
   accessToken: string,
   options: AccountApiFetchOptions = {},
