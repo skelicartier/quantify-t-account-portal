@@ -19,6 +19,16 @@ export const CONFIGURATION_CAPABILITY = "configuration:read";
 export const CREDENTIAL_STATUS_CAPABILITY = "credentials:read-status";
 export const RELEASE_STATUS_CAPABILITY = "releases:read-status";
 /**
+ * The credentials the product spends — provider keys, market-data keys, map tokens — as
+ * distinct from the account service's own settings (`CREDENTIAL_STATUS_CAPABILITY`).
+ *
+ * Reading and writing are separate on purpose. "Which key is failing?" is a question
+ * someone must be able to answer at 2am; replacing one is not. Collapsing them would give
+ * everyone who can answer the question the whole blast radius of the answer.
+ */
+export const SECRETS_READ_CAPABILITY = "secrets:read";
+export const SECRETS_WRITE_CAPABILITY = "secrets:write";
+/**
  * Changing what an account may do, as distinct from who they are. Deliberately separate
  * from role management: Support must be able to look at a plan without granting one, and
  * an Admin must be able to comp an account without being able to make someone an Owner.
@@ -470,6 +480,104 @@ export const accountApiAdminCredentialStatusSchema = z
     credentials: z.array(credentialStatusSchema).max(32),
   })
   .strict();
+
+/**
+ * A managed credential, described without being disclosed.
+ *
+ * Every field here answers a question an operator can act on — is it set, where does it
+ * end up, which key is it, did the paste get truncated, when was it last known good. None
+ * of them is derived from the credential in a way that can be run backwards: `fingerprint`
+ * is a keyed digest the service computes and stores, and `prefix` is an allow-list lookup
+ * of a published provider marker, never a slice of the value.
+ *
+ * The fields this shape deliberately has no room for are `value`, any suffix of one,
+ * `credential_key_id` and `last_error`. `.strict()` is what enforces that: a service that
+ * started sending any of them would fail the parse rather than quietly render them.
+ */
+const adminSecretVerificationSchema = z
+  .object({
+    state: z.enum([
+      "valid",
+      "rejected",
+      "scoped-wrong",
+      "no-quota",
+      "inconclusive",
+      "unclassified",
+      "unverified",
+      "unsupported",
+      "checking",
+    ]),
+    checked_at: z.string().min(1).max(64).nullable(),
+  })
+  .strict();
+
+const adminSecretEntrySchema = z
+  .object({
+    fingerprint: z.string().min(1).max(64),
+    prefix: z.string().max(32),
+    length: z.number().int().nonnegative().max(100_000),
+    position: z.number().int().nonnegative().max(64),
+    set_by: z.string().max(120),
+    set_at: z.string().min(1).max(64),
+    verification: adminSecretVerificationSchema,
+  })
+  .strict();
+
+const adminSecretSlotSchema = z
+  .object({
+    slot: z.string().min(1).max(80),
+    namespace: z.enum(["api", "geo"]),
+    label: z.string().min(1).max(120),
+    kind: z.enum(["single", "multi", "identifier"]),
+    group: z.string().max(64).nullable(),
+    hint: z.string().max(240),
+    blast_radius: z.string().max(240),
+    is_secret: z.boolean(),
+    configured: z.boolean(),
+    distribution: z.enum(["every-device", "server-only"]),
+    distribution_certain: z.boolean(),
+    entries: z.array(adminSecretEntrySchema).max(32),
+  })
+  .strict();
+
+export const accountApiAdminSecretsSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    generated_at: z.string().min(1).max(64),
+    store: z
+      .object({
+        state: z.enum(["ready", "unreadable"]),
+        dependency: z.string().max(120).nullable().optional(),
+      })
+      .strict(),
+    slots: z.array(adminSecretSlotSchema).max(64),
+  })
+  .strict();
+
+/** What a write answers with: the slot as it now stands, never the value that was sent. */
+export const accountApiAdminSecretWriteSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    slot: adminSecretSlotSchema.nullable(),
+    action: z.enum(["set", "append", "revoke", "restore"]),
+    /**
+     * The credential is committed and in use, but the description of it could not be
+     * updated. Reporting that as a failure would send the operator round again to redo a
+     * change that has already taken effect, so it is surfaced as a caveat instead.
+     */
+    metadata_lagging: z.boolean(),
+    event: z
+      .object({ id: z.string().max(64), event_type: z.string().max(64) })
+      .strict()
+      .nullable(),
+    replayed: z.boolean(),
+  })
+  .strict();
+
+/** A restore answers with the fingerprint it put back, and nothing else. */
+export const accountApiAdminSecretRestoreSchema = accountApiAdminSecretWriteSchema;
 
 export const accountApiAdminReleaseStatusSchema = z
   .object({
@@ -1132,6 +1240,11 @@ export type AccountApiAdminMetrics = z.infer<typeof accountApiAdminMetricsSchema
 export type AccountApiAdminConfiguration = z.infer<typeof accountApiAdminConfigurationSchema>;
 export type AccountApiAdminCredentialStatus = z.infer<typeof accountApiAdminCredentialStatusSchema>;
 export type AccountApiAdminReleaseStatus = z.infer<typeof accountApiAdminReleaseStatusSchema>;
+export type AccountApiAdminSecrets = z.infer<typeof accountApiAdminSecretsSchema>;
+export type AccountApiAdminSecretSlot = AccountApiAdminSecrets["slots"][number];
+export type AccountApiAdminSecretEntry = AccountApiAdminSecretSlot["entries"][number];
+export type AccountApiAdminSecretWrite = z.infer<typeof accountApiAdminSecretWriteSchema>;
+export type AccountApiAdminSecretRestore = z.infer<typeof accountApiAdminSecretRestoreSchema>;
 export type AccountApiEntitlements = z.infer<typeof accountApiEntitlementsSchema>;
 export type AccountApiEntitlementFeature = z.infer<typeof entitlementFeatureSchema>;
 export type AccountApiAdminSubscriptions = z.infer<typeof accountApiAdminSubscriptionsSchema>;
@@ -1569,6 +1682,71 @@ export async function fetchAccountApiAdminCredentialStatus(
     "admin/credentials",
     "GET",
   );
+}
+
+/**
+ * Slot names are catalogue identifiers, and the only ones this module will put into a
+ * path. The names arrive in a response rather than from a person, but a name that reached
+ * the URL unchecked would make the route builder a path-traversal primitive the moment the
+ * upstream shape changed, so the check is here rather than assumed upstream.
+ */
+const SECRET_SLOT_PATTERN = /^[A-Za-z0-9_]{1,80}$/u;
+
+function secretRoute(slot: string, suffix = ""): string {
+  if (!SECRET_SLOT_PATTERN.test(slot)) throw new AccountApiUnavailableError();
+  return `admin/secrets/${slot}${suffix}`;
+}
+
+/**
+ * The managed credential inventory: metadata for every catalogue slot, no values.
+ *
+ * There is no companion "read one credential" call, in this module or upstream. That is
+ * the design, not an omission.
+ */
+export async function fetchAccountApiAdminSecrets(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiAdminSecrets> {
+  const payload = await fetchAccountApiJson("admin/secrets", accessToken, options);
+  return parseAccountApiPayload(accountApiAdminSecretsSchema, payload, "admin/secrets", "GET");
+}
+
+export type AccountApiAdminSecretWriteBody = {
+  value: string;
+  expected_fingerprint?: string;
+  mode?: "replace" | "append";
+};
+
+export async function setAccountApiAdminSecret(
+  accessToken: string,
+  slot: string,
+  body: AccountApiAdminSecretWriteBody,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiAdminSecretWrite> {
+  const route = secretRoute(slot);
+  const payload = await postAccountApiJson(route, accessToken, body, options);
+  return parseAccountApiPayload(accountApiAdminSecretWriteSchema, payload, route, "POST");
+}
+
+export async function revokeAccountApiAdminSecret(
+  accessToken: string,
+  slot: string,
+  body: { expected_fingerprint?: string },
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiAdminSecretWrite> {
+  const route = secretRoute(slot, "/revoke");
+  const payload = await postAccountApiJson(route, accessToken, body, options);
+  return parseAccountApiPayload(accountApiAdminSecretWriteSchema, payload, route, "POST");
+}
+
+export async function restoreAccountApiAdminSecret(
+  accessToken: string,
+  slot: string,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiAdminSecretRestore> {
+  const route = secretRoute(slot, "/restore");
+  const payload = await postAccountApiJson(route, accessToken, {}, options);
+  return parseAccountApiPayload(accountApiAdminSecretRestoreSchema, payload, route, "POST");
 }
 
 export async function fetchAccountApiAdminReleaseStatus(

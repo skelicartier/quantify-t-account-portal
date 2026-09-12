@@ -109,6 +109,11 @@ export const CONSTRUCT_ONLY_PROPERTIES: readonly string[] = [
   "notificationRoutes",
   // Requires Owner-only source status for configuration, credentials and release locks.
   "ownerStatusRoutes",
+  // Requires the four managed-credential route constants and both capability constants.
+  // It cannot prove that no other route returns a credential value; it does reject the
+  // shape where reading and writing share one capability, and the shape where the console
+  // writes to a name the catalogue does not know.
+  "managedSecretRoutes",
   // Requires the allow-list constant and the unknown-field rejection.
   "allowListedResponses",
   // Requires the discard branch for a wildcard origin and no wildcard literal in the CORS
@@ -457,10 +462,11 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         // A reservation lease and a replay window are separate lifetimes.
         "lease_seconds",
       ]) &&
-      // Every mutating route claims the key first: the desktop app-state upsert, and the
-      // two subscription writes the console drives. The count rises with each new
-      // mutating route, which is the point — a route added without a key drops it.
-      occursAtLeast(modules.app, "require_key(request)", 16) &&
+      // Every mutating route claims the key first: the desktop app-state upsert, the two
+      // subscription writes the console drives, and the three credential writes. The floor
+      // is the current count, not a comfortable margin below it, which is the point — a
+      // route added without a key drops the property instead of hiding under the slack.
+      occursAtLeast(modules.app, "require_key(request)", 19) &&
       includesAll(modules.app, ["replay_or_reserve", "scope_for("]) &&
       // The reservation must precede the side effect. Recording afterwards misses the case
       // the module exists for: a request killed between the write and the record.
@@ -804,6 +810,23 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         'READ_CONFIGURATION = "configuration:read"',
         'READ_CREDENTIAL_STATUS = "credentials:read-status"',
         'READ_RELEASE_STATUS = "releases:read-status"',
+      ]),
+    managedSecretRoutes:
+      includesAll(modules.app, [
+        'ADMIN_SECRETS_ROUTE = "admin/secrets"',
+        'ADMIN_SECRET_SET_ROUTE = "admin/secrets/{slot}"',
+        'ADMIN_SECRET_REVOKE_ROUTE = "admin/secrets/{slot}/revoke"',
+        'ADMIN_SECRET_RESTORE_ROUTE = "admin/secrets/{slot}/restore"',
+        // The slot is resolved against the catalogue, so an arbitrary path segment is a
+        // 404 rather than a write to a name nothing reads.
+        "def _secret_slot_from_route",
+        "SLOTS_BY_NAME",
+      ]) &&
+      // Reading the inventory and changing it are separate permissions. Collapsed into
+      // one, everybody who can diagnose a failing key can also replace it.
+      includesAll(modules.capabilities, [
+        'READ_SECRETS = "secrets:read"',
+        'WRITE_SECRETS = "secrets:write"',
       ]),
     reportRoutes:
       includesAll(modules.app, [

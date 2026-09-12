@@ -1,5 +1,6 @@
 import { AdminGate } from "@/components/admin/admin-gate";
 import { PageHeader } from "@/components/shell/page-header";
+import { ButtonLink } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card, Section } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
@@ -190,22 +191,33 @@ export function AdminCredentials({ access, now }: StatusProps<AdminCredentialSta
     <>
       <PageHeader
         eyebrow="Administration"
-        title="Credentials"
+        title="Platform credentials"
         titleId="admin-platform-heading"
-        description="Whether each integration credential is present. Values are never shown here."
+        description="The account service's own settings. Whether each one is present, and nothing more."
         meta={
           status ? <Timestamp value={status.generated_at} now={now} prefix="Updated" /> : undefined
         }
       />
       <div className="page-content">
-        <AdminGate access={access} section="Credentials">
+        <AdminGate access={access} section="Platform credentials">
           {status && (
             <>
+              {/* Scoped deliberately. These seven really are set where the service is
+                  deployed; the provider keys the product spends are not, and used to be
+                  covered by the same sentence. */}
               <Callout title="Status only">
-                Secret values never leave the service. Rotation happens at the deployment source,
-                not from this console.
+                These are the account service&rsquo;s own settings. They are changed where the
+                service is deployed, never from this console, and their values never leave it. The
+                provider keys the product spends are managed here instead.{" "}
+                <ButtonLink href="/admin/secrets" variant="ghost">
+                  Open provider keys
+                </ButtonLink>
               </Callout>
-              <DataTable columns={CREDENTIAL_COLUMNS} caption="Credential status" minWidth={560}>
+              <DataTable
+                columns={CREDENTIAL_COLUMNS}
+                caption="Platform credential status"
+                minWidth={560}
+              >
                 {status.credentials.map((credential) => (
                   <tr key={credential.name}>
                     <td>

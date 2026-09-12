@@ -12,6 +12,9 @@ import {
   AUDIT_EVENTS_CAPABILITY,
   CONFIGURATION_CAPABILITY,
   CREDENTIAL_STATUS_CAPABILITY,
+  SECRETS_READ_CAPABILITY,
+  SECRETS_WRITE_CAPABILITY,
+  fetchAccountApiAdminSecrets,
   fetchAccountApiAdminReports,
   fetchAccountApiAdminNotificationEmailQueue,
   fetchAccountApiAdminNotifications,
@@ -48,6 +51,7 @@ import {
   type AccountApiAdminUsers,
   type AccountApiAdminUserEntitlements,
   type AccountApiAdminUserUsage,
+  type AccountApiAdminSecrets,
   type AccountApiMe,
   type AccountApiRoleReport,
 } from "@/lib/admin/account-api";
@@ -221,6 +225,34 @@ export type AdminCredentialStatusAccess =
       capability: typeof CREDENTIAL_STATUS_CAPABILITY;
     };
 
+/**
+ * The managed credential inventory.
+ *
+ * `unavailable` is an arm of its own rather than a thrown error because the two bad
+ * outcomes read identically once they reach a table: a page that renders twenty-one
+ * "not configured" rows during a storage problem says "someone deleted every key", which
+ * is the single worst thing this page could say at 2am. The arm exists so the page can
+ * say "this could not be read" instead — and so that it renders no table at all.
+ */
+export type AdminSecretsAccess =
+  | {
+      status: "authorized";
+      me: AccountApiMe;
+      assurance: AssuranceState;
+      secrets: AccountApiAdminSecrets;
+      /** Whether this person may change a credential, as opposed to only look at one. */
+      canWrite: boolean;
+    }
+  | { status: "unavailable"; me: AccountApiMe; assurance: AssuranceState }
+  | { status: "mfa-required"; me: AccountApiMe; assurance: AssuranceState }
+  | { status: "forbidden"; me: AccountApiMe }
+  | {
+      status: "capability-required";
+      me: AccountApiMe;
+      assurance: AssuranceState;
+      capability: typeof SECRETS_READ_CAPABILITY;
+    };
+
 export type AdminReleaseStatusAccess =
   | {
       status: "authorized";
@@ -302,6 +334,14 @@ export function canReadCredentialStatus(me: AccountApiMe): boolean {
 
 export function canManageSubscriptions(me: AccountApiMe): boolean {
   return me.capabilities.includes(SUBSCRIPTION_WRITE_CAPABILITY);
+}
+
+export function canReadManagedSecrets(me: AccountApiMe): boolean {
+  return me.capabilities.includes(SECRETS_READ_CAPABILITY);
+}
+
+export function canWriteManagedSecrets(me: AccountApiMe): boolean {
+  return me.capabilities.includes(SECRETS_WRITE_CAPABILITY);
 }
 
 export function canReadReleaseStatus(me: AccountApiMe): boolean {
@@ -838,6 +878,38 @@ export const getAdminCredentialStatusAccess = cache(
     };
   },
 );
+
+export const getAdminSecretsAccess = cache(async (): Promise<AdminSecretsAccess> => {
+  const { accessToken, me } = await currentAccountApiIdentity("/admin/secrets");
+
+  if (!hasAdminPortalAccess(me)) return { status: "forbidden", me };
+
+  const assurance = await getCurrentAssurance();
+  if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    return { status: "mfa-required", me, assurance };
+  }
+
+  if (!canReadManagedSecrets(me)) {
+    return { status: "capability-required", me, assurance, capability: SECRETS_READ_CAPABILITY };
+  }
+
+  try {
+    return {
+      status: "authorized",
+      me,
+      assurance,
+      secrets: await fetchAccountApiAdminSecrets(accessToken),
+      // Read and write are separate permissions, so the page has to render the inventory
+      // for someone who may never change it. Every control is built from this, not from
+      // the role, so a read-only administrator is never shown a button that would 403.
+      canWrite: canWriteManagedSecrets(me),
+    };
+  } catch (error) {
+    // A session that ended is the caller's problem to solve, not a service outage.
+    if (error instanceof AccountApiRequestError && error.status === 401) throw error;
+    return { status: "unavailable", me, assurance };
+  }
+});
 
 export const getAdminReleaseStatusAccess = cache(async (): Promise<AdminReleaseStatusAccess> => {
   const { accessToken, me } = await currentAccountApiIdentity("/admin/releases");

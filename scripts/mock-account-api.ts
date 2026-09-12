@@ -39,6 +39,8 @@ const CAPABILITIES: Record<Persona, string[]> = {
     "credentials:read-status",
     "releases:read-status",
     "subscription:write",
+    "secrets:read",
+    "secrets:write",
   ],
   admin: [
     "account:read-self",
@@ -50,6 +52,9 @@ const CAPABILITIES: Record<Persona, string[]> = {
     "sessions:revoke-any",
     "notifications:write",
     "subscription:write",
+    // Reading the inventory without being able to change it is a real, shipped state, so
+    // the mock has a persona in it — otherwise the read-only rendering is never exercised.
+    "secrets:read",
   ],
   support: ["account:read-self", "account:read-any", "audit:read", "audit:write"],
   user: ["account:read-self"],
@@ -662,6 +667,224 @@ function fail(
 
 function ok(response: ServerResponse, payload: Record<string, unknown>, status = 200) {
   send(response, status, { ok: true, correlation_id: correlation(), ...payload });
+}
+
+// ---- managed credentials ---------------------------------------------------------
+//
+// A mirror of the service's catalogue, with fabricated fingerprints only. No value is
+// stored, sent, or derivable from anything here — which is the same property the real
+// inventory has, so a page that renders against this renders against production.
+//
+//   MOCK_SECRET_STORE=unreadable  # exercise the "cannot read what is stored" state
+
+type MockSecretEntry = {
+  fingerprint: string;
+  prefix: string;
+  length: number;
+  position: number;
+  set_by: string;
+  set_at: string;
+  verification: { state: string; checked_at: string | null };
+};
+
+type MockSecretSlot = {
+  slot: string;
+  namespace: "api" | "geo";
+  label: string;
+  kind: "single" | "multi" | "identifier";
+  group: string | null;
+  hint: string;
+  blast_radius: string;
+  prefixes: string[];
+};
+
+function slotEntry(
+  slot: string,
+  namespace: "api" | "geo",
+  label: string,
+  kind: "single" | "multi" | "identifier",
+  blast: string,
+  extra: Partial<MockSecretSlot> = {},
+): MockSecretSlot {
+  return {
+    slot,
+    namespace,
+    label,
+    kind,
+    group: null,
+    hint: "",
+    blast_radius: blast,
+    prefixes: [],
+    ...extra,
+  };
+}
+
+const SECRET_CATALOGUE: MockSecretSlot[] = [
+  slotEntry("OPENROUTER_API_KEY", "api", "OpenRouter", "multi", "AI chat and Deep Research.", {
+    hint: "Holds several keys; the app rotates across them.",
+    prefixes: ["sk-or-v1-", "sk-or-"],
+  }),
+  slotEntry("GEMINI_API_KEY", "api", "Google Gemini", "multi", "The Free plan's chat model.", {
+    prefixes: ["AIza"],
+  }),
+  slotEntry("OPENAI_API_KEY", "api", "OpenAI", "multi", "An alternate chat provider.", {
+    prefixes: ["sk-proj-", "sk-"],
+  }),
+  slotEntry("NVIDIA_API_KEY", "api", "NVIDIA NIM", "multi", "An alternate chat provider.", {
+    prefixes: ["nvapi-"],
+  }),
+  slotEntry("POLYGON_API_KEY", "api", "Polygon", "single", "Intraday quotes and aggregates."),
+  slotEntry("FINNHUB_API_KEY", "api", "Finnhub", "single", "Quotes, fundamentals and earnings."),
+  slotEntry("ALPHA_VANTAGE_API_KEY", "api", "Alpha Vantage", "single", "Fallback quotes.", {
+    hint: "Free tier is 25 requests a day in total.",
+  }),
+  slotEntry("FMP_API_KEY", "api", "Financial Modeling Prep", "single", "Dividends and filings."),
+  slotEntry("COINGECKO_API_KEY", "api", "CoinGecko", "single", "Crypto prices and market data."),
+  slotEntry("NEWSDATA_API_KEY", "api", "NewsData", "single", "One of three news sources."),
+  slotEntry("NEWSAPI_API_KEY", "api", "NewsAPI", "single", "One of three news sources.", {
+    hint: "Free tier is 100 requests a day.",
+  }),
+  slotEntry("GNEWS_API_KEY", "api", "GNews", "single", "One of three news sources."),
+  slotEntry("opensky_client_id", "geo", "OpenSky client ID", "identifier", "Aircraft tracking.", {
+    group: "opensky_1",
+    hint: "A registration value, not a secret.",
+  }),
+  slotEntry(
+    "opensky_client_secret",
+    "geo",
+    "OpenSky client secret",
+    "single",
+    "Aircraft tracking.",
+    {
+      group: "opensky_1",
+    },
+  ),
+  slotEntry(
+    "opensky_client_id_2",
+    "geo",
+    "OpenSky client ID (second)",
+    "identifier",
+    "A second OpenSky client, for more quota.",
+    { group: "opensky_2", hint: "A registration value, not a secret." },
+  ),
+  slotEntry(
+    "opensky_client_secret_2",
+    "geo",
+    "OpenSky client secret (second)",
+    "single",
+    "A second OpenSky client, for more quota.",
+    { group: "opensky_2" },
+  ),
+  slotEntry("adsbexchange_api_key", "geo", "ADS-B Exchange", "single", "Alternate aircraft data."),
+  slotEntry("ucdp_token", "geo", "UCDP", "single", "Verified conflict events on the map."),
+  slotEntry("reliefweb_appname", "geo", "ReliefWeb appname", "identifier", "Situation reports.", {
+    hint: "A registration string, not a secret. Often an email address.",
+  }),
+  slotEntry("firms_map_key", "geo", "NASA FIRMS", "single", "Wildfire and thermal hotspots."),
+  slotEntry("aisstream_key", "geo", "AISStream", "single", "Live ship tracking."),
+];
+
+/** Stable, fabricated, and derived from nothing that was ever a credential. */
+function fabricatedFingerprint(slot: string, salt: number): string {
+  return createHash("sha256").update(`mock|${slot}|${salt}`).digest("hex").slice(0, 16);
+}
+
+const OWNER_ID = "4c7715ea-9ae3-4abd-b2f7-2d2c9a037d9b";
+
+function seededEntry(
+  slot: string,
+  index: number,
+  length: number,
+  prefix: string,
+  state: string,
+  minutesAgo: number,
+): MockSecretEntry {
+  return {
+    fingerprint: fabricatedFingerprint(slot, index),
+    prefix,
+    length,
+    position: index,
+    set_by: OWNER_ID,
+    set_at: iso(60 * 24 * (index + 3)),
+    verification: {
+      state,
+      checked_at: state === "unverified" || state === "unsupported" ? null : iso(minutesAgo),
+    },
+  };
+}
+
+const secretStore = new Map<string, MockSecretEntry[]>([
+  // A rotation pool, one member of which the provider has stopped accepting: the case the
+  // page exists for, and the one a single-row-per-slot design would hide.
+  [
+    "OPENROUTER_API_KEY",
+    [
+      seededEntry("OPENROUTER_API_KEY", 0, 73, "sk-or-v1-", "valid", 42),
+      seededEntry("OPENROUTER_API_KEY", 1, 73, "sk-or-v1-", "no-quota", 44),
+      seededEntry("OPENROUTER_API_KEY", 2, 64, "sk-or-", "valid", 46),
+    ],
+  ],
+  ["GEMINI_API_KEY", [seededEntry("GEMINI_API_KEY", 0, 39, "AIza", "valid", 180)]],
+  ["FINNHUB_API_KEY", [seededEntry("FINNHUB_API_KEY", 0, 20, "", "rejected", 15)]],
+  ["POLYGON_API_KEY", [seededEntry("POLYGON_API_KEY", 0, 32, "", "valid", 300)]],
+  ["ALPHA_VANTAGE_API_KEY", [seededEntry("ALPHA_VANTAGE_API_KEY", 0, 16, "", "unsupported", 0)]],
+  ["opensky_client_id", [seededEntry("opensky_client_id", 0, 27, "", "unsupported", 0)]],
+  ["opensky_client_secret", [seededEntry("opensky_client_secret", 0, 32, "", "unverified", 0)]],
+  ["reliefweb_appname", [seededEntry("reliefweb_appname", 0, 24, "", "unsupported", 0)]],
+]);
+
+const secretHistory = new Map<string, MockSecretEntry[]>();
+
+/**
+ * The receipt a credential write answers with — the same envelope the real service uses.
+ *
+ * Built in one place so the mock cannot drift from the contract the console parses. A mock
+ * that answers a shape the service never sends makes every screenshot and preflight run
+ * green against a page that would fail on the first real write.
+ */
+function secretWriteReceipt(slot: MockSecretSlot, action: "set" | "append" | "revoke" | "restore") {
+  return {
+    slot: secretSlotView(slot),
+    action,
+    metadata_lagging: false,
+    event: { id: randomUUID(), event_type: "admin.secret_changed" },
+    replayed: false,
+  };
+}
+
+function secretSlotView(slot: MockSecretSlot) {
+  const entries = secretStore.get(slot.slot) ?? [];
+  return {
+    slot: slot.slot,
+    namespace: slot.namespace,
+    label: slot.label,
+    kind: slot.kind,
+    group: slot.group,
+    hint: slot.hint,
+    blast_radius: slot.blast_radius,
+    is_secret: slot.kind !== "identifier",
+    configured: entries.length > 0,
+    distribution: "every-device",
+    // The switch that would make a slot server-only lives on another service, so the
+    // honest answer is the worst case plus "this is not observable from here".
+    distribution_certain: false,
+    entries: entries.map((entry, index) => ({ ...entry, position: index })),
+  };
+}
+
+function secretsDocument() {
+  const unreadable = process.env.MOCK_SECRET_STORE === "unreadable";
+  return {
+    generated_at: iso(0),
+    store: unreadable
+      ? { state: "unreadable", dependency: "app-config-store" }
+      : { state: "ready", dependency: null },
+    slots: SECRET_CATALOGUE.map((slot) =>
+      unreadable
+        ? { ...secretSlotView(slot), configured: false, entries: [] }
+        : secretSlotView(slot),
+    ),
+  };
 }
 
 function authUser(userId: string) {
@@ -1541,6 +1764,52 @@ const server = createServer(async (request, response) => {
         { name: "release_signing_key", configured: false, secret: true, rotation: "source-locked" },
       ],
     });
+  }
+  if (route === "admin/secrets") {
+    if (!requires("secrets:read")) return;
+    return ok(response, secretsDocument());
+  }
+  const secretWrite = route.match(/^admin\/secrets\/([A-Za-z0-9_]{1,80})(?:\/(revoke|restore))?$/u);
+  if (secretWrite) {
+    const slot = SECRET_CATALOGUE.find((entry) => entry.slot === secretWrite[1]);
+    if (!slot) return fail(response, 404, "not_found", "No such credential.");
+    if (!requires("secrets:write")) return;
+    if (method !== "POST") return fail(response, 405, "method_not_allowed", "POST only.");
+    const action = secretWrite[2] ?? "set";
+    if (action === "restore") {
+      const prior = secretHistory.get(slot.slot);
+      if (!prior) return fail(response, 404, "not_found", "Nothing is kept for this credential.");
+      secretStore.set(slot.slot, prior);
+      secretHistory.delete(slot.slot);
+      return ok(response, secretWriteReceipt(slot, "restore"));
+    }
+    const existing = secretStore.get(slot.slot) ?? [];
+    if (action === "revoke") {
+      if (existing.length > 0) secretHistory.set(slot.slot, existing);
+      secretStore.set(slot.slot, []);
+      return ok(response, secretWriteReceipt(slot, "revoke"));
+    }
+    const value = String(json.value ?? "");
+    if (!value.trim()) {
+      return fail(response, 400, "empty_value_rejected", "A credential value is required.");
+    }
+    // The mock never keeps the value: it stores what the real service stores about one.
+    const appended = json.mode === "append" && slot.kind === "multi";
+    if (existing.length > 0) secretHistory.set(slot.slot, existing);
+    const kept = appended ? existing : [];
+    secretStore.set(slot.slot, [
+      ...kept,
+      {
+        fingerprint: fabricatedFingerprint(slot.slot, kept.length + Date.now()),
+        prefix: slot.prefixes.find((prefix) => value.startsWith(prefix)) ?? "",
+        length: value.length,
+        position: kept.length,
+        set_by: userId,
+        set_at: iso(0),
+        verification: { state: "unverified", checked_at: null },
+      },
+    ]);
+    return ok(response, secretWriteReceipt(slot, appended ? "append" : "set"));
   }
   if (route === "admin/releases") {
     if (!requires("releases:read-status")) return;

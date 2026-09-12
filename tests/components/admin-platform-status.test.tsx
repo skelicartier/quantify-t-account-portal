@@ -116,10 +116,17 @@ describe("admin platform status", () => {
       </>,
     );
 
-    expect(screen.getByRole("heading", { name: "Credentials" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Platform credentials" })).toBeVisible();
     expect(screen.getByRole("cell", { name: "Supabase Service Role" })).toBeVisible();
     expect(screen.getAllByText("Rotated at source").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Source Locked")).not.toBeInTheDocument();
+    // The page no longer claims every credential is rotated where the service is deployed:
+    // the provider keys the product spends are rotated from the console, and say so.
+    expect(screen.queryByText(/Rotation happens at the deployment source/iu)).toBeNull();
+    expect(screen.getByRole("link", { name: "Open provider keys" })).toHaveAttribute(
+      "href",
+      "/admin/secrets",
+    );
     expect(screen.getByRole("heading", { name: "Releases" })).toBeVisible();
     expect(screen.getByText("Server signatures")).toBeVisible();
     expect(screen.queryByText(/xkeysib|service-role|sender@example/iu)).not.toBeInTheDocument();

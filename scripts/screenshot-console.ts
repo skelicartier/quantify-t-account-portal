@@ -66,6 +66,7 @@ const ROUTES = [
   "/admin/notifications",
   "/admin/email",
   "/admin/configuration",
+  "/admin/secrets",
   "/admin/credentials",
   "/admin/releases",
   "/admin/roles",

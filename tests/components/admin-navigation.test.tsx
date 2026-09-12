@@ -19,7 +19,8 @@ const LINKS = [
   { href: "/admin/audit", name: "Audit" },
   { href: "/admin/reports", name: "Reports" },
   { href: "/admin/configuration", name: "Configuration" },
-  { href: "/admin/credentials", name: "Credentials" },
+  { href: "/admin/secrets", name: "Provider keys" },
+  { href: "/admin/credentials", name: "Platform credentials" },
   { href: "/admin/releases", name: "Releases" },
   { href: "/admin/roles", name: "Roles" },
 ] as const;

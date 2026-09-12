@@ -102,6 +102,14 @@ export type AccountApiEvidence = {
   notificationRoutes: boolean;
   /** Owner-only source status for configuration, credentials and release locks. */
   ownerStatusRoutes: boolean;
+  /**
+   * The console-managed credential surface: an inventory route plus set, revoke and
+   * restore, behind a read capability and a separate write capability. Pinned because the
+   * console's whole claim — that it can change a credential and can never show one — is a
+   * claim about which routes exist upstream, and a fifth route that returned a value would
+   * make the page's promise false without changing a line of portal code.
+   */
+  managedSecretRoutes: boolean;
   /** Response bodies are built from allow-lists, not spread from upstream payloads. */
   allowListedResponses: boolean;
   /** Both role stores are read and reconciled; neither is written. */

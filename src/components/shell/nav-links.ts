@@ -6,6 +6,7 @@ import {
   FileText,
   Gauge,
   KeyRound,
+  KeySquare,
   LayoutDashboard,
   Mail,
   MonitorSmartphone,
@@ -49,7 +50,8 @@ export const ADMIN_LINKS: readonly NavLink[] = [
   { href: "/admin/audit", label: "Audit", icon: ScrollText },
   { href: "/admin/reports", label: "Reports", icon: FileText },
   { href: "/admin/configuration", label: "Configuration", icon: Settings2 },
-  { href: "/admin/credentials", label: "Credentials", icon: KeyRound },
+  { href: "/admin/secrets", label: "Provider keys", icon: KeySquare },
+  { href: "/admin/credentials", label: "Platform credentials", icon: KeyRound },
   { href: "/admin/releases", label: "Releases", icon: Rocket },
   { href: "/admin/roles", label: "Roles", icon: UserCog },
 ];

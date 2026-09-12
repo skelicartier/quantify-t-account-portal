@@ -2067,6 +2067,26 @@
     font-size: 11px;
   }
 
+  /* a native disclosure; open/closed without JavaScript, so it survives hydration */
+  .disclosure > summary {
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    color: var(--text);
+    background: var(--panel);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .disclosure > summary:focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+  }
+
+  .disclosure[open] > summary {
+    margin-bottom: 16px;
+  }
+
   /* hairline lists */
   .list-rows {
     display: grid;

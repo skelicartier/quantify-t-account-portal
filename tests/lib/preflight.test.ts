@@ -359,6 +359,7 @@ const completeSnapshot: RepositorySnapshot = {
     adminUserSessionRevokeRoute: true,
     notificationRoutes: true,
     ownerStatusRoutes: true,
+    managedSecretRoutes: true,
     allowListedResponses: true,
     dualReadRolesWithoutCutover: true,
     pinnedRequirements: true,
