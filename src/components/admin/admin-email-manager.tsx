@@ -160,7 +160,10 @@ export function AdminEmailManager({ queue, action, now }: Props) {
                   type="datetime-local"
                   value={isoToLocalInput(email.scheduled_at)}
                   onChange={(event) =>
-                    set("scheduled_at", event.target.value ? localInputToIso(event.target.value) : "")
+                    set(
+                      "scheduled_at",
+                      event.target.value ? localInputToIso(event.target.value) : "",
+                    )
                   }
                 />
               </label>

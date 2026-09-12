@@ -13,10 +13,17 @@
       "Bash(rm -f __TRACKED_VAR__/shots/index-*)",
       "Bash(node __TRACKED_VAR__/shoot.js __TRACKED_VAR__/shots '')",
       "Bash(python3 __TRACKED_VAR__/gen_arch.py __TRACKED_VAR__/arch.svg)",
-      "Bash(python3 - __TRACKED_VAR__/arch.svg)"
+      "Bash(python3 - __TRACKED_VAR__/arch.svg)",
+      "Bash(rm -rf __TRACKED_VAR__/shots)",
+      "Bash(mkdir -p __TRACKED_VAR__/shots)",
+      "Bash(node __TRACKED_VAR__/arch.js __TRACKED_VAR__/shots)",
+      "Bash(node __TRACKED_VAR__/elshot.js __TRACKED_VAR__/shots/hold-card.png download .hold-card 1440 500)",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
     ],
     "additionalDirectories": [
-      "/Users/aaryansaroha/Documents/Projects/Quantify Terminal Website"
+      "/Users/aaryansaroha/Documents/Projects/Quantify Terminal Website",
+      "/Users/aaryansaroha/.claude"
     ]
   }
 }
