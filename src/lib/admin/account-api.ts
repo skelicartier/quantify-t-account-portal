@@ -37,6 +37,23 @@ export const SUBSCRIPTION_WRITE_CAPABILITY = "subscription:write";
 /** The audit event types every plan and override change is recorded under. */
 export const SUBSCRIPTION_CHANGED_EVENT = "account.subscription_changed";
 export const ENTITLEMENT_CHANGED_EVENT = "account.entitlement_changed";
+/**
+ * The support desk, split four ways because on a real desk these are four jobs.
+ *
+ * Reading is the queue; reading everything is somebody else's queue as well, which is a
+ * manager's job and not an agent's — a conversation carries whatever the customer chose
+ * to paste into it. Replying answers a customer. Managing moves work around without
+ * answering anyone.
+ */
+export const SUPPORT_READ_CAPABILITY = "support:read";
+export const SUPPORT_READ_ALL_CAPABILITY = "support:read-all";
+export const SUPPORT_REPLY_CAPABILITY = "support:reply";
+export const SUPPORT_MANAGE_CAPABILITY = "support:manage";
+/** Granting somebody a staff role, as distinct from `roles:write` over every role. */
+export const STAFF_WRITE_CAPABILITY = "staff:write";
+/** The audit event types a member of the desk acting on a conversation is recorded under. */
+export const SUPPORT_REPLIED_EVENT = "support.replied";
+export const SUPPORT_MANAGED_EVENT = "support.managed";
 
 type Fetcher = (input: URL, init: RequestInit) => Promise<Response>;
 
@@ -124,7 +141,10 @@ export class AccountApiRequestError extends Error {
   }
 }
 
-const roleSchema = z.enum(["owner", "admin", "support", "user"]);
+// Derived, never retyped. A hand-written second copy of the role list is how a role the
+// API started returning becomes a schema mismatch on `/me`, which fails every admin page
+// at once rather than the one place that cares.
+const roleSchema = z.enum(ASSIGNABLE_ROLES);
 const nullableRoleSchema = roleSchema.nullable();
 const correlationSchema = z.string().min(1).max(160);
 
@@ -242,7 +262,10 @@ export const accountApiRoleReportSchema = z
     legacy_entry_count: z.number().int().nonnegative(),
     legacy_bootstrap_count: z.number().int().nonnegative(),
     counts_by_mismatch: z.record(z.string(), z.number().int().nonnegative()),
-    counts_by_role: z.record(roleSchema, z.number().int().nonnegative()),
+    // Partial on purpose. The API sends a zero for every canonical role, but the console
+    // and the account service deploy separately, and a console that refuses to render
+    // because the service has not learned a role yet fails every admin page at once.
+    counts_by_role: z.partialRecord(roleSchema, z.number().int().nonnegative()),
     total_users: z.number().int().nonnegative(),
     break_glass_disclosed: z.boolean(),
     entries: z.array(roleReportEntrySchema).max(500),
@@ -578,6 +601,87 @@ export const accountApiAdminSecretWriteSchema = z
 
 /** A restore answers with the fingerprint it put back, and nothing else. */
 export const accountApiAdminSecretRestoreSchema = accountApiAdminSecretWriteSchema;
+
+// ------------------------------------------------------------------ the support desk
+/**
+ * A conversation as the desk sees it. `.strict()` is the boundary that matters most here:
+ * the customer view and the staff view are two different projections upstream, and a
+ * schema that quietly accepted extra fields would let a change on the service side start
+ * rendering a customer's identifiers on a page that was never meant to carry them.
+ */
+const supportStatusSchema = z.enum(["open", "pending", "resolved"]);
+const supportPrioritySchema = z.enum(["low", "normal", "high", "urgent"]);
+
+const supportMessageSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    author: z.string().min(1).max(32),
+    author_name: z.string().max(160),
+    body: z.string().max(8_000),
+    at: z.string().max(64),
+  })
+  .strict();
+
+export const accountApiSupportSummarySchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    subject: z.string().max(240),
+    status: supportStatusSchema,
+    priority: supportPrioritySchema,
+    created_at: z.string().max(64),
+    updated_at: z.string().max(64),
+    message_count: z.number().int().nonnegative(),
+    last_author: z.string().max(32),
+    last_at: z.string().max(64),
+    account_id: z.string().max(64),
+    assignee_id: z.string().max(64),
+    assignee_name: z.string().max(160),
+    unread: z.boolean(),
+  })
+  .strict();
+
+export const accountApiSupportConversationSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    subject: z.string().max(240),
+    status: supportStatusSchema,
+    priority: supportPrioritySchema,
+    created_at: z.string().max(64),
+    updated_at: z.string().max(64),
+    messages: z.array(supportMessageSchema).max(500),
+    account_id: z.string().max(64),
+    assignee_id: z.string().max(64),
+    assignee_name: z.string().max(160),
+    app_version: z.string().max(64),
+    platform: z.string().max(64),
+    unread: z.boolean(),
+  })
+  .strict();
+
+export const accountApiAdminSupportSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    conversations: z.array(accountApiSupportSummarySchema).max(500),
+    unread: z.number().int().nonnegative(),
+    // What this caller may do, decided upstream. The console renders the controls this
+    // answer allows rather than offering an action the API will refuse.
+    sees_all: z.boolean(),
+    can_reply: z.boolean(),
+    can_manage: z.boolean(),
+    statuses: z.array(supportStatusSchema).max(8),
+    priorities: z.array(supportPrioritySchema).max(8),
+  })
+  .strict();
+
+export const accountApiAdminSupportConversationSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    conversation: accountApiSupportConversationSchema,
+    replayed: z.boolean().optional(),
+  })
+  .strict();
 
 export const accountApiAdminReleaseStatusSchema = z
   .object({
@@ -1240,6 +1344,14 @@ export type AccountApiAdminMetrics = z.infer<typeof accountApiAdminMetricsSchema
 export type AccountApiAdminConfiguration = z.infer<typeof accountApiAdminConfigurationSchema>;
 export type AccountApiAdminCredentialStatus = z.infer<typeof accountApiAdminCredentialStatusSchema>;
 export type AccountApiAdminReleaseStatus = z.infer<typeof accountApiAdminReleaseStatusSchema>;
+export type AccountApiSupportSummary = z.infer<typeof accountApiSupportSummarySchema>;
+export type AccountApiSupportConversation = z.infer<typeof accountApiSupportConversationSchema>;
+export type AccountApiAdminSupport = z.infer<typeof accountApiAdminSupportSchema>;
+export type AccountApiAdminSupportConversation = z.infer<
+  typeof accountApiAdminSupportConversationSchema
+>;
+export type AccountApiSupportStatus = z.infer<typeof supportStatusSchema>;
+export type AccountApiSupportPriority = z.infer<typeof supportPrioritySchema>;
 export type AccountApiAdminSecrets = z.infer<typeof accountApiAdminSecretsSchema>;
 export type AccountApiAdminSecretSlot = AccountApiAdminSecrets["slots"][number];
 export type AccountApiAdminSecretEntry = AccountApiAdminSecretSlot["entries"][number];
@@ -1747,6 +1859,67 @@ export async function restoreAccountApiAdminSecret(
   const route = secretRoute(slot, "/restore");
   const payload = await postAccountApiJson(route, accessToken, {}, options);
   return parseAccountApiPayload(accountApiAdminSecretRestoreSchema, payload, route, "POST");
+}
+
+/**
+ * Conversation ids are minted by the service, not by a person, so they are matched on
+ * shape rather than parsed: a segment that is not this shape is refused here instead of
+ * being sent as a route the API would 404 anyway.
+ */
+const SUPPORT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/u;
+
+function supportRoute(conversationId: string, suffix = ""): string {
+  if (!SUPPORT_ID_PATTERN.test(conversationId)) throw new AccountApiUnavailableError();
+  return `admin/support/${conversationId}${suffix}`;
+}
+
+/** The queue, already narrowed upstream to what this caller may read. */
+export async function fetchAccountApiAdminSupport(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiAdminSupport> {
+  const payload = await fetchAccountApiJson("admin/support", accessToken, options);
+  return parseAccountApiPayload(accountApiAdminSupportSchema, payload, "admin/support", "GET");
+}
+
+/** One conversation in full. Opening it is what marks it read, upstream. */
+export async function fetchAccountApiAdminSupportConversation(
+  accessToken: string,
+  conversationId: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiAdminSupportConversation> {
+  const route = supportRoute(conversationId);
+  const payload = await fetchAccountApiJson(route, accessToken, options);
+  return parseAccountApiPayload(accountApiAdminSupportConversationSchema, payload, route, "GET");
+}
+
+export async function replyToAccountApiAdminSupport(
+  accessToken: string,
+  conversationId: string,
+  body: { body: string },
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiAdminSupportConversation> {
+  const route = supportRoute(conversationId, "/reply");
+  const payload = await postAccountApiJson(route, accessToken, body, options);
+  return parseAccountApiPayload(accountApiAdminSupportConversationSchema, payload, route, "POST");
+}
+
+export type AccountApiAdminSupportManageBody = {
+  assignee_id?: string;
+  assignee_name?: string;
+  status?: AccountApiSupportStatus;
+  priority?: AccountApiSupportPriority;
+};
+
+export async function manageAccountApiAdminSupport(
+  accessToken: string,
+  conversationId: string,
+  body: AccountApiAdminSupportManageBody,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiAdminSupportConversation> {
+  const route = supportRoute(conversationId, "/manage");
+  const payload = await postAccountApiJson(route, accessToken, body, options);
+  return parseAccountApiPayload(accountApiAdminSupportConversationSchema, payload, route, "POST");
 }
 
 export async function fetchAccountApiAdminReleaseStatus(

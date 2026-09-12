@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 
 import { AdminUserDetail } from "@/components/admin/admin-user-detail";
 import { AdminUserRoleForm } from "@/components/admin/admin-user-role-form";
+import { ASSIGNABLE_ROLES } from "@/lib/admin/role-labels";
 import type { AccountApiAdminUserDetail, AccountApiMe } from "@/lib/admin/account-api";
 import type { AdminUserDetailAccess } from "@/lib/admin/access";
 import type { AdminUserRoleState } from "@/lib/admin/user-role";
@@ -77,7 +78,7 @@ describe("AdminUserRoleForm", () => {
     render(<AdminUserRoleForm userId={TARGET_ID} currentRole="user" action={action} />);
 
     const select = screen.getByRole("combobox", { name: "Role" });
-    expect(screen.getAllByRole("option")).toHaveLength(4);
+    expect(screen.getAllByRole("option")).toHaveLength(ASSIGNABLE_ROLES.length);
     expect(screen.getByRole("button", { name: "Change role" })).toBeDisabled();
 
     await user.selectOptions(select, "admin");

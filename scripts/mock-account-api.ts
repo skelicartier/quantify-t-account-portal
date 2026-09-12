@@ -41,6 +41,11 @@ const CAPABILITIES: Record<Persona, string[]> = {
     "subscription:write",
     "secrets:read",
     "secrets:write",
+    "support:read",
+    "support:read-all",
+    "support:reply",
+    "support:manage",
+    "staff:write",
   ],
   admin: [
     "account:read-self",
@@ -55,8 +60,22 @@ const CAPABILITIES: Record<Persona, string[]> = {
     // Reading the inventory without being able to change it is a real, shipped state, so
     // the mock has a persona in it — otherwise the read-only rendering is never exercised.
     "secrets:read",
+    "support:read",
+    "support:read-all",
+    "support:reply",
+    "support:manage",
+    "staff:write",
   ],
-  support: ["account:read-self", "account:read-any", "audit:read", "audit:write"],
+  // An agent, not a manager: their own queue plus the unassigned pile, and no reading of
+  // somebody else's. The narrow case is the one worth having a persona for.
+  support: [
+    "account:read-self",
+    "account:read-any",
+    "audit:read",
+    "audit:write",
+    "support:read",
+    "support:reply",
+  ],
   user: ["account:read-self"],
 };
 
@@ -1643,6 +1662,128 @@ const server = createServer(async (request, response) => {
       replayed: false,
       legacy_mirrored: true,
     });
+  }
+  const SUPPORT_MESSAGES = [
+    {
+      id: "msg_00000000000000000001",
+      author: "customer",
+      author_name: "priya@example.test",
+      body: "Exports have failed since this morning. The button spins and nothing downloads.",
+      at: iso(180),
+    },
+    {
+      id: "msg_00000000000000000002",
+      author: "staff",
+      author_name: "sam@example.test",
+      body: "Thanks — which format, and does it fail for every portfolio or one?",
+      at: iso(150),
+    },
+    {
+      id: "msg_00000000000000000003",
+      author: "customer",
+      author_name: "priya@example.test",
+      body: "CSV, and it is every portfolio.",
+      at: iso(20),
+    },
+  ];
+  const SUPPORT_CONVERSATIONS = [
+    {
+      id: "sup_0000000000000000aaaa",
+      subject: "Exports have stopped working",
+      status: "open",
+      priority: "urgent",
+      created_at: iso(180),
+      updated_at: iso(20),
+      message_count: SUPPORT_MESSAGES.length,
+      last_author: "customer",
+      last_at: iso(20),
+      account_id: PEOPLE[3]!.id,
+      assignee_id: persona === "support" ? PEOPLE[2]!.id : "",
+      assignee_name: persona === "support" ? PEOPLE[2]!.email : "",
+      unread: true,
+    },
+    {
+      id: "sup_0000000000000000bbbb",
+      subject: "How do I move my watchlists to a new machine?",
+      status: "pending",
+      priority: "normal",
+      created_at: iso(2880),
+      updated_at: iso(600),
+      message_count: 4,
+      last_author: "staff",
+      last_at: iso(600),
+      account_id: PEOPLE[3]!.id,
+      assignee_id: PEOPLE[1]!.id,
+      assignee_name: PEOPLE[1]!.email,
+      unread: false,
+    },
+    {
+      id: "sup_0000000000000000cccc",
+      subject: "Duplicate charge on my October invoice",
+      status: "resolved",
+      priority: "high",
+      created_at: iso(10080),
+      updated_at: iso(4320),
+      message_count: 6,
+      last_author: "staff",
+      last_at: iso(4320),
+      account_id: PEOPLE[3]!.id,
+      assignee_id: "",
+      assignee_name: "",
+      unread: false,
+    },
+  ];
+  const supportConversation = (id: string) => {
+    const summary = SUPPORT_CONVERSATIONS.find((row) => row.id === id) ?? SUPPORT_CONVERSATIONS[0]!;
+    return {
+      id: summary.id,
+      subject: summary.subject,
+      status: summary.status,
+      priority: summary.priority,
+      created_at: summary.created_at,
+      updated_at: summary.updated_at,
+      messages: SUPPORT_MESSAGES,
+      account_id: summary.account_id,
+      assignee_id: summary.assignee_id,
+      assignee_name: summary.assignee_name,
+      app_version: "3.1.0",
+      platform: "macOS",
+      unread: summary.unread,
+    };
+  };
+  if (route === "admin/support") {
+    if (!requires("support:read")) return;
+    // The service narrows the queue before it answers; the mock does the same, or the
+    // agent persona renders a page it could never actually see.
+    const seesAll = caps.includes("support:read-all");
+    const visible = seesAll
+      ? SUPPORT_CONVERSATIONS
+      : SUPPORT_CONVERSATIONS.filter(
+          (row) => !row.assignee_id || row.assignee_id === PEOPLE[2]!.id,
+        );
+    return ok(response, {
+      conversations: visible,
+      unread: visible.filter((row) => row.unread).length,
+      sees_all: seesAll,
+      can_reply: caps.includes("support:reply"),
+      can_manage: caps.includes("support:manage"),
+      statuses: ["open", "pending", "resolved"],
+      priorities: ["low", "normal", "high", "urgent"],
+    });
+  }
+  const supportDetail = route.match(
+    /^admin\/support\/([A-Za-z0-9_-]{1,64})(?:\/(reply|manage))?$/u,
+  );
+  if (supportDetail) {
+    const action = supportDetail[2];
+    const capability =
+      action === "reply"
+        ? "support:reply"
+        : action === "manage"
+          ? "support:manage"
+          : "support:read";
+    if (!requires(capability)) return;
+    return ok(response, { conversation: supportConversation(supportDetail[1]!), replayed: false });
   }
   if (route === "admin/notifications") {
     if (!requires("notifications:write")) return;

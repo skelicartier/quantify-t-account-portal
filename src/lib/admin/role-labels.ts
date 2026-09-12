@@ -8,7 +8,24 @@ import { formatLabel, formatSentence } from "@/lib/format";
  * the UI by accident, and a new token degrades to a readable label rather than crashing.
  */
 
-export const ASSIGNABLE_ROLES = ["owner", "admin", "support", "user"] as const;
+/**
+ * Every role the API will accept, in descending order of reach — which is the order the
+ * picker shows them in, so the list reads as a ladder rather than an alphabet.
+ *
+ * This mirrors `CANONICAL_ROLES` in the Account API's `capabilities.py`, which is the
+ * authority: the console never computes what a role may do, it reads `me.capabilities`
+ * as the API resolved them. What it must keep in step is the vocabulary, because a role
+ * the console does not know is a role whose `/me` fails to parse.
+ */
+export const ASSIGNABLE_ROLES = [
+  "owner",
+  "admin",
+  "support_manager",
+  "billing_manager",
+  "auditor",
+  "support",
+  "user",
+] as const;
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
 export function isAssignableRole(value: unknown): value is AssignableRole {
@@ -18,18 +35,40 @@ export function isAssignableRole(value: unknown): value is AssignableRole {
 const ROLE_LABELS: Record<AssignableRole, string> = {
   owner: "Owner",
   admin: "Admin",
-  support: "Support",
+  support_manager: "Support manager",
+  billing_manager: "Billing manager",
+  auditor: "Auditor",
+  support: "Support agent",
   user: "User",
 };
 
 const ROLE_DESCRIPTIONS: Record<AssignableRole, string> = {
   owner: "Full control, including assigning roles and viewing platform configuration.",
   admin: "Manage people, notifications, email, audit and reports. Cannot assign roles.",
-  support: "Read accounts and audit history to help people. No changes to accounts.",
+  support_manager:
+    "Runs the support desk: reads every conversation, assigns them, and closes them.",
+  billing_manager: "Changes plans, limits and trials. No access to conversations or audit.",
+  auditor: "Reads the audit trail, the role report and configuration. Changes nothing.",
+  support: "Answers their own queue and the unassigned pile. Cannot read another agent's.",
   user: "A regular account with access to its own data only.",
 };
 
+/**
+ * Badge tones. Deliberately fewer than there are roles: the badge says how much reach a
+ * role has, and five near-identical outlines would read as five unrelated things rather
+ * than as a scale.
+ */
 export type RoleTone = "owner" | "admin" | "support" | "user";
+
+const ROLE_TONES: Record<AssignableRole, RoleTone> = {
+  owner: "owner",
+  admin: "admin",
+  support_manager: "admin",
+  billing_manager: "admin",
+  auditor: "support",
+  support: "support",
+  user: "user",
+};
 
 export function roleLabel(role: string | null | undefined): string {
   return isAssignableRole(role) ? ROLE_LABELS[role] : formatLabel(role || "user");
@@ -40,7 +79,7 @@ export function roleDescription(role: string | null | undefined): string {
 }
 
 export function roleTone(role: string | null | undefined): RoleTone {
-  return isAssignableRole(role) ? role : "user";
+  return isAssignableRole(role) ? ROLE_TONES[role] : "user";
 }
 
 const CAPABILITY_LABELS: Record<string, string> = {
@@ -57,6 +96,13 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "configuration:read": "View configuration",
   "credentials:read-status": "View credential status",
   "releases:read-status": "View release status",
+  "secrets:read": "View provider key status",
+  "secrets:write": "Replace provider keys",
+  "support:read": "Read support conversations",
+  "support:read-all": "Read every support conversation",
+  "support:reply": "Answer support conversations",
+  "support:manage": "Assign and close support conversations",
+  "staff:write": "Manage staff access",
 };
 
 export function capabilityLabel(capability: string): string {

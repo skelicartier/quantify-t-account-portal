@@ -20,14 +20,20 @@ type AdminUserRoleFormProps = {
   action: (state: AdminUserRoleState, formData: FormData) => Promise<AdminUserRoleState>;
 };
 
-const ELEVATED: ReadonlySet<AssignableRole> = new Set(["owner", "admin"]);
+/**
+ * Every role except `user` reads somebody else's account, so moving into any of them is
+ * the change worth making somebody stop and read the checkbox. Stated as "not a user"
+ * rather than as a list, so a role added to the vocabulary is treated as elevated by
+ * default instead of slipping through as ordinary.
+ */
+const isElevated = (role: AssignableRole): boolean => role !== "user";
 
 export function AdminUserRoleForm({ userId, currentRole, action }: AdminUserRoleFormProps) {
   const [state, formAction, pending] = useActionState(action, INITIAL_ADMIN_USER_ROLE_STATE);
   const initial: AssignableRole = isAssignableRole(currentRole) ? currentRole : "user";
   const [selected, setSelected] = useState<AssignableRole>(initial);
   const unchanged = selected === initial;
-  const elevating = ELEVATED.has(selected) && !ELEVATED.has(initial);
+  const elevating = isElevated(selected) && !isElevated(initial);
 
   return (
     <form className="role-form" action={formAction}>

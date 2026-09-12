@@ -110,6 +110,14 @@ export type AccountApiEvidence = {
    * make the page's promise false without changing a line of portal code.
    */
   managedSecretRoutes: boolean;
+  /**
+   * The support desk: a customer's own conversations, and the desk's queue behind four
+   * separate capabilities. Pinned because the console's claim here is a claim about who
+   * upstream lets read what — a conversation carries whatever a customer pasted into it,
+   * and one route that ignored the account filter would put one customer's words on
+   * another's page without a line of portal code changing.
+   */
+  supportDeskRoutes: boolean;
   /** Response bodies are built from allow-lists, not spread from upstream payloads. */
   allowListedResponses: boolean;
   /** Both role stores are read and reconciled; neither is written. */

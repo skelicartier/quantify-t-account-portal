@@ -12,17 +12,48 @@ import {
 
 describe("role labels", () => {
   it("names every assignable role and degrades unknown ones", () => {
-    expect(ASSIGNABLE_ROLES).toEqual(["owner", "admin", "support", "user"]);
+    // The order is the order the picker shows, so it reads as a ladder of reach rather
+    // than an alphabet. It mirrors CANONICAL_ROLES in the Account API's capabilities.py.
+    expect(ASSIGNABLE_ROLES).toEqual([
+      "owner",
+      "admin",
+      "support_manager",
+      "billing_manager",
+      "auditor",
+      "support",
+      "user",
+    ]);
     expect(roleLabel("owner")).toBe("Owner");
-    expect(roleLabel("support")).toBe("Support");
+    expect(roleLabel("support")).toBe("Support agent");
+    expect(roleLabel("support_manager")).toBe("Support manager");
     expect(roleLabel("something-else")).toBe("Something Else");
     expect(roleLabel(null)).toBe("User");
     expect(roleDescription("admin")).toMatch(/cannot assign roles/i);
+    expect(roleDescription("auditor")).toMatch(/changes nothing/i);
     expect(roleDescription("mystery")).toBe("");
-    expect(roleTone("admin")).toBe("admin");
-    expect(roleTone(undefined)).toBe("user");
     expect(isAssignableRole("owner")).toBe(true);
+    expect(isAssignableRole("support_manager")).toBe(true);
     expect(isAssignableRole("root")).toBe(false);
+  });
+
+  it("gives every role a badge tone without inventing one per role", () => {
+    // Five near-identical outlines would read as five unrelated things rather than as a
+    // scale, so the tones say how much reach a role has and not which role it is.
+    expect(roleTone("admin")).toBe("admin");
+    expect(roleTone("support_manager")).toBe("admin");
+    expect(roleTone("billing_manager")).toBe("admin");
+    expect(roleTone("auditor")).toBe("support");
+    expect(roleTone("support")).toBe("support");
+    expect(roleTone(undefined)).toBe("user");
+    expect(roleTone("root")).toBe("user");
+  });
+
+  it("names every support capability in words a person on the desk would use", () => {
+    expect(capabilityLabel("support:read")).toBe("Read support conversations");
+    expect(capabilityLabel("support:read-all")).toBe("Read every support conversation");
+    expect(capabilityLabel("support:reply")).toBe("Answer support conversations");
+    expect(capabilityLabel("support:manage")).toBe("Assign and close support conversations");
+    expect(capabilityLabel("staff:write")).toBe("Manage staff access");
   });
 
   it("translates capability tokens into product language", () => {

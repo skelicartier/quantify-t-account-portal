@@ -34,8 +34,15 @@ import {
   NOTIFICATIONS_CAPABILITY,
   RELEASE_STATUS_CAPABILITY,
   ROLE_REPORT_CAPABILITY,
+  STAFF_WRITE_CAPABILITY,
   SUBSCRIPTION_CHANGED_EVENT,
   SUBSCRIPTION_WRITE_CAPABILITY,
+  SUPPORT_MANAGE_CAPABILITY,
+  fetchAccountApiAdminSupport,
+  fetchAccountApiAdminSupportConversation,
+  SUPPORT_READ_ALL_CAPABILITY,
+  SUPPORT_READ_CAPABILITY,
+  SUPPORT_REPLY_CAPABILITY,
   type AccountApiAdminConfiguration,
   type AccountApiAdminCredentialStatus,
   type AccountApiAdminNotificationEmailQueue,
@@ -52,9 +59,12 @@ import {
   type AccountApiAdminUserEntitlements,
   type AccountApiAdminUserUsage,
   type AccountApiAdminSecrets,
+  type AccountApiAdminSupport,
+  type AccountApiAdminSupportConversation,
   type AccountApiMe,
   type AccountApiRoleReport,
 } from "@/lib/admin/account-api";
+import { isAssignableRole } from "@/lib/admin/role-labels";
 import type { AssuranceState } from "@/lib/auth/assurance";
 import { createServerAzureClient } from "@/lib/supabase/server";
 
@@ -253,6 +263,51 @@ export type AdminSecretsAccess =
       capability: typeof SECRETS_READ_CAPABILITY;
     };
 
+/**
+ * The support queue.
+ *
+ * `unavailable` rather than an empty queue when the store cannot be read: an empty desk
+ * page says "nobody needs help", which is the one wrong answer to give somebody who has
+ * opened it to find out.
+ */
+export type AdminSupportAccess =
+  | {
+      status: "authorized";
+      me: AccountApiMe;
+      assurance: AssuranceState;
+      support: AccountApiAdminSupport;
+    }
+  | { status: "unavailable"; me: AccountApiMe; assurance: AssuranceState }
+  | { status: "mfa-required"; me: AccountApiMe; assurance: AssuranceState }
+  | { status: "forbidden"; me: AccountApiMe }
+  | {
+      status: "capability-required";
+      me: AccountApiMe;
+      assurance: AssuranceState;
+      capability: typeof SUPPORT_READ_CAPABILITY;
+    };
+
+/** One conversation. `not-found` covers both "no such thread" and "not yours to read". */
+export type AdminSupportConversationAccess =
+  | {
+      status: "authorized";
+      me: AccountApiMe;
+      assurance: AssuranceState;
+      conversation: AccountApiAdminSupportConversation["conversation"];
+      canReply: boolean;
+      canManage: boolean;
+    }
+  | { status: "not-found"; me: AccountApiMe; assurance: AssuranceState }
+  | { status: "unavailable"; me: AccountApiMe; assurance: AssuranceState }
+  | { status: "mfa-required"; me: AccountApiMe; assurance: AssuranceState }
+  | { status: "forbidden"; me: AccountApiMe }
+  | {
+      status: "capability-required";
+      me: AccountApiMe;
+      assurance: AssuranceState;
+      capability: typeof SUPPORT_READ_CAPABILITY;
+    };
+
 export type AdminReleaseStatusAccess =
   | {
       status: "authorized";
@@ -348,8 +403,36 @@ export function canReadReleaseStatus(me: AccountApiMe): boolean {
   return me.capabilities.includes(RELEASE_STATUS_CAPABILITY);
 }
 
+/**
+ * Whether this account must clear AAL2 before the console will show it anything.
+ *
+ * Every role except `user` is staff, and every staff role can read somebody else's
+ * account — an Auditor reads the whole audit trail, a Billing manager changes what an
+ * account may do. Derived from the role list rather than written out, so a role added to
+ * the vocabulary is gated by default instead of quietly skipping the gate.
+ */
 export function hasPrivilegedRole(me: AccountApiMe): boolean {
-  return ["owner", "admin", "support"].includes(me.role.effective);
+  return isAssignableRole(me.role.effective) && me.role.effective !== "user";
+}
+
+export function canReadSupport(me: AccountApiMe): boolean {
+  return me.capabilities.includes(SUPPORT_READ_CAPABILITY);
+}
+
+export function canReadAllSupport(me: AccountApiMe): boolean {
+  return me.capabilities.includes(SUPPORT_READ_ALL_CAPABILITY);
+}
+
+export function canReplyToSupport(me: AccountApiMe): boolean {
+  return me.capabilities.includes(SUPPORT_REPLY_CAPABILITY);
+}
+
+export function canManageSupport(me: AccountApiMe): boolean {
+  return me.capabilities.includes(SUPPORT_MANAGE_CAPABILITY);
+}
+
+export function canManageStaff(me: AccountApiMe): boolean {
+  return me.capabilities.includes(STAFF_WRITE_CAPABILITY);
 }
 
 export function hasSatisfiedPrivilegedAssurance(assurance: AssuranceState): boolean {
@@ -910,6 +993,73 @@ export const getAdminSecretsAccess = cache(async (): Promise<AdminSecretsAccess>
     return { status: "unavailable", me, assurance };
   }
 });
+
+export const getAdminSupportAccess = cache(async (): Promise<AdminSupportAccess> => {
+  const { accessToken, me } = await currentAccountApiIdentity("/admin/support");
+
+  if (!hasAdminPortalAccess(me)) return { status: "forbidden", me };
+
+  const assurance = await getCurrentAssurance();
+  if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    return { status: "mfa-required", me, assurance };
+  }
+
+  if (!canReadSupport(me)) {
+    return { status: "capability-required", me, assurance, capability: SUPPORT_READ_CAPABILITY };
+  }
+
+  try {
+    return {
+      status: "authorized",
+      me,
+      assurance,
+      // The queue arrives already narrowed to what this caller may read, and carries what
+      // they may do with it. The console never decides either.
+      support: await fetchAccountApiAdminSupport(accessToken),
+    };
+  } catch (error) {
+    if (error instanceof AccountApiRequestError && error.status === 401) throw error;
+    return { status: "unavailable", me, assurance };
+  }
+});
+
+export const getAdminSupportConversationAccess = cache(
+  async (conversationId: string): Promise<AdminSupportConversationAccess> => {
+    const { accessToken, me } = await currentAccountApiIdentity(
+      `/admin/support/${encodeURIComponent(conversationId)}`,
+    );
+
+    if (!hasAdminPortalAccess(me)) return { status: "forbidden", me };
+
+    const assurance = await getCurrentAssurance();
+    if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+      return { status: "mfa-required", me, assurance };
+    }
+
+    if (!canReadSupport(me)) {
+      return { status: "capability-required", me, assurance, capability: SUPPORT_READ_CAPABILITY };
+    }
+
+    try {
+      const answer = await fetchAccountApiAdminSupportConversation(accessToken, conversationId);
+      return {
+        status: "authorized",
+        me,
+        assurance,
+        conversation: answer.conversation,
+        canReply: canReplyToSupport(me),
+        canManage: canManageSupport(me),
+      };
+    } catch (error) {
+      if (error instanceof AccountApiRequestError && error.status === 401) throw error;
+      // A conversation assigned to another agent answers 404, deliberately: that it
+      // exists is not this caller's to learn. The console repeats that rather than
+      // translating it into something that would.
+      if (isAccountApiNotFound(error)) return { status: "not-found", me, assurance };
+      return { status: "unavailable", me, assurance };
+    }
+  },
+);
 
 export const getAdminReleaseStatusAccess = cache(async (): Promise<AdminReleaseStatusAccess> => {
   const { accessToken, me } = await currentAccountApiIdentity("/admin/releases");

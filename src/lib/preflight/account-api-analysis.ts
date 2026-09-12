@@ -39,6 +39,7 @@ export const ACCOUNT_API_MODULES = [
   "account_deletion_worker",
   "reports",
   "lifecycle",
+  "support",
   "app",
   "gateways",
 ] as const;
@@ -114,6 +115,12 @@ export const CONSTRUCT_ONLY_PROPERTIES: readonly string[] = [
   // shape where reading and writing share one capability, and the shape where the console
   // writes to a name the catalogue does not know.
   "managedSecretRoutes",
+  // Requires the customer and desk route constants, the four capability constants, and
+  // the module's own visibility and projection functions. It cannot prove that every
+  // handler routes reads through `visible_to`; it does reject the shape where a customer
+  // route takes the account from the request, and the shape where reading, answering and
+  // running the queue share one capability.
+  "supportDeskRoutes",
   // Requires the allow-list constant and the unknown-field rejection.
   "allowListedResponses",
   // Requires the discard branch for a wildcard origin and no wildcard literal in the CORS
@@ -463,14 +470,43 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         "lease_seconds",
       ]) &&
       // Every mutating route claims the key first: the desktop app-state upsert, the two
-      // subscription writes the console drives, and the three credential writes. The floor
-      // is the current count, not a comfortable margin below it, which is the point — a
-      // route added without a key drops the property instead of hiding under the slack.
-      occursAtLeast(modules.app, "require_key(request)", 19) &&
+      // subscription writes the console drives, the three credential writes, and the four
+      // support sends. The floor is the current count, not a comfortable margin below it,
+      // which is the point — a route added without a key drops the property instead of
+      // hiding under the slack.
+      occursAtLeast(modules.app, "require_key(request)", 23) &&
       includesAll(modules.app, ["replay_or_reserve", "scope_for("]) &&
       // The reservation must precede the side effect. Recording afterwards misses the case
       // the module exists for: a request killed between the write and the record.
       reservesBeforeMutating(modules.app),
+    supportDeskRoutes:
+      includesAll(modules.app, [
+        'SUPPORT_CONVERSATIONS_ROUTE = "support/conversations"',
+        'SUPPORT_CONVERSATION_OPEN_ROUTE = "support/conversations/open"',
+        'ADMIN_SUPPORT_ROUTE = "admin/support"',
+        'ADMIN_SUPPORT_REPLY_ROUTE = "admin/support/{conversation_id}/reply"',
+        'ADMIN_SUPPORT_MANAGE_ROUTE = "admin/support/{conversation_id}/manage"',
+        "def _support_conversation_id",
+        // A customer route takes the account from the resolved caller, never from the
+        // request: there is no parameter that could widen it.
+        "account_id=caller.user_id",
+        // The desk's breadth is the caller's capability, not a flag the request sends.
+        "read_all=has_capability(resolution.effective_role, READ_ALL_SUPPORT)",
+      ]) &&
+      includesAll(modules.capabilities, [
+        'READ_SUPPORT = "support:read"',
+        'READ_ALL_SUPPORT = "support:read-all"',
+        'REPLY_SUPPORT = "support:reply"',
+        'MANAGE_SUPPORT = "support:manage"',
+      ]) &&
+      includesAll(modules.support, [
+        // The refusal the whole design rests on, and the projection that keeps one
+        // customer's identifiers out of another reader's page.
+        "def visible_to",
+        "def conversation_view",
+        "def summary_view",
+        "read_all",
+      ]),
     allowListedResponses:
       includesAll(modules.dto, ["AUDIT_EVENT_ALLOWED_FIELDS", "def caller_dto"]) &&
       includesAll(modules.app, ["AUDIT_EVENT_ALLOWED_FIELDS", "unknown_fields"]),

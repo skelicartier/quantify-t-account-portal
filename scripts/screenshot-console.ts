@@ -63,6 +63,8 @@ const ROUTES = [
   "/admin/subscriptions",
   "/admin/audit",
   "/admin/reports",
+  "/admin/support",
+  "/admin/support/sup_0000000000000000aaaa",
   "/admin/notifications",
   "/admin/email",
   "/admin/configuration",

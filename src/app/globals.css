@@ -2438,6 +2438,59 @@
     gap: 8px;
   }
 
+  /* A support conversation. Oldest first, with the desk's own replies set against the
+     accent so a reader can find where the last answer ended without reading back. */
+  .thread {
+    display: grid;
+    gap: 14px;
+    margin: 0 0 18px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .thread__message,
+  .thread__note {
+    display: grid;
+    gap: 4px;
+    padding-left: 12px;
+    border-left: 2px solid var(--line);
+  }
+
+  .thread__message:has(.thread__author:not(:empty)) {
+    border-left-color: var(--line-strong);
+  }
+
+  .thread__note {
+    border-left-style: dotted;
+    color: var(--quiet);
+    font-size: 12px;
+  }
+
+  .thread__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: baseline;
+    margin: 0;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .thread__author {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .thread__body {
+    /* The customer's own words, including a pasted stack trace: newlines are kept and
+       long unbroken tokens wrap rather than pushing the page sideways. */
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
   .inline-actions {
     display: flex;
     flex-wrap: wrap;

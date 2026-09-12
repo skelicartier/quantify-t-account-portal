@@ -360,6 +360,7 @@ const completeSnapshot: RepositorySnapshot = {
     notificationRoutes: true,
     ownerStatusRoutes: true,
     managedSecretRoutes: true,
+    supportDeskRoutes: true,
     allowListedResponses: true,
     dualReadRolesWithoutCutover: true,
     pinnedRequirements: true,
