@@ -80,15 +80,48 @@ function authorized(overrides: Partial<AccountApiAdminStaff> = {}): AdminStaffAc
 }
 
 describe("AdminAccess", () => {
-  it("lists a staff account with the role and what it actually permits", () => {
+  it("lists a staff account with its role and how much that role carries", () => {
     render(<AdminAccess access={authorized()} now={NOW} />);
 
     const table = screen.getByRole("region", { name: "Staff accounts" });
     expect(within(table).getByText("Sam Okafor")).toBeInTheDocument();
     expect(within(table).getByText("Support manager")).toBeInTheDocument();
-    // The capability list comes from the service, so what the page claims and what the
-    // service enforces cannot drift.
-    expect(within(table).getByText("Assign and close support conversations")).toBeInTheDocument();
+    // A count, not the list. Every account holding a role has exactly that role's
+    // permissions, so the list on every row is the same wall written N times — and it
+    // squeezes the columns somebody actually reads. It links to the list in full.
+    expect(within(table).getByRole("link", { name: "4" })).toHaveAttribute(
+      "href",
+      "#role-support_manager",
+    );
+    expect(within(table).queryByText("Assign and close support conversations")).toBeNull();
+  });
+
+  it("spells out every permission once, in the catalogue", () => {
+    // Named by the service rather than described here, so what the page claims and what
+    // the service enforces cannot drift.
+    render(
+      <AdminAccess
+        access={authorized({
+          roles: [
+            {
+              role: "support_manager",
+              capabilities: ["support:manage", "support:read-all"],
+              grantable: true,
+            },
+          ],
+        })}
+        now={NOW}
+      />,
+    );
+
+    const card = document.querySelector("#role-support_manager");
+    expect(card).not.toBeNull();
+    expect(
+      within(card as HTMLElement).getByText("Assign and close support conversations"),
+    ).toBeInTheDocument();
+    expect(
+      within(card as HTMLElement).getByText("Read every support conversation"),
+    ).toBeInTheDocument();
   });
 
   it("names an account whose profile could not be read rather than hiding it", () => {

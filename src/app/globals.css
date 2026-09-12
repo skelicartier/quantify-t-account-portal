@@ -725,6 +725,13 @@
   }
 
   .page-header__meta {
+    /* A row rather than a run of inline text: some headers put several things here — a
+       read time, two status pills, a live indicator — and inline they close up into one
+       unreadable string with no space between them. */
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    align-items: center;
     margin-top: 10px;
     color: var(--quiet);
     font-family: var(--font-mono);
@@ -1727,6 +1734,14 @@
     margin: 0;
     color: var(--muted);
     font-size: 12px;
+  }
+
+  /* Permission names are long and the cards are narrow, so inside one a badge wraps
+     rather than running off the edge. Everywhere else a badge is a short label and
+     stays on one line. */
+  .role-card .badge {
+    white-space: normal;
+    text-align: left;
   }
 
   .chip {

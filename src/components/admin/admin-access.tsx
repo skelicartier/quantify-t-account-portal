@@ -25,7 +25,10 @@ const MEMBER_COLUMNS = [
   { key: "person", label: "Person" },
   { key: "role", label: "Role" },
   { key: "status", label: "Account" },
-  { key: "permits", label: "What the role permits" },
+  // A count, not the list. Every account holding a role has exactly that role's
+  // permissions, so twenty badges on every row is the same wall written N times — and it
+  // squeezes the two columns somebody actually reads. The list in full is one card down.
+  { key: "permits", label: "Permissions" },
   { key: "id", label: "Account id" },
 ] as const;
 
@@ -53,15 +56,13 @@ function MemberRow({ member }: { member: AccountApiStaffMember }) {
       <td>
         <StatusPill value={member.is_active ? "active" : "inactive"} />
       </td>
-      <td>
-        <span className="chip-list">
-          {member.capabilities.map((capability) => (
-            <Badge key={capability}>{capabilityLabel(capability)}</Badge>
-          ))}
-        </span>
+      <td className="data-table__num">
+        <a href={`#role-${member.role}`} className="row-link">
+          {formatNumber(member.capabilities.length)}
+        </a>
       </td>
       <td>
-        <ShortId value={member.user_id} href={`/admin/users/${member.user_id}`} />
+        <ShortId value={member.user_id} href={`/admin/users/${member.user_id}`} full />
       </td>
     </tr>
   );
@@ -69,7 +70,7 @@ function MemberRow({ member }: { member: AccountApiStaffMember }) {
 
 function RoleCard({ entry }: { entry: AccountApiStaffRoleCatalogue }) {
   return (
-    <div className="role-card">
+    <div className="role-card" id={`role-${entry.role}`}>
       <p className="role-card__head">
         <RoleBadge role={entry.role} />
         {entry.grantable ? null : <span className="quiet">Set from Roles</span>}
@@ -133,7 +134,7 @@ export function AdminAccess({ access, now }: AdminAccessProps) {
                   <DataTable
                     caption="Staff accounts"
                     columns={MEMBER_COLUMNS}
-                    minWidth={1120}
+                    minWidth={860}
                     isEmpty={members.length === 0}
                     empty={
                       <EmptyState

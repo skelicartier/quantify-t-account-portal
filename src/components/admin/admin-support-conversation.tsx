@@ -120,10 +120,14 @@ export function AdminSupportConversation({ access, now }: AdminSupportConversati
 
                 <Card title="About this account" titleId="support-context-heading">
                   <KeyValue>
+                    <KeyValueRow label="Customer">
+                      {conversation.account_email || <span className="quiet">Not recorded</span>}
+                    </KeyValueRow>
                     <KeyValueRow label="Account">
                       <ShortId
                         value={conversation.account_id}
                         href={`/admin/users/${conversation.account_id}`}
+                        full
                       />
                     </KeyValueRow>
                     <KeyValueRow label="App version">

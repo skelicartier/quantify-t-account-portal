@@ -30,7 +30,7 @@ const COLUMNS = [
   { key: "status", label: "Status" },
   { key: "priority", label: "Priority" },
   { key: "assignee", label: "Assigned to" },
-  { key: "account", label: "Account" },
+  { key: "account", label: "Customer" },
   { key: "activity", label: "Last message" },
   { key: "open", label: <span className="sr-only">Open</span> },
 ] as const;
@@ -83,7 +83,24 @@ function QueueRow({
         )}
       </td>
       <td>
-        <ShortId value={conversation.account_id} href={`/admin/users/${conversation.account_id}`} />
+        {conversation.account_email ? (
+          <>
+            <Link
+              href={`/admin/users/${conversation.account_id}`}
+              className="row-link data-table__primary"
+            >
+              {conversation.account_email}
+            </Link>
+            <span className="data-table__secondary">
+              <ShortId value={conversation.account_id} />
+            </span>
+          </>
+        ) : (
+          <ShortId
+            value={conversation.account_id}
+            href={`/admin/users/${conversation.account_id}`}
+          />
+        )}
       </td>
       <td>
         <span className="data-table__primary">

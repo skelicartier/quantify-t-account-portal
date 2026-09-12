@@ -634,6 +634,8 @@ export const accountApiSupportSummarySchema = z
     last_author: z.string().max(32),
     last_at: z.string().max(64),
     account_id: z.string().max(64),
+    /** The address the customer wrote from. A desk recognises a person, not a UUID. */
+    account_email: z.string().max(320),
     assignee_id: z.string().max(64),
     assignee_name: z.string().max(160),
     unread: z.boolean(),
@@ -650,6 +652,7 @@ export const accountApiSupportConversationSchema = z
     updated_at: z.string().max(64),
     messages: z.array(supportMessageSchema).max(500),
     account_id: z.string().max(64),
+    account_email: z.string().max(320),
     assignee_id: z.string().max(64),
     assignee_name: z.string().max(160),
     app_version: z.string().max(64),

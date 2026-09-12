@@ -66,6 +66,7 @@ function summary(overrides: Partial<AccountApiSupportSummary> = {}): AccountApiS
     last_author: "customer",
     last_at: "2026-09-13T09:40:00Z",
     account_id: ACCOUNT_ID,
+    account_email: "priya@example.test",
     assignee_id: "",
     assignee_name: "",
     unread: true,
@@ -119,6 +120,7 @@ function thread(
       },
     ],
     account_id: ACCOUNT_ID,
+    account_email: "priya@example.test",
     assignee_id: "",
     assignee_name: "",
     app_version: "3.1.0",
@@ -147,6 +149,11 @@ describe("AdminSupport queue", () => {
     render(<AdminSupport access={authorizedQueue()} now={NOW} />);
 
     const table = screen.getByRole("region", { name: "Support conversations" });
+    // Who asked, not only which account id asked.
+    expect(within(table).getByRole("link", { name: "priya@example.test" })).toHaveAttribute(
+      "href",
+      `/admin/users/${ACCOUNT_ID}`,
+    );
     expect(
       within(table).getByRole("link", { name: /Exports have stopped working/ }),
     ).toHaveAttribute("href", `/admin/support/${CONVERSATION_ID}`);
@@ -241,10 +248,11 @@ describe("AdminSupportConversation", () => {
   it("shows both sides of the conversation in order", () => {
     render(<AdminSupportConversation access={authorizedThread()} now={NOW} />);
 
-    expect(screen.getByText("The button spins and nothing downloads.")).toBeInTheDocument();
-    expect(screen.getByText("Which format?")).toBeInTheDocument();
-    expect(screen.getByText("Customer")).toBeInTheDocument();
-    expect(screen.getByText("sam@example.test")).toBeInTheDocument();
+    const thread = screen.getByRole("list");
+    expect(within(thread).getByText("The button spins and nothing downloads.")).toBeInTheDocument();
+    expect(within(thread).getByText("Which format?")).toBeInTheDocument();
+    expect(within(thread).getByText("Customer")).toBeInTheDocument();
+    expect(within(thread).getByText("sam@example.test")).toBeInTheDocument();
   });
 
   it("renders a message as text, never as markup", () => {
@@ -300,13 +308,22 @@ describe("AdminSupportConversation", () => {
     expect(screen.getByText("macOS")).toBeInTheDocument();
   });
 
-  it("links the conversation to the account it belongs to", () => {
+  it("names the customer and links the account they belong to", () => {
+    // A desk recognises a person, not a UUID — but the id is what every other admin page
+    // is keyed by, so both are there.
     render(<AdminSupportConversation access={authorizedThread()} now={NOW} />);
 
     expect(screen.getByRole("link", { name: ACCOUNT_ID })).toHaveAttribute(
       "href",
       `/admin/users/${ACCOUNT_ID}`,
     );
+    expect(screen.getAllByText("priya@example.test").length).toBeGreaterThan(0);
+  });
+
+  it("says the address is not recorded rather than showing a blank cell", () => {
+    render(<AdminSupportConversation access={authorizedThread({ account_email: "" })} now={NOW} />);
+
+    expect(screen.getByText("Not recorded")).toBeInTheDocument();
   });
 
   it("offers the reply box only to somebody who may answer", () => {
