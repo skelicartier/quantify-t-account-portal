@@ -257,6 +257,7 @@ function SlotCard({
 export function AdminSecrets({ access, now }: AdminSecretsProps) {
   const secrets = access.status === "authorized" ? access.secrets : null;
   const unreadable = secrets?.store.state === "unreadable";
+  const absent = secrets?.store.state === "absent";
   const slots = secrets ? ordered(secrets.slots) : [];
   const configured = slots.filter((slot) => slot.configured || isFailing(slot));
   const unset = slots.filter((slot) => !slot.configured && !isFailing(slot));
@@ -294,6 +295,21 @@ export function AdminSecrets({ access, now }: AdminSecretsProps) {
           <AdminGate access={access} section="Provider keys">
             {secrets && (
               <div className="board">
+                {absent && (
+                  <Callout
+                    tone="attention"
+                    title="There is no credential document in the store this service reads"
+                    role="status"
+                  >
+                    Not an empty one — none at all. On a new deployment that is expected, and
+                    setting a credential below creates it. If credentials were set from the desktop
+                    admin panel and are working in the product, this service is reading a different
+                    storage account than the one they were written to: check the account
+                    service&rsquo;s storage connection setting before replacing anything, because a
+                    credential set here would go to the same place this read came from.
+                  </Callout>
+                )}
+
                 {unreadable && (
                   <Callout
                     tone="danger"

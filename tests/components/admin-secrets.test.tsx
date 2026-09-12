@@ -252,4 +252,36 @@ describe("AdminSecrets", () => {
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows[0]).toHaveTextContent("Finnhub");
   });
+
+  it("tells an operator that no credential document exists, and what that usually means", () => {
+    // The failure this covers happened in production: the service was pointed at a storage
+    // account the credentials had never been written to, so the page reported a confident
+    // "nothing is configured" while eleven live keys sat somewhere else.
+    render(
+      <AdminSecrets
+        access={authorized({ store: { state: "absent", dependency: "app-config-store" } })}
+        now={NOW}
+      />,
+    );
+
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent(/no credential document/i);
+    expect(notice).toHaveTextContent(/different storage account/i);
+    // Not an outage: writes stay available, because setting one here creates the document.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps an unreadable store distinct from an absent one", () => {
+    // They demand different actions — fix a connection, or wait — so they must not read
+    // the same.
+    render(
+      <AdminSecrets
+        access={authorized({ store: { state: "unreadable", dependency: "app-config-store" } })}
+        now={NOW}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/cannot be read right now/i);
+    expect(screen.queryByText(/no credential document/i)).not.toBeInTheDocument();
+  });
 });

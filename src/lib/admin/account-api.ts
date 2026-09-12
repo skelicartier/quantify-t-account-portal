@@ -570,7 +570,11 @@ export const accountApiAdminSecretsSchema = z
     generated_at: z.string().min(1).max(64),
     store: z
       .object({
-        state: z.enum(["ready", "unreadable"]),
+        // Three answers because they demand three different actions. "absent" is no
+        // document at all in the account this service reads — expected on a new
+        // deployment, and the signature of a misconfigured storage connection when
+        // credentials were set from somewhere else.
+        state: z.enum(["ready", "unreadable", "absent"]),
         dependency: z.string().max(120).nullable().optional(),
       })
       .strict(),
