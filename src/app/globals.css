@@ -1662,6 +1662,40 @@
     gap: 6px;
   }
 
+  /* The live-update indicator. A dot and a sentence, not a spinner: a spinner says
+     "waiting", and this is not waiting for anything. */
+  .live-refresh__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0;
+    border: 0;
+    color: var(--muted);
+    background: none;
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .live-refresh__toggle:hover {
+    color: var(--text);
+  }
+
+  .live-refresh__dot {
+    width: 7px;
+    height: 7px;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    background: transparent;
+  }
+
+  .live-refresh__dot--on {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+
   /* The role catalogue. Columns fill rather than stretch, so a tenancy with three roles
      does not render three cards spread over the width of the page. */
   .role-grid {

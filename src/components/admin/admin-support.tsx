@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AdminGate } from "@/components/admin/admin-gate";
+import { LiveRefresh } from "@/components/shell/live-refresh";
 import { PageHeader } from "@/components/shell/page-header";
 import { Callout } from "@/components/ui/callout";
 import { DataTable } from "@/components/ui/data-table";
@@ -118,6 +119,7 @@ export function AdminSupport({ access, now }: AdminSupportProps) {
             ? "Every conversation on the desk, in the order a desk works: urgent first, longest wait first."
             : "Your conversations and the unassigned pile, in the order a desk works."
         }
+        meta={authorized ? <LiveRefresh label="Queue" intervalSeconds={30} /> : undefined}
       />
       <div className="page-content">
         {access.status === "unavailable" ? (

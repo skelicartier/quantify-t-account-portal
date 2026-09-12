@@ -1,6 +1,7 @@
 import { saveAdminNotification } from "@/app/admin/notifications/actions";
 import { AdminGate } from "@/components/admin/admin-gate";
 import { AdminNotificationManager } from "@/components/admin/admin-notification-manager";
+import { LiveRefresh } from "@/components/shell/live-refresh";
 import { PageHeader } from "@/components/shell/page-header";
 import { Stat, StatGrid } from "@/components/ui/stat";
 import type { AdminNotificationsAccess } from "@/lib/admin/access";
@@ -37,6 +38,7 @@ export function AdminNotifications({ access }: AdminNotificationsProps) {
         title="Notifications"
         titleId="admin-notifications-heading"
         description="In-app notices shown to account holders in the console and the desktop terminal."
+        meta={authorized ? <LiveRefresh label="Notices" intervalSeconds={60} /> : undefined}
       />
       <div className="page-content">
         <AdminGate access={access} section="Notifications">

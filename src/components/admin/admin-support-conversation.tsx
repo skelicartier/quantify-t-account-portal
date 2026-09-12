@@ -4,6 +4,7 @@ import { manageSupportConversation, replyToSupportConversation } from "@/app/adm
 import { AdminGate } from "@/components/admin/admin-gate";
 import { AdminSupportManageForm } from "@/components/admin/admin-support-manage-form";
 import { AdminSupportReplyForm } from "@/components/admin/admin-support-reply-form";
+import { LiveRefresh } from "@/components/shell/live-refresh";
 import { PageHeader } from "@/components/shell/page-header";
 import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
@@ -78,6 +79,9 @@ export function AdminSupportConversation({ access, now }: AdminSupportConversati
                 label={supportPriorityLabel(conversation.priority)}
                 tone={supportPriorityTone(conversation.priority)}
               />
+              {/* A customer who is at their keyboard replies in seconds, so this is
+                  checked more often than the queue. It stops while the desk is typing. */}
+              <LiveRefresh label="Conversation" intervalSeconds={15} />
             </>
           ) : undefined
         }

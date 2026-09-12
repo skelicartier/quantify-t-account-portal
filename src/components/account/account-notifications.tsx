@@ -3,6 +3,7 @@
 import { Check, ExternalLink, X } from "lucide-react";
 import { useActionState, useMemo, useTransition } from "react";
 
+import { LiveRefresh } from "@/components/shell/live-refresh";
 import { PageHeader } from "@/components/shell/page-header";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -152,6 +153,7 @@ export function AccountNotifications({ notifications, receiptState, action, now 
         title="Notifications"
         titleId="account-notifications-heading"
         description="Notices from the Quantify Terminal team about your account and the platform."
+        meta={<LiveRefresh label="Notices" intervalSeconds={60} />}
       />
 
       <div className="page-content">
