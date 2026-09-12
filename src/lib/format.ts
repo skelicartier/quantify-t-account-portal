@@ -191,3 +191,38 @@ export function formatAbsolute(
   const formatted = formatDateTime(value);
   return formatted.valid ? formatted.absolute : fallback;
 }
+
+/**
+ * The value a `datetime-local` input should show for a stored instant.
+ *
+ * A `datetime-local` input has no timezone: it shows and returns a wall clock, and the
+ * browser means the viewer's own. So a stored UTC instant has to be shifted into local time
+ * before it goes in, and shifted back out again on the way to storage — see
+ * {@link localInputToIso}.
+ *
+ * Getting this wrong is not cosmetic. The two halves used to cancel out on screen, so an
+ * operator saw back exactly what they typed while the instant recorded was out by their UTC
+ * offset. A notice published "now" from India was stored five and a half hours ahead and sat
+ * there reading SCHEDULED, because the status check compares the stored instant against the
+ * real clock rather than against the field.
+ */
+export function isoToLocalInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+/**
+ * The instant a `datetime-local` value means, as an ISO string in UTC.
+ *
+ * `new Date("2026-09-13T03:58")` parses as local time, which is exactly what the input
+ * meant, so the conversion is the parse itself. Appending a "Z" instead — which is what this
+ * replaces — relabels the operator's wall clock as UTC and moves the instant.
+ */
+export function localInputToIso(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : "";
+}

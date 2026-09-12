@@ -12,6 +12,12 @@ export default defineConfig({
     },
   },
   test: {
+    // A fixed non-UTC timezone, on purpose. Every timezone bug this codebase has had was
+    // invisible at UTC — a datetime-local field whose value was relabelled rather than
+    // converted round-tripped perfectly until somebody ran the console from India, where a
+    // notice published now was stored five and a half hours ahead and read SCHEDULED. CI
+    // runs at UTC by default, which is exactly where such a bug survives.
+    env: { TZ: "Asia/Kolkata" },
     environment: "jsdom",
     globals: true,
     setupFiles: ["./tests/setup.ts"],

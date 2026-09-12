@@ -13,7 +13,7 @@ import { ShortId } from "@/components/ui/short-id";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Timestamp } from "@/components/ui/timestamp";
 import type { AccountApiAdminNotificationEmailQueue } from "@/lib/admin/account-api";
-import { formatNumber } from "@/lib/format";
+import { formatNumber, isoToLocalInput, localInputToIso } from "@/lib/format";
 import {
   INITIAL_NOTIFICATION_EMAIL_STATE,
   type NotificationEmailActionState,
@@ -44,11 +44,6 @@ const COLUMNS = [
   { key: "attempts", label: "Attempts", align: "end" },
   { key: "detail", label: "Detail" },
 ] as const;
-
-function dateValue(value: string): string {
-  const date = new Date(value);
-  return value && Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 16) : "";
-}
 
 function recipientLabel(target: AccountApiAdminNotificationEmailQueue["jobs"][number]["target"]) {
   if (target.mode === "all") return "All accounts";
@@ -163,9 +158,9 @@ export function AdminEmailManager({ queue, action, now }: Props) {
                 <input
                   className="input"
                   type="datetime-local"
-                  value={dateValue(email.scheduled_at)}
+                  value={isoToLocalInput(email.scheduled_at)}
                   onChange={(event) =>
-                    set("scheduled_at", event.target.value ? `${event.target.value}:00Z` : "")
+                    set("scheduled_at", event.target.value ? localInputToIso(event.target.value) : "")
                   }
                 />
               </label>

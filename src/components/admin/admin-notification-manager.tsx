@@ -12,7 +12,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Timestamp } from "@/components/ui/timestamp";
 import type { AccountApiAdminNotifications } from "@/lib/admin/account-api";
-import { formatLabel } from "@/lib/format";
+import { formatLabel, isoToLocalInput, localInputToIso } from "@/lib/format";
 import {
   INITIAL_NOTIFICATION_STATE,
   type NotificationActionState,
@@ -82,11 +82,6 @@ function editable(note: AccountApiAdminNotifications["notifications"][number]): 
       kind: item.kind === "update" || item.kind === "dismiss" ? item.kind : "link",
     })),
   };
-}
-
-function dateValue(value: string): string {
-  const date = new Date(value);
-  return value && Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 16) : "";
 }
 
 function NotificationEditor({
@@ -194,9 +189,9 @@ function NotificationEditor({
             <input
               className="input"
               type="datetime-local"
-              value={dateValue(note.starts_at)}
+              value={isoToLocalInput(note.starts_at)}
               onChange={(event) =>
-                set("starts_at", event.target.value ? `${event.target.value}:00Z` : "")
+                set("starts_at", event.target.value ? localInputToIso(event.target.value) : "")
               }
             />
           </label>
@@ -205,9 +200,9 @@ function NotificationEditor({
             <input
               className="input"
               type="datetime-local"
-              value={dateValue(note.expires_at)}
+              value={isoToLocalInput(note.expires_at)}
               onChange={(event) =>
-                set("expires_at", event.target.value ? `${event.target.value}:00Z` : "")
+                set("expires_at", event.target.value ? localInputToIso(event.target.value) : "")
               }
             />
           </label>
