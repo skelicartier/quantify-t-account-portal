@@ -197,51 +197,58 @@ function SlotCard({
       titleId={`credential-${slot.slot}`}
       danger={isFailing(slot)}
     >
-      <div className="stack">
-        <KeyValue columns={2}>
-          <KeyValueRow label="Reaches">
-            <Reach slot={slot} />
-          </KeyValueRow>
-          <KeyValueRow label="Powers">{slot.blast_radius}</KeyValueRow>
-          <KeyValueRow label="Kind">
-            {slot.is_secret
-              ? slot.kind === "multi"
-                ? "Secret. Holds several keys the app rotates across."
-                : "Secret. Stored once, never shown again."
-              : "Registration value, public by design. Safe to share."}
-          </KeyValueRow>
-          <KeyValueRow label="Stored">
-            {unreadable ? "Not readable" : pluralize(slot.entries.length, "key")}
-          </KeyValueRow>
-        </KeyValue>
-        {slot.hint && <p className="card__desc">{slot.hint}</p>}
-        {unreadable ? (
-          <EmptyState
-            title="Not readable right now"
-            description="This is not a claim that the credential is missing. Nothing has been changed."
-            compact
-          />
-        ) : (
-          <SlotKeys slot={slot} now={now} />
-        )}
-        {canWrite ? (
-          <AdminSecretControls
-            slot={slot.slot}
-            label={slot.label}
-            kind={slot.kind}
-            isSecret={slot.is_secret}
-            keyCount={slot.entries.length}
-            currentFingerprint={slot.entries[0]?.fingerprint ?? null}
-            disabledReason={disabledReason}
-            setAction={setAdminSecret}
-            revokeAction={revokeAdminSecret}
-            restoreAction={restoreAdminSecret}
-          />
-        ) : (
-          <p className="quiet">
-            Changing this needs owner access. Ask an owner to rotate it, or ask for the permission.
-          </p>
-        )}
+      <div className="credential-split">
+        {/* Left: what this is and what is stored. Right: how to change it. */}
+        <div className="stack">
+          <KeyValue columns={2}>
+            <KeyValueRow label="Reaches">
+              <Reach slot={slot} />
+            </KeyValueRow>
+            <KeyValueRow label="Powers">{slot.blast_radius}</KeyValueRow>
+            <KeyValueRow label="Kind">
+              {slot.is_secret
+                ? slot.kind === "multi"
+                  ? "Secret. Holds several keys the app rotates across."
+                  : "Secret. Stored once, never shown again."
+                : "Registration value, public by design. Safe to share."}
+            </KeyValueRow>
+            <KeyValueRow label="Stored">
+              {unreadable ? "Not readable" : pluralize(slot.entries.length, "key")}
+            </KeyValueRow>
+          </KeyValue>
+          {slot.hint && <p className="card__desc">{slot.hint}</p>}
+          {unreadable ? (
+            <EmptyState
+              title="Not readable right now"
+              description="This is not a claim that the credential is missing. Nothing has been changed."
+              compact
+            />
+          ) : (
+            <SlotKeys slot={slot} now={now} />
+          )}
+        </div>
+
+        <div className="credential-split__change">
+          {canWrite ? (
+            <AdminSecretControls
+              slot={slot.slot}
+              label={slot.label}
+              kind={slot.kind}
+              isSecret={slot.is_secret}
+              keyCount={slot.entries.length}
+              currentFingerprint={slot.entries[0]?.fingerprint ?? null}
+              disabledReason={disabledReason}
+              setAction={setAdminSecret}
+              revokeAction={revokeAdminSecret}
+              restoreAction={restoreAdminSecret}
+            />
+          ) : (
+            <p className="quiet">
+              Changing this needs owner access. Ask an owner to rotate it, or ask for the
+              permission.
+            </p>
+          )}
+        </div>
       </div>
     </Card>
   );
@@ -313,7 +320,7 @@ export function AdminSecrets({ access, now }: AdminSecretsProps) {
                       description="Set a credential below to start. Each one names what it powers."
                     />
                   ) : (
-                    <div className="card-grid card-grid--2">
+                    <div className="stack">
                       {configured.map((slot) => (
                         <SlotCard
                           key={slot.slot}
@@ -336,7 +343,7 @@ export function AdminSecrets({ access, now }: AdminSecretsProps) {
                   >
                     <details className="disclosure">
                       <summary>Show the {pluralize(unset.length, "credential")} not set</summary>
-                      <div className="card-grid card-grid--2">
+                      <div className="stack">
                         {unset.map((slot) => (
                           <SlotCard
                             key={slot.slot}

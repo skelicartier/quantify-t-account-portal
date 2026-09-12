@@ -1331,6 +1331,25 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  /* One credential, read on the left and changed on the right.
+     The two halves answer different questions — "what is this and what is stored" versus
+     "put a new one in" — and keeping them side by side means the operator can still see
+     the fingerprint they are replacing while they paste its replacement. Below 900px the
+     form drops underneath, because a cramped two-column split makes a long key harder to
+     paste accurately than a stacked one. */
+  .credential-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .credential-split__change {
+    min-width: 0;
+    border-left: 1px solid var(--line-soft);
+    padding-left: 18px;
+  }
+
   .section {
     min-width: 0;
   }
@@ -2439,6 +2458,19 @@
     .settings-row {
       grid-template-columns: 1fr;
       gap: 16px;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .credential-split {
+      grid-template-columns: 1fr;
+    }
+
+    .credential-split__change {
+      border-left: 0;
+      border-top: 1px solid var(--line-soft);
+      padding-left: 0;
+      padding-top: 16px;
     }
   }
 
