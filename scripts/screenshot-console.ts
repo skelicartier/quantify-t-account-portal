@@ -50,6 +50,7 @@ const ROUTES = [
   "/forgot-password",
   "/account",
   "/account/profile",
+  "/account/subscription",
   "/account/preferences",
   "/account/security",
   "/account/sessions",
@@ -59,6 +60,7 @@ const ROUTES = [
   "/admin",
   "/admin/users",
   "/admin/users/9d3f5b71-4c6e-4a8b-9c0d-1e3f5a7b9c33",
+  "/admin/subscriptions",
   "/admin/audit",
   "/admin/reports",
   "/admin/notifications",
@@ -72,9 +74,11 @@ const ROUTES = [
 const LIGHT_ROUTES = [
   "/account",
   "/account/security",
+  "/account/subscription",
   "/admin",
   "/admin/users",
   "/admin/users/9d3f5b71-4c6e-4a8b-9c0d-1e3f5a7b9c33",
+  "/admin/subscriptions",
   "/admin/audit",
   "/login",
 ] as const;

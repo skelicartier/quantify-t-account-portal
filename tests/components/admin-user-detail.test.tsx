@@ -91,6 +91,7 @@ describe("AdminUserDetail", () => {
             me,
             assurance,
             detail,
+            usage: null,
           } satisfies AdminUserDetailAccess
         }
       />,
@@ -143,6 +144,7 @@ describe("AdminUserDetail", () => {
                 user_id: TARGET_ID,
               })),
             },
+            usage: null,
           } satisfies AdminUserDetailAccess
         }
       />,

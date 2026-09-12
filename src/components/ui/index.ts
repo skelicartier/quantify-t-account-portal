@@ -6,6 +6,8 @@ export { CategoryRow, DataTable, type DataTableColumn } from "@/components/ui/da
 export { EmptyState } from "@/components/ui/empty-state";
 export { Checkbox, Field, Input, Select, Textarea, describedBy } from "@/components/ui/field";
 export { KeyValue, KeyValueRow } from "@/components/ui/key-value";
+export { LocalTime } from "@/components/ui/local-time";
+export { Meter, type MeterTone } from "@/components/ui/meter";
 export { Pagination } from "@/components/ui/pagination";
 export { ShortId } from "@/components/ui/short-id";
 export { PageSkeleton, Skeleton } from "@/components/ui/skeleton";

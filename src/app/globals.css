@@ -2161,6 +2161,35 @@
     gap: 12px;
   }
 
+  /* meters — one spend against one ceiling, beside the numbers, never instead of them */
+  .meter {
+    display: block;
+    min-width: 120px;
+  }
+
+  .meter__track {
+    block-size: 6px;
+    border: 1px solid var(--line);
+    background: var(--panel-soft);
+  }
+
+  .meter__fill {
+    block-size: 100%;
+    background: var(--muted);
+  }
+
+  .meter__fill--attention {
+    background: var(--attention);
+  }
+
+  .meter__fill--danger {
+    background: var(--danger);
+  }
+
+  .meter__fill--success {
+    background: var(--success);
+  }
+
   /* charts */
   .chart {
     display: grid;

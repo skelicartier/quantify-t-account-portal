@@ -30,6 +30,10 @@ const DANGER = new Set([
   "unverified",
   "off",
   "no",
+  // A subscription that is not being paid for and one that has been ended are both
+  // states where access is about to stop, so they read the same as any other failure.
+  "past_due",
+  "canceled",
 ]);
 
 const ATTENTION = new Set([
@@ -42,9 +46,15 @@ const ATTENTION = new Set([
   "skipped",
   "partial",
   "pending-review",
+  // Live, but on a clock: a trial ends and a grace period runs out.
+  "trialing",
+  "grace",
 ]);
 
 const LABEL_OVERRIDES: Record<string, string> = {
+  past_due: "Past due",
+  grace: "Grace period",
+  trialing: "On trial",
   retry: "Retrying",
   dead: "Failed",
   failure: "Failed",

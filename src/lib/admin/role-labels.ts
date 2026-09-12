@@ -50,6 +50,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "roles:write": "Manage roles",
   "audit:read": "Audit access",
   "audit:write": "Record audit events",
+  "subscription:write": "Manage subscriptions",
   "users:set-active": "Activate or deactivate people",
   "sessions:revoke-any": "Revoke sessions",
   "notifications:write": "Publish notifications and email",

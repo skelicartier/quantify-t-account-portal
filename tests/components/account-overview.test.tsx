@@ -23,7 +23,8 @@ describe("AccountOverview", () => {
     expect(screen.getByRole("heading", { name: /account overview/i })).toBeVisible();
     expect(screen.getByText("Avery Stone")).toBeVisible();
     expect(screen.getByText("user@example.com")).toBeVisible();
-    expect(screen.getByText("Professional")).toBeVisible();
+    // The stored tier is legacy text; the plan it resolves to is what the reader is on.
+    expect(screen.getByText("Desk")).toBeVisible();
     expect(screen.getByText("Active")).toBeVisible();
     expect(screen.getByText("3 Jan 2024")).toBeVisible();
     expect(screen.getByRole("link", { name: /edit profile/i })).toHaveAttribute(
@@ -42,6 +43,10 @@ describe("AccountOverview", () => {
     expect(screen.getByRole("link", { name: /activity/i })).toHaveAttribute(
       "href",
       "/account/activity",
+    );
+    expect(screen.getByRole("link", { name: /subscription/i })).toHaveAttribute(
+      "href",
+      "/account/subscription",
     );
     expect(screen.queryByText(/passcode|pin/i)).not.toBeInTheDocument();
   });

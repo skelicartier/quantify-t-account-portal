@@ -29,6 +29,10 @@ CREATE TABLE dbo.app_states ([id] uniqueidentifier NOT NULL);
 CREATE TABLE dbo.app_user_profiles ([user_id] uniqueidentifier NOT NULL);
 CREATE TABLE dbo.watchlists ([id] uniqueidentifier NOT NULL);
 CREATE TABLE dbo.admin_activity_logs ([id] uniqueidentifier NOT NULL);
+CREATE TABLE dbo.account_subscription_state ([account_id] uniqueidentifier NOT NULL);
+CREATE TABLE dbo.account_entitlements ([account_id] uniqueidentifier NOT NULL);
+CREATE TABLE dbo.usage_counters ([account_id] uniqueidentifier NOT NULL);
+CREATE TABLE dbo.usage_events ([event_id] uniqueidentifier NOT NULL);
 `;
 
 const TASK7_CONFIRM_ROUTE = `
@@ -870,6 +874,19 @@ describe("preflight audit", () => {
     }).find(({ id }) => id === "azure.sql-schema");
     expect(missingTable?.status).toBe("blocked");
     expect(missingTable?.evidence).toContain("Missing table: app_states");
+
+    // The subscription tables are part of the contract too: the console renders plans,
+    // allowances and spend out of them, and an unmigrated database would show every
+    // account as Free rather than failing loudly.
+    const missingUsage = auditRepositories({
+      ...completeSnapshot,
+      azureSqlSchema: AZURE_SQL_SCHEMA.replace(
+        "CREATE TABLE dbo.usage_counters",
+        "CREATE TABLE dbo.usage_counters_old",
+      ),
+    }).find(({ id }) => id === "azure.sql-schema");
+    expect(missingUsage?.status).toBe("blocked");
+    expect(missingUsage?.evidence).toContain("Missing table: usage_counters");
 
     const noOwner = auditRepositories({
       ...completeSnapshot,

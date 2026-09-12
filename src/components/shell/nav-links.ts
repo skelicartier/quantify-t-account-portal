@@ -1,8 +1,10 @@
 import {
   Activity,
   Bell,
+  CreditCard,
   Database,
   FileText,
+  Gauge,
   KeyRound,
   LayoutDashboard,
   Mail,
@@ -29,6 +31,7 @@ export type NavLink = {
 export const ACCOUNT_LINKS: readonly NavLink[] = [
   { href: "/account", label: "Overview", icon: LayoutDashboard },
   { href: "/account/profile", label: "Profile", icon: UserRound },
+  { href: "/account/subscription", label: "Subscription", icon: CreditCard },
   { href: "/account/preferences", label: "Preferences", icon: SlidersHorizontal },
   { href: "/account/security", label: "Security", icon: ShieldCheck },
   { href: "/account/sessions", label: "Sessions", icon: MonitorSmartphone },
@@ -40,6 +43,7 @@ export const ACCOUNT_LINKS: readonly NavLink[] = [
 export const ADMIN_LINKS: readonly NavLink[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users, activePrefix: "/admin/users/" },
+  { href: "/admin/subscriptions", label: "Subscriptions", icon: Gauge },
   { href: "/admin/notifications", label: "Notifications", icon: Bell },
   { href: "/admin/email", label: "Email", icon: Mail },
   { href: "/admin/audit", label: "Audit", icon: ScrollText },

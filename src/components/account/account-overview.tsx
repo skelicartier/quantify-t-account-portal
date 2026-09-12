@@ -7,7 +7,7 @@ import { Stat, StatGrid } from "@/components/ui/stat";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Timestamp } from "@/components/ui/timestamp";
 import type { AccountOverviewDto } from "@/lib/dto/account";
-import { formatLabel } from "@/lib/format";
+import { planLabel } from "@/lib/admin/plan-catalogue";
 
 type AccountOverviewProps = {
   account: AccountOverviewDto;
@@ -58,7 +58,7 @@ export function AccountOverview({ account, canEnterAdmin = false, now }: Account
 
           <StatGrid columns={2} label="Account standing">
             <Stat label="Status" value={<StatusPill value={account.status} />} text />
-            <Stat label="Plan" value={formatLabel(account.subscriptionTier)} text />
+            <Stat label="Plan" value={planLabel(account.subscriptionTier)} text />
             <Stat
               label="Last sign-in"
               value={<Timestamp value={account.lastSignInAt} now={now} />}
@@ -89,6 +89,11 @@ export function AccountOverview({ account, canEnterAdmin = false, now }: Account
               href="/account/profile"
               title="Edit profile"
               description="Name, phone and country shared with your terminal."
+            />
+            <LinkCard
+              href="/account/subscription"
+              title="Subscription"
+              description="Your plan, what it includes and what you have used."
             />
             <LinkCard
               href="/account/preferences"

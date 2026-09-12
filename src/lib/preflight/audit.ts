@@ -53,6 +53,13 @@ const REQUIRED_SCHEMA_OBJECTS = [
   "app_user_profiles",
   "watchlists",
   "admin_activity_logs",
+  // Subscriptions, entitlements and server-enforced quotas. The console renders plans
+  // and allowances from these; shipping those screens against a database that has not
+  // been migrated would show every account as Free.
+  "account_subscription_state",
+  "account_entitlements",
+  "usage_counters",
+  "usage_events",
 ] as const;
 
 const PLACEHOLDER_MARKERS = [

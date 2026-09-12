@@ -69,6 +69,21 @@ export function pluralize(count: number, noun: string, plural = `${noun}s`): str
   return `${formatNumber(count)} ${count === 1 ? noun : plural}`;
 }
 
+/**
+ * A share of a whole, as a percentage. `0.5` → "50%", `0.004` → "<1%".
+ *
+ * Rounded to whole points because the console shows shares to be compared at a glance,
+ * never to be reconciled; a value that rounds to zero but is not zero says "<1%" so a
+ * live account never reads as none at all.
+ */
+export function formatPercent(ratio: number | null | undefined): string {
+  if (typeof ratio !== "number" || !Number.isFinite(ratio) || ratio < 0) return "Not available";
+  const percent = ratio * 100;
+  if (percent > 0 && percent < 1) return "<1%";
+  if (percent > 99 && percent < 100) return ">99%";
+  return `${Math.round(percent)}%`;
+}
+
 /** 16384 → "16 KB", 1_048_576 → "1 MB". Binary units, at most one decimal. */
 export function formatBytes(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "Not available";

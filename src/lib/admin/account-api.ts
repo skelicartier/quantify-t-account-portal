@@ -18,6 +18,15 @@ export const NOTIFICATIONS_CAPABILITY = "notifications:write";
 export const CONFIGURATION_CAPABILITY = "configuration:read";
 export const CREDENTIAL_STATUS_CAPABILITY = "credentials:read-status";
 export const RELEASE_STATUS_CAPABILITY = "releases:read-status";
+/**
+ * Changing what an account may do, as distinct from who they are. Deliberately separate
+ * from role management: Support must be able to look at a plan without granting one, and
+ * an Admin must be able to comp an account without being able to make someone an Owner.
+ */
+export const SUBSCRIPTION_WRITE_CAPABILITY = "subscription:write";
+/** The audit event types every plan and override change is recorded under. */
+export const SUBSCRIPTION_CHANGED_EVENT = "account.subscription_changed";
+export const ENTITLEMENT_CHANGED_EVENT = "account.entitlement_changed";
 
 type Fetcher = (input: URL, init: RequestInit) => Promise<Response>;
 
@@ -508,6 +517,142 @@ export const accountApiAdminUserDetailSchema = adminUserSummarySchema
   })
   .strict();
 
+// --------------------------------------------------------------- subscriptions
+// One entitlement as the API resolved it. A metered or counted feature carries numbers,
+// a boolean feature carries `enabled`, and exactly one of the two is present for a given
+// key — which is why the fields are optional here rather than a union of two objects the
+// caller would have to narrow before it could read `source`.
+const entitlementFeatureSchema = z
+  .object({
+    period: z.enum(["day", "month", "lifetime"]),
+    source: z.string().min(1).max(16),
+    /** `null` is unlimited, never zero. */
+    limit: z.number().int().nonnegative().nullable().optional(),
+    used: z.number().int().nonnegative().optional(),
+    reserved: z.number().int().nonnegative().optional(),
+    remaining: z.number().int().nonnegative().nullable().optional(),
+    /** An absolute instant, so the client renders it in the reader's own timezone. */
+    resets_at: z.string().min(1).max(64).optional(),
+    period_key: z.string().min(1).max(64).optional(),
+    enabled: z.boolean().optional(),
+    reason: z.string().max(200).optional(),
+  })
+  .strict();
+
+export const accountApiEntitlementsSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    /**
+     * The plan these allowances belong to. During a trial that is the trial's plan, not
+     * the tier stored on the profile — the label and the numbers have to come from the
+     * same place or the page reads "Included with Free" beside 1,000 AI chats.
+     */
+    plan: z.string().min(1).max(50),
+    /** Sent only when it differs from `plan`: the tier the account drops back to. */
+    stored_plan: z.string().min(1).max(50).optional(),
+    /** The cache key: it moves on every entitlement change. */
+    entitlement_version: z.number().int().nonnegative(),
+    chat_model: z.string().min(1).max(64).optional(),
+    generated_at: z.string().max(64),
+    ttl_seconds: z.number().int().nonnegative(),
+    /** Present only while a trial is live. */
+    trial_ends_at: z.string().min(1).max(64).optional(),
+    features: z.record(z.string().min(1).max(64), entitlementFeatureSchema),
+  })
+  .strict();
+
+export const accountApiAdminSubscriptionsSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    generated_at: z.string().min(1).max(64),
+    /** Keys are raw stored tiers, not canonical plans; the console canonicalises them. */
+    plans: metricCounterSchema,
+    total_accounts: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const usageCounterSchema = z
+  .object({
+    feature_key: z.string().min(1).max(64),
+    period_key: z.string().max(64),
+    used: z.number().int().nonnegative(),
+    reserved: z.number().int().nonnegative(),
+    updated_at: z.string().max(64),
+  })
+  .strict();
+
+export const accountApiAdminUserUsageSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    user_id: z.guid(),
+    plan: z.string().min(1).max(50),
+    generated_at: z.string().min(1).max(64),
+    counters: z.array(usageCounterSchema).max(200),
+  })
+  .strict();
+
+/** One account's resolved entitlements, read by an operator. Same shape as the account's
+ *  own `me/entitlements`, plus the profile version a plan change compares against. */
+export const accountApiAdminUserEntitlementsSchema = accountApiEntitlementsSchema
+  .extend({
+    user_id: z.guid(),
+    profile_version: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const entitlementOverrideSchema = z
+  .object({
+    feature_key: z.string().min(1).max(64),
+    source: z.string().max(16),
+    source_ref: z.string().max(128),
+    limit_value: z.number().int().nonnegative().nullable(),
+    bool_value: z.boolean().nullable(),
+    effective_from: z.string().max(64),
+    effective_to: z.string().max(64),
+    granted_by: z.string().max(64),
+    reason: z.string().max(200),
+  })
+  .strict();
+
+/** The receipt for a plan change or an override, in the house mutation envelope. */
+export const accountApiAdminSubscriptionUpdateSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    user_id: z.guid(),
+    plan: z.string().max(50),
+    previous_plan: z.string().max(50),
+    profile_version: z.number().int().nonnegative(),
+    entitlement_version: z.number().int().nonnegative(),
+    overrides: z.array(entitlementOverrideSchema).max(64),
+    /**
+     * The receipt for a trial: an instant means a window is open until then, an empty
+     * string means there is none. The page says "with a 14-day trial" from this and never
+     * from its own checkbox, so it can only say it about a trial that was written.
+     */
+    trial_ends_at: z.string().max(64),
+    /**
+     * The submitted plan was the one the account already had, with no trial to start or
+     * end, so nothing was written. Bumping `entitlement_version` invalidates the cached
+     * entitlement document on every device the account is signed in to, and filing an
+     * audit event for a change that did not happen is worse than saying nothing.
+     */
+    unchanged: z.boolean(),
+    event: z
+      .object({
+        id: z.string().max(64),
+        event_type: z.string().max(64),
+      })
+      .strict()
+      .nullable(),
+    replayed: z.boolean(),
+    legacy_mirrored: z.boolean(),
+  })
+  .strict();
+
 export const accountApiAdminUserActivationSchema = adminUserSummarySchema
   .extend({
     ok: z.literal(true),
@@ -987,6 +1132,15 @@ export type AccountApiAdminMetrics = z.infer<typeof accountApiAdminMetricsSchema
 export type AccountApiAdminConfiguration = z.infer<typeof accountApiAdminConfigurationSchema>;
 export type AccountApiAdminCredentialStatus = z.infer<typeof accountApiAdminCredentialStatusSchema>;
 export type AccountApiAdminReleaseStatus = z.infer<typeof accountApiAdminReleaseStatusSchema>;
+export type AccountApiEntitlements = z.infer<typeof accountApiEntitlementsSchema>;
+export type AccountApiEntitlementFeature = z.infer<typeof entitlementFeatureSchema>;
+export type AccountApiAdminSubscriptions = z.infer<typeof accountApiAdminSubscriptionsSchema>;
+export type AccountApiAdminUserUsage = z.infer<typeof accountApiAdminUserUsageSchema>;
+export type AccountApiAdminUserEntitlements = z.infer<typeof accountApiAdminUserEntitlementsSchema>;
+export type AccountApiAdminSubscriptionUpdate = z.infer<
+  typeof accountApiAdminSubscriptionUpdateSchema
+>;
+export type AccountApiEntitlementOverride = z.infer<typeof entitlementOverrideSchema>;
 export type AccountApiAdminUsers = z.infer<typeof accountApiAdminUsersSchema>;
 export type AccountApiAdminUserDetail = z.infer<typeof accountApiAdminUserDetailSchema>;
 export type AccountApiAdminUserActivation = z.infer<typeof accountApiAdminUserActivationSchema>;
@@ -1074,6 +1228,24 @@ type AccountApiAccountDeletionBody = {
 
 type AccountApiAccountDeletionCancelBody = AccountApiAccountDeletionBody & {
   request_id: string;
+};
+
+export type AccountApiSubscriptionUpdateBody = {
+  plan: string;
+  /** Compare-and-swap against the target's profile; the API refuses a stale one. */
+  expected_profile_version: number;
+  trial_days?: number;
+};
+
+export type AccountApiEntitlementUpdateBody = {
+  feature_key: string;
+  /** `null` means unlimited. Omitted entirely for a boolean feature. */
+  limit_value?: number | null;
+  bool_value?: boolean;
+  expires_in_days?: number;
+  /** Required unless `remove` is true: a comp nobody can attribute is a revenue leak. */
+  reason?: string;
+  remove?: boolean;
 };
 
 export type AccountApiProfileUpdateBody = {
@@ -1679,6 +1851,90 @@ export async function setAccountApiAdminUserRole(
   const route = `admin/users/${encodeURIComponent(parsedUserId.data)}/role`;
   const payload = await postAccountApiJson(route, accessToken, { role: parsedRole.data }, options);
   return parseAccountApiPayload(accountApiAdminUserActivationSchema, payload, route, "POST");
+}
+
+/** What the signed-in caller may do, and how much of it is left. */
+export async function fetchAccountApiEntitlements(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiEntitlements> {
+  const payload = await fetchAccountApiJson("me/entitlements", accessToken, options);
+  return parseAccountApiPayload(accountApiEntitlementsSchema, payload, "me/entitlements", "GET");
+}
+
+/** How many active accounts sit on each stored tier. */
+export async function fetchAccountApiAdminSubscriptions(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiAdminSubscriptions> {
+  const payload = await fetchAccountApiJson("admin/subscriptions", accessToken, options);
+  return parseAccountApiPayload(
+    accountApiAdminSubscriptionsSchema,
+    payload,
+    "admin/subscriptions",
+    "GET",
+  );
+}
+
+/** What one account has actually spent, for answering a support question. */
+export async function fetchAccountApiAdminUserUsage(
+  accessToken: string,
+  userId: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiAdminUserUsage> {
+  const parsedUserId = z.guid().safeParse(userId.trim().toLowerCase());
+  if (!parsedUserId.success) throw new AccountApiUnavailableError();
+  const route = `admin/users/${encodeURIComponent(parsedUserId.data)}/usage`;
+  const payload = await fetchAccountApiJson(route, accessToken, options);
+  return parseAccountApiPayload(accountApiAdminUserUsageSchema, payload, route, "GET");
+}
+
+/**
+ * One account's resolved entitlements, as that account's own device would see them.
+ *
+ * The alternative was mirroring the plan catalogue in the console so it could show what a
+ * limit *would* be — a second source of truth that drifts the first time a plan changes
+ * and nobody remembers the mirror exists. Resolving on the server means what an operator
+ * sees is exactly what the user gets, overrides and trials included.
+ */
+export async function fetchAccountApiAdminUserEntitlements(
+  accessToken: string,
+  userId: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiAdminUserEntitlements> {
+  const parsedUserId = z.guid().safeParse(userId.trim().toLowerCase());
+  if (!parsedUserId.success) throw new AccountApiUnavailableError();
+  const route = `admin/users/${encodeURIComponent(parsedUserId.data)}/entitlements`;
+  const payload = await fetchAccountApiJson(route, accessToken, options);
+  return parseAccountApiPayload(accountApiAdminUserEntitlementsSchema, payload, route, "GET");
+}
+
+/** Move an account to a plan. The API refuses a caller changing their own. */
+export async function setAccountApiAdminUserSubscription(
+  accessToken: string,
+  userId: string,
+  body: AccountApiSubscriptionUpdateBody,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiAdminSubscriptionUpdate> {
+  const parsedUserId = z.guid().safeParse(userId.trim().toLowerCase());
+  if (!parsedUserId.success) throw new AccountApiUnavailableError();
+  const route = `admin/users/${encodeURIComponent(parsedUserId.data)}/subscription`;
+  const payload = await postAccountApiJson(route, accessToken, body, options);
+  return parseAccountApiPayload(accountApiAdminSubscriptionUpdateSchema, payload, route, "POST");
+}
+
+/** Raise, lower or remove one account's allowance for one feature. */
+export async function setAccountApiAdminUserEntitlement(
+  accessToken: string,
+  userId: string,
+  body: AccountApiEntitlementUpdateBody,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiAdminSubscriptionUpdate> {
+  const parsedUserId = z.guid().safeParse(userId.trim().toLowerCase());
+  if (!parsedUserId.success) throw new AccountApiUnavailableError();
+  const route = `admin/users/${encodeURIComponent(parsedUserId.data)}/entitlement`;
+  const payload = await postAccountApiJson(route, accessToken, body, options);
+  return parseAccountApiPayload(accountApiAdminSubscriptionUpdateSchema, payload, route, "POST");
 }
 
 export async function revokeAccountApiAdminUserSession(

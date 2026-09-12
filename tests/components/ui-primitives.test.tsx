@@ -6,6 +6,7 @@ import { ShortId } from "@/components/ui/short-id";
 import { StatusPill, statusLabel, statusTone } from "@/components/ui/status-pill";
 import { Timestamp } from "@/components/ui/timestamp";
 import { DataTable } from "@/components/ui/data-table";
+import { Meter } from "@/components/ui/meter";
 import { EmptyState } from "@/components/ui/empty-state";
 
 describe("StatusPill", () => {
@@ -18,6 +19,11 @@ describe("StatusPill", () => {
     ["revoked", "danger", "Revoked"],
     ["queued", "neutral", "Queued"],
     ["source-locked", "attention", "Locked at source"],
+    // Subscription states: live but on a clock, or about to stop.
+    ["trialing", "attention", "On trial"],
+    ["grace", "attention", "Grace period"],
+    ["past_due", "danger", "Past due"],
+    ["canceled", "danger", "Canceled"],
     ["", "neutral", "Unknown"],
   ])("maps %s to the %s tone labelled %s", (value, tone, label) => {
     expect(statusTone(value)).toBe(tone);
@@ -153,5 +159,28 @@ describe("DataTable", () => {
     );
     expect(screen.getByRole("table", { name: "Things" })).toBeVisible();
     expect(screen.getByRole("columnheader", { name: "A" })).toBeVisible();
+  });
+});
+
+describe("Meter", () => {
+  it("draws a spend against its ceiling and names it for assistive technology", () => {
+    render(<Meter label="AI chat: 150 of 300 used" value={150} limit={300} tone="attention" />);
+
+    const meter = screen.getByRole("img", { name: "AI chat: 150 of 300 used" });
+    expect(meter.firstElementChild?.firstElementChild).toHaveStyle({ inlineSize: "50%" });
+  });
+
+  it("draws nothing at all when there is no ceiling to draw", () => {
+    const { container } = render(<Meter label="Unlimited" value={9000} limit={null} />);
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("never overflows its track when the spend is past the ceiling", () => {
+    render(<Meter label="Over" value={900} limit={300} tone="danger" />);
+
+    const fill = screen.getByRole("img", { name: "Over" }).firstElementChild?.firstElementChild;
+    expect(fill).toHaveStyle({ inlineSize: "100%" });
+    expect(fill).toHaveClass("meter__fill--danger");
   });
 });

@@ -6,6 +6,7 @@ import {
   formatDurationSeconds,
   formatLabel,
   formatNumber,
+  formatPercent,
   formatSentence,
   pluralize,
 } from "@/lib/format";
@@ -85,5 +86,24 @@ describe("dates", () => {
     expect(formatDateTime("not a date").valid).toBe(false);
     expect(formatDate("")).toBe("Not available");
     expect(formatAbsolute(null, "Never")).toBe("Never");
+  });
+});
+
+describe("formatPercent", () => {
+  it("rounds a share to whole points for comparison at a glance", () => {
+    expect(formatPercent(0.5)).toBe("50%");
+    expect(formatPercent(0.2494)).toBe("25%");
+    expect(formatPercent(0)).toBe("0%");
+    expect(formatPercent(1)).toBe("100%");
+  });
+
+  it("never reads a live share as none, or a partial one as all", () => {
+    expect(formatPercent(0.0004)).toBe("<1%");
+    expect(formatPercent(0.999)).toBe(">99%");
+  });
+
+  it("fails soft on a value that is not a share", () => {
+    expect(formatPercent(Number.NaN)).toBe("Not available");
+    expect(formatPercent(null)).toBe("Not available");
   });
 });

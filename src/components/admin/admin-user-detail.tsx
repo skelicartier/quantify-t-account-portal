@@ -2,6 +2,7 @@ import { AdminGate } from "@/components/admin/admin-gate";
 import { AdminUserActivationForm } from "@/components/admin/admin-user-activation-form";
 import { AdminUserRoleForm } from "@/components/admin/admin-user-role-form";
 import { AdminUserSessionRevokeForm } from "@/components/admin/admin-user-session-revoke-form";
+import { AdminUserSubscription } from "@/components/admin/admin-user-subscription";
 import { PageHeader } from "@/components/shell/page-header";
 import { RoleBadge } from "@/components/ui/badge";
 import { Card, Section } from "@/components/ui/card";
@@ -15,10 +16,16 @@ import { Timestamp } from "@/components/ui/timestamp";
 import type { AdminUserDetailAccess } from "@/lib/admin/access";
 import {
   ROLE_WRITE_CAPABILITY,
+  SUBSCRIPTION_WRITE_CAPABILITY,
   USER_ACTIVATION_CAPABILITY,
   USER_SESSION_REVOKE_CAPABILITY,
 } from "@/lib/admin/account-api";
+import { planLabel } from "@/lib/admin/plan-catalogue";
 import { mismatchLabel, mismatchTone, roleLabel } from "@/lib/admin/role-labels";
+import type {
+  AdminEntitlementOverrideState,
+  AdminSubscriptionPlanState,
+} from "@/lib/admin/subscription";
 import type { AdminUserActivationState } from "@/lib/admin/user-activation";
 import type { AdminUserRoleState } from "@/lib/admin/user-role";
 import type { AdminUserSessionRevocationState } from "@/lib/admin/user-session-revocation";
@@ -35,6 +42,14 @@ type AdminUserDetailProps = {
     formData: FormData,
   ) => Promise<AdminUserSessionRevocationState>;
   roleAction?: (state: AdminUserRoleState, formData: FormData) => Promise<AdminUserRoleState>;
+  planAction?: (
+    state: AdminSubscriptionPlanState,
+    formData: FormData,
+  ) => Promise<AdminSubscriptionPlanState>;
+  overrideAction?: (
+    state: AdminEntitlementOverrideState,
+    formData: FormData,
+  ) => Promise<AdminEntitlementOverrideState>;
   now?: number | undefined;
 };
 
@@ -77,11 +92,16 @@ export function AdminUserDetail({
   activationAction,
   sessionRevokeAction,
   roleAction,
+  planAction,
+  overrideAction,
   now,
 }: AdminUserDetailProps) {
   const { me } = access;
   const detail = access.status === "authorized" ? access.detail : null;
+  const usage = access.status === "authorized" ? access.usage : null;
   const isSelf = Boolean(detail) && me.user.user_id === detail?.user.user_id;
+  const canManageSubscription =
+    Boolean(detail) && !isSelf && me.capabilities.includes(SUBSCRIPTION_WRITE_CAPABILITY);
   const canChangeActivation =
     Boolean(detail) && !isSelf && me.capabilities.includes(USER_ACTIVATION_CAPABILITY);
   const canRevokeSessions =
@@ -123,7 +143,8 @@ export function AdminUserDetail({
                 <Stat label="Role" value={<RoleBadge role={detail.role.effective} />} text />
                 <Stat
                   label="Plan"
-                  value={formatLabel(detail.user.subscription_tier || "free")}
+                  value={planLabel(usage?.plan ?? detail.user.subscription_tier)}
+                  hint={detail.user.subscription_tier || "free"}
                   text
                 />
                 <Stat
@@ -188,6 +209,17 @@ export function AdminUserDetail({
                   </div>
                 </Card>
               </div>
+
+              <AdminUserSubscription
+                userId={detail.user.user_id}
+                storedTier={detail.user.subscription_tier}
+                usage={usage}
+                canManage={canManageSubscription}
+                isSelf={isSelf}
+                planAction={planAction}
+                overrideAction={overrideAction}
+                now={now}
+              />
 
               <Section
                 id="admin-user-sessions"

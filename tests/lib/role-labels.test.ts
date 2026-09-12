@@ -42,6 +42,10 @@ describe("role labels", () => {
     expect(mismatchTone("divergent")).toBe("attention");
   });
 
+  it("names the subscription capability in words an operator uses", () => {
+    expect(capabilityLabel("subscription:write")).toBe("Manage subscriptions");
+  });
+
   it("keeps the role report verdict strings", () => {
     const base = {
       legacy_source_available: true,

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { buildPreflightReport, preflightExitCode } from "@/lib/preflight/audit";
@@ -25,6 +25,30 @@ async function readKnownFile(path: string): Promise<string | null> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
   }
+}
+
+/**
+ * The checked-in Azure SQL schema: the base snapshot plus every migration applied after
+ * it. A table added by a migration is as much part of the schema as one in the baseline
+ * file, and reading only the baseline would report a migrated table as missing.
+ */
+async function readAzureSqlSchema(schemaRoot: string): Promise<string | null> {
+  const base = await readKnownFile(resolve(schemaRoot, "azure_sql_schema.sql"));
+  if (base === null) return null;
+  let names: string[];
+  try {
+    names = await readdir(resolve(schemaRoot, "migrations"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return base;
+    throw error;
+  }
+  const migrations = await Promise.all(
+    names
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .map(async (name) => (await readKnownFile(resolve(schemaRoot, "migrations", name))) ?? ""),
+  );
+  return [base, ...migrations].join("\n");
 }
 
 async function collectSnapshot(): Promise<RepositorySnapshot> {
@@ -100,8 +124,8 @@ async function collectSnapshot(): Promise<RepositorySnapshot> {
     }),
     portalSecurityEvidence: analyzePortalSecurityHeaders(headerRules ?? null),
     desktopEnvironmentExample: await readKnownFile(resolve(desktopRoot, ".env.example")),
-    azureSqlSchema: await readKnownFile(
-      resolve(desktopRoot, "cloud/azure/account_function/schema/azure_sql_schema.sql"),
+    azureSqlSchema: await readAzureSqlSchema(
+      resolve(desktopRoot, "cloud/azure/account_function/schema"),
     ),
     desktopAuthService: await readKnownFile(resolve(desktopRoot, "src/services/auth_service.py")),
     desktopSupabaseService: await readKnownFile(

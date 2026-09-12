@@ -20,13 +20,19 @@ import {
   fetchAccountApiAdminCredentialStatus,
   fetchAccountApiAdminMetrics,
   fetchAccountApiAdminReleaseStatus,
+  fetchAccountApiAdminSubscriptions,
   fetchAccountApiAdminUser,
   fetchAccountApiAdminUsers,
+  fetchAccountApiAdminUserEntitlements,
+  fetchAccountApiAdminUserUsage,
   fetchAccountApiMe as fetchAccountApiMeUncached,
   fetchAccountApiRoleReport,
+  ENTITLEMENT_CHANGED_EVENT,
   NOTIFICATIONS_CAPABILITY,
   RELEASE_STATUS_CAPABILITY,
   ROLE_REPORT_CAPABILITY,
+  SUBSCRIPTION_CHANGED_EVENT,
+  SUBSCRIPTION_WRITE_CAPABILITY,
   type AccountApiAdminConfiguration,
   type AccountApiAdminCredentialStatus,
   type AccountApiAdminNotificationEmailQueue,
@@ -36,9 +42,12 @@ import {
   type AccountApiAdminMetrics,
   type AccountApiAdminReports,
   type AccountApiAdminReleaseStatus,
+  type AccountApiAdminSubscriptions,
   type AccountApiAdminUserDetail,
   type AccountApiAdminUserFilters,
   type AccountApiAdminUsers,
+  type AccountApiAdminUserEntitlements,
+  type AccountApiAdminUserUsage,
   type AccountApiMe,
   type AccountApiRoleReport,
 } from "@/lib/admin/account-api";
@@ -105,6 +114,8 @@ export type AdminUserDetailAccess =
       me: AccountApiMe;
       assurance: AssuranceState;
       detail: AccountApiAdminUserDetail;
+      /** `null` when the usage read failed; the subscription card says so and stays. */
+      usage: AccountApiAdminUserUsage | null;
     }
   | { status: "not-found"; me: AccountApiMe; assurance: AssuranceState }
   | { status: "mfa-required"; me: AccountApiMe; assurance: AssuranceState }
@@ -226,6 +237,45 @@ export type AdminReleaseStatusAccess =
       capability: typeof RELEASE_STATUS_CAPABILITY;
     };
 
+/** Which parts of the subscriptions page could not be loaded; the page renders around them. */
+export type AdminSubscriptionsDegradation = "distribution" | "accounts" | "usage" | "changes";
+
+/** One sampled account and the counters behind it, for the allowance scan. */
+export type AdminSubscriptionAccount = {
+  user: AccountApiAdminUsers["users"][number]["user"];
+  /**
+   * The account's own resolved entitlements: what it has spent and the limit it is
+   * measured against, both as the server resolved them. Reading usage alone left the page
+   * comparing against the plan template, so a comped account with a raised override read
+   * as "over allowance" when it was well inside its own.
+   */
+  entitlements: AccountApiAdminUserEntitlements | null;
+};
+
+export type AdminSubscriptionsAccess =
+  | {
+      status: "authorized";
+      me: AccountApiMe;
+      assurance: AssuranceState;
+      /** `null` when the distribution read failed; the rest of the page still renders. */
+      subscriptions: AccountApiAdminSubscriptions | null;
+      accounts: AdminSubscriptionAccount[];
+      /** How many accounts the allowance scan could cover, and its ceiling. */
+      scanLimit: number;
+      changes: AccountApiAdminAuditEvents["events"];
+      canReadChanges: boolean;
+      degraded: AdminSubscriptionsDegradation[];
+    }
+  | { status: "mfa-required"; me: AccountApiMe; assurance: AssuranceState }
+  | { status: "forbidden"; me: AccountApiMe };
+
+/**
+ * Whether this session may enter the console's administrative area.
+ *
+ * The capability behind it is `account:read-any` — entering the admin area and reading
+ * another account are the same permission, not two. Pages that read other accounts need
+ * no second check, and pages that *write* add their own capability on top.
+ */
 export function hasAdminPortalAccess(me: AccountApiMe): boolean {
   return me.capabilities.includes(ADMIN_ENTRY_CAPABILITY);
 }
@@ -248,6 +298,10 @@ export function canReadConfiguration(me: AccountApiMe): boolean {
 
 export function canReadCredentialStatus(me: AccountApiMe): boolean {
   return me.capabilities.includes(CREDENTIAL_STATUS_CAPABILITY);
+}
+
+export function canManageSubscriptions(me: AccountApiMe): boolean {
+  return me.capabilities.includes(SUBSCRIPTION_WRITE_CAPABILITY);
 }
 
 export function canReadReleaseStatus(me: AccountApiMe): boolean {
@@ -502,12 +556,11 @@ export const getAdminUserDetailAccess = cache(
     }
 
     try {
-      return {
-        status: "authorized",
-        me,
-        assurance,
-        detail: await fetchAccountApiAdminUser(accessToken, userId),
-      };
+      const detail = await fetchAccountApiAdminUser(accessToken, userId);
+      // The account itself must render even when the counters are unreadable: a usage
+      // outage is not a reason to hide someone's sessions, role and activity.
+      const usage = await fetchAccountApiAdminUserUsage(accessToken, userId).catch(() => null);
+      return { status: "authorized", me, assurance, detail, usage };
     } catch (error) {
       if (isAccountApiNotFound(error)) {
         return { status: "not-found", me, assurance };
@@ -516,6 +569,97 @@ export const getAdminUserDetailAccess = cache(
     }
   },
 );
+
+/**
+ * Accounts the allowance scan covers. There is no API that answers "who is near their
+ * limit" in one call — usage is read one account at a time — so the page samples the
+ * most recently updated accounts and says so rather than implying it scanned all of
+ * them. Raising this raises the request count on every page view one for one.
+ */
+const SUBSCRIPTION_SCAN_LIMIT = 24;
+
+export const getAdminSubscriptionsAccess = cache(async (): Promise<AdminSubscriptionsAccess> => {
+  const { accessToken, me } = await currentAccountApiIdentity("/admin/subscriptions");
+
+  // Admin entry IS `account:read-any` (see ADMIN_ENTRY_CAPABILITY), which is exactly what
+  // every read on this page needs. Stated here because the helper's name says "portal
+  // access" and reads as a weaker check than it is.
+  if (!hasAdminPortalAccess(me)) return { status: "forbidden", me };
+
+  const assurance = await getCurrentAssurance();
+  if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    return { status: "mfa-required", me, assurance };
+  }
+
+  const canReadChanges = canReadAuditEvents(me);
+  // The three panels fail independently: a plan distribution that times out must not
+  // take the allowance scan or the change log down with it. Both groups are started
+  // before either is awaited, so the reads still overlap.
+  const corePromise = Promise.allSettled([
+    fetchAccountApiAdminSubscriptions(accessToken),
+    fetchAccountApiAdminUsers(accessToken, { limit: SUBSCRIPTION_SCAN_LIMIT, offset: 0 }),
+  ] as const);
+  // The audit search filters on one event type at a time, so a plan change and an
+  // override change are two reads merged into one log.
+  const changesPromise = Promise.allSettled(
+    canReadChanges
+      ? [SUBSCRIPTION_CHANGED_EVENT, ENTITLEMENT_CHANGED_EVENT].map((eventType) =>
+          fetchAccountApiAdminAuditEvents(accessToken, {
+            filters: { event_type: eventType },
+            limit: 25,
+            offset: 0,
+          }),
+        )
+      : [],
+  );
+  const [distributionResult, usersResult] = await corePromise;
+  const changeResults = await changesPromise;
+
+  const degraded: AdminSubscriptionsDegradation[] = [];
+  if (distributionResult.status === "rejected") degraded.push("distribution");
+  if (usersResult.status === "rejected") degraded.push("accounts");
+  if (changeResults.some((result) => result.status === "rejected")) degraded.push("changes");
+
+  const directory = usersResult.status === "fulfilled" ? usersResult.value : null;
+  // One read per account, run together. There is no route that answers "who is near their
+  // limit", so the page samples and says so; what it must not do is compare a spend
+  // against a limit the account does not actually have.
+  const entitlementResults = await Promise.allSettled(
+    (directory?.users ?? []).map((entry) =>
+      fetchAccountApiAdminUserEntitlements(accessToken, entry.user.user_id),
+    ),
+  );
+  if (entitlementResults.some((result) => result.status === "rejected")) degraded.push("usage");
+
+  const accounts: AdminSubscriptionAccount[] = (directory?.users ?? []).map((entry, index) => {
+    const result = entitlementResults[index];
+    return {
+      user: entry.user,
+      entitlements: result?.status === "fulfilled" ? result.value : null,
+    };
+  });
+
+  const instant = (value: string): number => {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+  const changes = changeResults
+    .flatMap((result) => (result.status === "fulfilled" ? result.value.events : []))
+    .sort((left, right) => instant(right.occurred_at) - instant(left.occurred_at))
+    .slice(0, 25);
+
+  return {
+    status: "authorized",
+    me,
+    assurance,
+    subscriptions: distributionResult.status === "fulfilled" ? distributionResult.value : null,
+    accounts,
+    scanLimit: SUBSCRIPTION_SCAN_LIMIT,
+    changes,
+    canReadChanges,
+    degraded,
+  };
+});
 
 export const getAdminAuditEventsAccess = cache(
   async (

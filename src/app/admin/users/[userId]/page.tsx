@@ -3,7 +3,9 @@ import type { Metadata } from "next";
 import {
   revokeAdminUserSession,
   updateAdminUserActivation,
+  updateAdminUserEntitlement,
   updateAdminUserRole,
+  updateAdminUserSubscription,
 } from "@/app/admin/users/[userId]/actions";
 import { AdminUserDetail } from "@/components/admin/admin-user-detail";
 import { getAdminUserDetailAccess } from "@/lib/admin/access";
@@ -26,6 +28,8 @@ export default async function AdminUserDetailPage({ params }: AdminUserDetailPag
       activationAction={updateAdminUserActivation}
       sessionRevokeAction={revokeAdminUserSession}
       roleAction={updateAdminUserRole}
+      planAction={updateAdminUserSubscription}
+      overrideAction={updateAdminUserEntitlement}
       now={requestNow()}
     />
   );

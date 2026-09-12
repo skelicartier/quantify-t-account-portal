@@ -99,7 +99,15 @@ describe("AdminUserDetail role management", () => {
   it("offers the role form to an owner viewing someone else", () => {
     render(
       <AdminUserDetail
-        access={{ status: "authorized", me, assurance, detail } satisfies AdminUserDetailAccess}
+        access={
+          {
+            status: "authorized",
+            me,
+            assurance,
+            detail,
+            usage: null,
+          } satisfies AdminUserDetailAccess
+        }
         roleAction={noop}
         now={Date.parse("2026-09-05T00:00:00Z")}
       />,
@@ -119,6 +127,7 @@ describe("AdminUserDetail role management", () => {
             me,
             assurance,
             detail: { ...detail, user: { ...detail.user, user_id: OWNER_ID } },
+            usage: null,
           } satisfies AdminUserDetailAccess
         }
         roleAction={noop}
@@ -139,6 +148,7 @@ describe("AdminUserDetail role management", () => {
             },
             assurance,
             detail,
+            usage: null,
           } satisfies AdminUserDetailAccess
         }
         roleAction={noop}

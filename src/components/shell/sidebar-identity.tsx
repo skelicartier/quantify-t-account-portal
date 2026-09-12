@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import type { ShellIdentity, ShellSection } from "@/components/shell/shell-types";
 import { Badge, EnvBadge, RoleBadge } from "@/components/ui/badge";
-import { formatLabel } from "@/lib/format";
+import { planLabel } from "@/lib/admin/plan-catalogue";
 
 type SidebarIdentityProps = {
   section: ShellSection;
@@ -32,7 +32,7 @@ export function SidebarIdentity({ section, identity, signOutAction }: SidebarIde
           </>
         ) : (
           <>
-            {identity.plan && <Badge>{formatLabel(identity.plan)} plan</Badge>}
+            {identity.plan && <Badge>{planLabel(identity.plan)} plan</Badge>}
             {identity.role && identity.role !== "user" && <RoleBadge role={identity.role} />}
           </>
         )}

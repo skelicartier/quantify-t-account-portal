@@ -51,7 +51,8 @@ describe("ConsoleShell", () => {
     expect(screen.getByText("Page body")).toBeVisible();
     expect(screen.getByText("Avery Stone")).toBeVisible();
     expect(screen.getByText("user@example.com")).toBeVisible();
-    expect(screen.getByText("Professional plan")).toBeVisible();
+    // "professional" is a legacy tier that resolves to the Desk plan.
+    expect(screen.getByText("Desk plan")).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Sign out" })).toHaveLength(1);
     expect(screen.getByRole("link", { name: /admin console/i })).toHaveAttribute("href", "/admin");
     expect(screen.getByRole("contentinfo")).toHaveTextContent("QUANTIFY TERMINAL");

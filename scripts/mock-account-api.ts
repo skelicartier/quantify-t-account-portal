@@ -38,6 +38,7 @@ const CAPABILITIES: Record<Persona, string[]> = {
     "configuration:read",
     "credentials:read-status",
     "releases:read-status",
+    "subscription:write",
   ],
   admin: [
     "account:read-self",
@@ -48,6 +49,7 @@ const CAPABILITIES: Record<Persona, string[]> = {
     "users:set-active",
     "sessions:revoke-any",
     "notifications:write",
+    "subscription:write",
   ],
   support: ["account:read-self", "account:read-any", "audit:read", "audit:write"],
   user: ["account:read-self"],
@@ -218,6 +220,10 @@ function activity(userId: string) {
     ["password.changed", "success"],
     ["session.ended", "success"],
     ["session.revoked", "success"],
+    // The account's own view of a plan change; /account/subscription reads its history
+    // out of this trail.
+    ["account.subscription_changed", "success"],
+    ["account.entitlement_changed", "success"],
   ] as const;
   return types.map(([event_type, outcome], index) => ({
     id: randomUUID(),
@@ -338,6 +344,290 @@ const ROLE_REPORT = () => ({
     },
   ],
 });
+
+// ---- subscriptions ---------------------------------------------------------------
+// The same catalogue the Account API publishes, in the shape its DTO emits, so a page
+// that renders against this mock renders against production.
+type PlanKey = "free" | "pro" | "desk" | "teams";
+
+const PLAN_LIMITS: Record<PlanKey, Record<string, number | boolean | null>> = {
+  free: {
+    ai_chat: 20,
+    deep_research: 1,
+    pulse_universe: 25,
+    tracked_symbols: 50,
+    watchlists: 2,
+    portfolios: 1,
+    saved_screens: 2,
+    history_years: 5,
+    point_in_time: false,
+    export: false,
+  },
+  pro: {
+    ai_chat: 300,
+    deep_research: 10,
+    pulse_universe: 250,
+    tracked_symbols: 500,
+    watchlists: 25,
+    portfolios: 10,
+    saved_screens: 50,
+    history_years: 15,
+    point_in_time: true,
+    export: true,
+  },
+  desk: {
+    ai_chat: 1000,
+    deep_research: 40,
+    pulse_universe: 2000,
+    tracked_symbols: 5000,
+    watchlists: null,
+    portfolios: 100,
+    saved_screens: null,
+    history_years: null,
+    point_in_time: true,
+    export: true,
+  },
+  teams: {
+    ai_chat: 1000,
+    deep_research: 40,
+    pulse_universe: 2000,
+    tracked_symbols: 5000,
+    watchlists: null,
+    portfolios: null,
+    saved_screens: null,
+    history_years: null,
+    point_in_time: true,
+    export: true,
+  },
+};
+
+const FEATURE_PERIODS: Record<string, "month" | "lifetime"> = {
+  ai_chat: "month",
+  deep_research: "month",
+  pulse_universe: "lifetime",
+  tracked_symbols: "lifetime",
+  watchlists: "lifetime",
+  portfolios: "lifetime",
+  saved_screens: "lifetime",
+  history_years: "lifetime",
+  point_in_time: "lifetime",
+  export: "lifetime",
+};
+
+const BOOLEAN_FEATURES = new Set(["point_in_time", "export"]);
+const QUOTA_FEATURES = ["ai_chat", "deep_research"] as const;
+const CHAT_MODELS: Record<PlanKey, string> = {
+  free: "gemini-flash",
+  pro: "claude-haiku",
+  desk: "claude-sonnet",
+  teams: "claude-sonnet",
+};
+
+function canonicalPlan(tier: string): PlanKey {
+  const value = String(tier ?? "")
+    .trim()
+    .toLowerCase();
+  if (value === "free" || value === "pro" || value === "desk" || value === "teams") return value;
+  const legacy: Record<string, PlanKey> = {
+    professional: "desk",
+    premium: "desk",
+    starter: "pro",
+    plus: "pro",
+  };
+  return legacy[value] ?? "free";
+}
+
+type OverrideRow = {
+  feature_key: string;
+  source: string;
+  source_ref: string;
+  limit_value: number | null;
+  bool_value: boolean | null;
+  effective_from: string;
+  effective_to: string;
+  granted_by: string;
+  reason: string;
+};
+
+function inDays(days: number): string {
+  return new Date(Date.now() + days * 86_400_000).toISOString().replace(/\.\d{3}Z$/u, "Z");
+}
+
+/** Seeded so the console shows an override beside a plan default without a write first. */
+const entitlementOverrides = new Map<string, OverrideRow[]>([
+  [
+    PEOPLE[0]!.id,
+    [
+      {
+        feature_key: "ai_chat",
+        source: "override",
+        source_ref: "",
+        limit_value: 5000,
+        bool_value: null,
+        effective_from: iso(60 * 24 * 30),
+        effective_to: inDays(335),
+        granted_by: PEOPLE[0]!.id,
+        reason: "Founder account, internal testing",
+      },
+    ],
+  ],
+  [
+    PEOPLE[4]!.id,
+    [
+      {
+        feature_key: "deep_research",
+        source: "override",
+        source_ref: "",
+        limit_value: 100,
+        bool_value: null,
+        effective_from: iso(60 * 24 * 7),
+        effective_to: inDays(53),
+        granted_by: PEOPLE[0]!.id,
+        reason: "Northgate pilot, agreed 60 days",
+      },
+    ],
+  ],
+]);
+
+/** Deterministic spend, chosen so the allowance watch has something to show. */
+const USAGE: Record<string, Record<string, { used: number; reserved: number }>> = {
+  [PEOPLE[0]!.id]: { ai_chat: { used: 412, reserved: 2 }, deep_research: { used: 6, reserved: 0 } },
+  [PEOPLE[1]!.id]: {
+    ai_chat: { used: 940, reserved: 0 },
+    deep_research: { used: 38, reserved: 1 },
+  },
+  [PEOPLE[2]!.id]: { ai_chat: { used: 3, reserved: 0 }, deep_research: { used: 0, reserved: 0 } },
+  [PEOPLE[3]!.id]: { ai_chat: { used: 19, reserved: 0 }, deep_research: { used: 1, reserved: 0 } },
+  [PEOPLE[4]!.id]: { ai_chat: { used: 61, reserved: 0 }, deep_research: { used: 44, reserved: 2 } },
+  [PEOPLE[5]!.id]: { ai_chat: { used: 22, reserved: 0 }, deep_research: { used: 1, reserved: 0 } },
+};
+
+const subscriptionVersions = new Map<string, number>();
+
+/** Open trial windows, keyed by account. A trial is a window on a plan, not a plan. */
+const trialEnds = new Map<string, string>();
+
+const TRIAL_PLAN: PlanKey = "desk";
+/** The trial's own Deep Research cap, applied before overrides so it can still be raised. */
+const TRIAL_DEEP_RESEARCH_CAP = 8;
+
+function entitlementVersion(userId: string): number {
+  return subscriptionVersions.get(userId) ?? 1;
+}
+
+function liveTrialEnd(userId: string): string | null {
+  const value = trialEnds.get(userId);
+  if (!value) return null;
+  return Date.parse(value) > Date.now() ? value : null;
+}
+
+/** The plan whose allowances actually apply, which during a trial is the trial's. */
+function effectivePlan(userId: string, tier: string): PlanKey {
+  return liveTrialEnd(userId) ? TRIAL_PLAN : canonicalPlan(tier);
+}
+
+function periodKey(): string {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function periodResetsAt(): string {
+  const now = new Date();
+  const next = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0),
+  ).toISOString();
+  return next.replace(/\.\d{3}Z$/u, "Z");
+}
+
+function usageCounters(userId: string) {
+  const spend = USAGE[userId] ?? {};
+  return QUOTA_FEATURES.filter((feature) => spend[feature]).map((feature) => ({
+    feature_key: feature,
+    period_key: periodKey(),
+    used: spend[feature]!.used,
+    reserved: spend[feature]!.reserved,
+    updated_at: iso(45),
+  }));
+}
+
+/** Plan defaults overlaid with the account's overrides: the more generous wins. */
+/**
+ * One entitlement document, used by both `me/entitlements` and the admin read.
+ *
+ * `plan` is the plan the numbers belong to — the trial's while one is open — and
+ * `stored_plan` appears only when that differs from the tier on the profile, which is the
+ * one case a reader needs both: what the account has now, and what it drops back to.
+ */
+function entitlementDocument(userId: string, tier: string) {
+  const plan = effectivePlan(userId, tier);
+  const stored = canonicalPlan(tier);
+  const trial = liveTrialEnd(userId);
+  return {
+    plan,
+    ...(stored === plan ? {} : { stored_plan: stored }),
+    entitlement_version: entitlementVersion(userId),
+    chat_model: CHAT_MODELS[plan],
+    generated_at: iso(0),
+    ttl_seconds: 300,
+    ...(trial ? { trial_ends_at: trial } : {}),
+    features: resolvedEntitlements(userId, plan),
+  };
+}
+
+function resolvedEntitlements(userId: string, plan: PlanKey) {
+  const onTrial = liveTrialEnd(userId) !== null;
+  const limits = PLAN_LIMITS[plan];
+  const overrides = entitlementOverrides.get(userId) ?? [];
+  const spend = USAGE[userId] ?? {};
+  const features: Record<string, Record<string, unknown>> = {};
+  for (const [feature, period] of Object.entries(FEATURE_PERIODS)) {
+    const applied = overrides.find(
+      (row) => row.feature_key === feature && Date.parse(row.effective_to) > Date.now(),
+    );
+    if (BOOLEAN_FEATURES.has(feature)) {
+      const enabled = applied?.bool_value === true || limits[feature] === true;
+      features[feature] = {
+        period,
+        source: applied && applied.bool_value === true ? "override" : "plan",
+        enabled,
+        ...(applied?.reason ? { reason: applied.reason } : {}),
+      };
+      continue;
+    }
+    const planLimit = limits[feature];
+    let limit = typeof planLimit === "number" ? planLimit : null;
+    let source = "plan";
+    let trialCapped = false;
+    if (onTrial && feature === "deep_research") {
+      limit = TRIAL_DEEP_RESEARCH_CAP;
+      trialCapped = true;
+    }
+    if (
+      applied &&
+      (applied.limit_value === null || (limit !== null && applied.limit_value > limit))
+    ) {
+      limit = applied.limit_value;
+      source = "override";
+    }
+    const counters = spend[feature] ?? { used: 0, reserved: 0 };
+    const used = period === "month" ? counters.used : 0;
+    const reserved = period === "month" ? counters.reserved : 0;
+    features[feature] = {
+      period,
+      source,
+      limit,
+      used,
+      reserved,
+      remaining: limit === null ? null : Math.max(0, limit - used - reserved),
+      ...(period === "month" ? { resets_at: periodResetsAt(), period_key: periodKey() } : {}),
+      ...(applied && source === "override" && applied.reason
+        ? { reason: applied.reason }
+        : trialCapped && source === "plan"
+          ? { reason: "trial" }
+          : {}),
+    };
+  }
+  return features;
+}
 
 function readBody(request: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
@@ -598,6 +888,9 @@ const server = createServer(async (request, response) => {
       environment: "production",
     });
   }
+  if (route === "me/entitlements") {
+    return ok(response, entitlementDocument(me.id, me.tier));
+  }
   if (route.startsWith("sessions/")) {
     return ok(response, { session: session(userId, 0), event: null, replayed: false });
   }
@@ -776,6 +1069,184 @@ const server = createServer(async (request, response) => {
       activity: activity(target.id).slice(0, 5),
     });
   }
+  if (route === "admin/subscriptions") {
+    if (!requires("account:read-any")) return;
+    const plans: Record<string, number> = {};
+    for (const candidate of PEOPLE) {
+      if (!candidate.active) continue;
+      plans[candidate.tier] = (plans[candidate.tier] ?? 0) + 1;
+    }
+    return ok(response, {
+      generated_at: iso(0),
+      plans,
+      total_accounts: Object.values(plans).reduce((sum, count) => sum + count, 0),
+    });
+  }
+  const usageMatch = route.match(/^admin\/users\/([^/]+)\/usage$/u);
+  if (usageMatch) {
+    if (!requires("account:read-any")) return;
+    const target = PEOPLE.find((p) => p.id === usageMatch[1]);
+    if (!target) return fail(response, 404, "not_found", "No such account.");
+    return ok(response, {
+      user_id: target.id,
+      plan: canonicalPlan(target.tier),
+      generated_at: iso(0),
+      counters: usageCounters(target.id),
+    });
+  }
+  const adminEntitlementsMatch = route.match(/^admin\/users\/([^/]+)\/entitlements$/u);
+  if (adminEntitlementsMatch) {
+    if (!requires("account:read-any")) return;
+    const target = PEOPLE.find((p) => p.id === adminEntitlementsMatch[1]);
+    if (!target) return fail(response, 404, "not_found", "No such account.");
+    return ok(response, {
+      user_id: target.id,
+      profile_version: 4,
+      ...entitlementDocument(target.id, target.tier),
+    });
+  }
+  const subscriptionMatch = route.match(/^admin\/users\/([^/]+)\/subscription$/u);
+  if (subscriptionMatch && method === "POST") {
+    if (!requires("subscription:write")) return;
+    const target = PEOPLE.find((p) => p.id === subscriptionMatch[1]);
+    if (!target) return fail(response, 404, "not_found", "No such account.");
+    if (target.id === userId) return fail(response, 403, "forbidden", "cannot change own plan");
+    // The mock's profiles are all at version 4, like the profile update route above, so
+    // the console's compare-and-swap and its conflict path are both exercised.
+    if (json.expected_profile_version !== 4) {
+      return fail(response, 409, "revision_conflict", "This page is out of date.", {
+        profile_version: 4,
+      });
+    }
+    const previous = canonicalPlan(target.tier);
+    const trialDays = Number(json.trial_days ?? 0);
+    const trialWasLive = liveTrialEnd(target.id) !== null;
+    // Nothing to change: the submitted plan is the one the account is on and there is no
+    // trial to start or end. Writing anyway would bump entitlement_version, which
+    // invalidates the cached entitlement document on every signed-in device.
+    if (previous === canonicalPlan(String(json.plan)) && trialDays === 0 && !trialWasLive) {
+      return ok(response, {
+        user_id: target.id,
+        plan: previous,
+        previous_plan: previous,
+        profile_version: 4,
+        entitlement_version: entitlementVersion(target.id),
+        overrides: [],
+        trial_ends_at: "",
+        unchanged: true,
+        event: null,
+        replayed: false,
+        legacy_mirrored: false,
+      });
+    }
+    target.tier = String(json.plan);
+    // Zero days clears a running trial, so moving to a paid plan ends it.
+    if (trialDays > 0) {
+      trialEnds.set(target.id, inDays(trialDays));
+    } else {
+      trialEnds.delete(target.id);
+    }
+    const version = entitlementVersion(target.id) + 1;
+    subscriptionVersions.set(target.id, version);
+    return ok(response, {
+      user_id: target.id,
+      plan: target.tier,
+      previous_plan: previous,
+      profile_version: 5,
+      entitlement_version: version,
+      overrides: [],
+      trial_ends_at: liveTrialEnd(target.id) ?? "",
+      unchanged: false,
+      event: { id: randomUUID(), event_type: "account.subscription_changed" },
+      replayed: false,
+      legacy_mirrored: true,
+    });
+  }
+  const entitlementMatch = route.match(/^admin\/users\/([^/]+)\/entitlement$/u);
+  if (entitlementMatch && method === "POST") {
+    if (!requires("subscription:write")) return;
+    const target = PEOPLE.find((p) => p.id === entitlementMatch[1]);
+    if (!target) return fail(response, 404, "not_found", "No such account.");
+    const feature = String(json.feature_key ?? "");
+    if (!FEATURE_PERIODS[feature]) {
+      return fail(response, 400, "malformed_request", "unknown feature", {
+        feature_key: "unknown feature",
+      });
+    }
+    const rows = (entitlementOverrides.get(target.id) ?? []).filter(
+      (row) => row.feature_key !== feature,
+    );
+    if (json.remove !== true) {
+      const reason = String(json.reason ?? "").trim();
+      if (!reason) {
+        return fail(response, 400, "malformed_request", "reason is required", {
+          reason: "required",
+        });
+      }
+      // resolve() is max-wins, so a limit at or below what the account already has, and a
+      // flag turned off, both resolve to nothing. Storing them would report "override
+      // recorded" for a row with no effect.
+      const current = resolvedEntitlements(target.id, effectivePlan(target.id, target.tier))[
+        feature
+      ] as Record<string, unknown> | undefined;
+      if (BOOLEAN_FEATURES.has(feature)) {
+        if (json.bool_value !== true) {
+          return fail(response, 400, "malformed_request", "grants nothing", {
+            [feature]:
+              `this account already has this feature ${current?.enabled ? "on" : "off"}; ` +
+              "an override can only turn a feature on, so this would record a row that " +
+              "grants nothing. To take a feature away, move the account to a plan that " +
+              "does not include it.",
+          });
+        }
+      } else {
+        const standing = (current?.limit ?? null) as number | null;
+        const asked = typeof json.limit_value === "number" ? (json.limit_value as number) : null;
+        const wouldApply = asked === null || standing === null ? null : Math.max(standing, asked);
+        if (asked !== null && (standing === null || wouldApply !== asked)) {
+          const effective = standing === null ? "unlimited" : String(standing);
+          return fail(response, 400, "malformed_request", "grants nothing", {
+            [feature]:
+              standing === null || wouldApply === standing
+                ? `this account's effective limit is already ${effective}; an override can ` +
+                  "only raise a limit, so this would record a row that grants nothing. To " +
+                  "lower a limit, move the account to a plan with a lower one."
+                : `this account's effective limit is ${effective} and would become ` +
+                  `${wouldApply}, not the value requested, because an override can only ` +
+                  "raise a limit. Ask for at least that much, or move the account to a " +
+                  "plan with a lower one.",
+          });
+        }
+      }
+      rows.push({
+        feature_key: feature,
+        source: "override",
+        source_ref: "",
+        limit_value: typeof json.limit_value === "number" ? (json.limit_value as number) : null,
+        bool_value: typeof json.bool_value === "boolean" ? (json.bool_value as boolean) : null,
+        effective_from: iso(0),
+        effective_to: inDays(Number(json.expires_in_days ?? 90)),
+        granted_by: userId,
+        reason,
+      });
+    }
+    entitlementOverrides.set(target.id, rows);
+    const version = entitlementVersion(target.id) + 1;
+    subscriptionVersions.set(target.id, version);
+    return ok(response, {
+      user_id: target.id,
+      plan: effectivePlan(target.id, target.tier),
+      previous_plan: "",
+      profile_version: 4,
+      entitlement_version: version,
+      overrides: rows,
+      trial_ends_at: liveTrialEnd(target.id) ?? "",
+      unchanged: false,
+      event: { id: randomUUID(), event_type: "account.entitlement_changed" },
+      replayed: false,
+      legacy_mirrored: true,
+    });
+  }
   const roleMatch = route.match(/^admin\/users\/([^/]+)\/role$/u);
   if (roleMatch && method === "POST") {
     if (!requires("roles:write")) return;
@@ -834,7 +1305,7 @@ const server = createServer(async (request, response) => {
       const value = url.searchParams.get(key);
       if (value) filters[key] = value;
     }
-    const events = PEOPLE.flatMap((p, index) =>
+    const generatedEvents = PEOPLE.flatMap((p, index) =>
       activity(p.id)
         .slice(0, 3)
         .map((event, position) => ({
@@ -852,7 +1323,43 @@ const server = createServer(async (request, response) => {
           created_at: iso(index * 30 + position * 7),
           summary: { actor_role: persona === "support" ? "redacted" : "owner" },
         })),
-    ).filter((event) => !filters.event_type || event.event_type === filters.event_type);
+    );
+    // Plan and override changes live in the same trail; the subscriptions page reads
+    // them back by filtering on these two types.
+    const planChanges = [
+      {
+        subject: PEOPLE[4]!,
+        event_type: "account.subscription_changed",
+        minutes: 90,
+      },
+      {
+        subject: PEOPLE[0]!,
+        event_type: "account.entitlement_changed",
+        minutes: 60 * 26,
+      },
+      {
+        subject: PEOPLE[5]!,
+        event_type: "account.subscription_changed",
+        minutes: 60 * 72,
+      },
+    ].map((change) => ({
+      id: randomUUID(),
+      subject_user_id: change.subject.id,
+      subject_email: change.subject.email,
+      actor_user_id: PEOPLE[0]!.id,
+      actor_email: PEOPLE[0]!.email,
+      session_id: null,
+      event_type: change.event_type,
+      outcome: "success" as const,
+      source: "account-api",
+      request_id: `qt-req-plan-${change.minutes}`,
+      occurred_at: iso(change.minutes),
+      created_at: iso(change.minutes),
+      summary: { actor_role: persona === "support" ? "redacted" : "owner" },
+    }));
+    const events = [...generatedEvents, ...planChanges].filter(
+      (event) => !filters.event_type || event.event_type === filters.event_type,
+    );
     return ok(response, {
       generated_at: iso(0),
       pagination: {
