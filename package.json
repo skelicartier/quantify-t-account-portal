@@ -23,10 +23,11 @@
     "test:a11y": "playwright test tests/e2e/accessibility.spec.ts",
     "preflight": "tsx scripts/preflight.ts",
     "preflight:json": "tsx scripts/preflight.ts --json",
-    "preflight:strict": "tsx scripts/preflight.ts --json --strict-production",
+    "preflight:env": "tsx scripts/preflight.ts --json --load-env",
+    "preflight:strict": "tsx scripts/preflight.ts --json --load-env --strict-production",
     "preflight:network": "tsx scripts/preflight.ts --network",
     "validate:portal": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
-    "validate": "npm run validate:portal && npm run preflight:json",
+    "validate": "npm run validate:portal && npm run preflight:env",
     "mock:api": "tsx scripts/mock-account-api.ts",
     "check:console-ui": "tsx scripts/screenshot-console.ts"
   },

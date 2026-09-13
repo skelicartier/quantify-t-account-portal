@@ -1,6 +1,11 @@
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
+// `@next/env` is CommonJS and exposes no named ESM export, so take the default and
+// destructure. This is Next's own loader, which is the point: "the way Next does it" should
+// be exact rather than a re-implementation that drifts from it.
+import nextEnv from "@next/env";
+
 import { buildPreflightReport, preflightExitCode } from "@/lib/preflight/audit";
 import { type NetworkProbe, type RepositorySnapshot } from "@/lib/preflight/model";
 import { ACCOUNT_API_MODULES, analyzeAccountApi } from "@/lib/preflight/account-api-analysis";
@@ -202,10 +207,30 @@ async function probe(name: string, value: string | undefined): Promise<NetworkPr
   }
 }
 
+/**
+ * Load the project's `.env` files the way Next does, and report which names arrived.
+ *
+ * Opt-in, because two things are both true. Reading `process.env` alone is a real bug: Next
+ * loads `.env.local` and `.env.production.local`, `tsx` does not, so `npm run validate` was
+ * checking the shell rather than the application's configuration — which is why the three
+ * `environment.required.*` checks warn on a machine where those values are perfectly well
+ * set. But `docs/STAGING_READINESS.md` states that offline preflight "never opens real
+ * `.env` files", and making that false by default would change what the tool is, and make
+ * its answer depend on which untracked files happen to sit beside it.
+ *
+ * `loadEnvConfig` is Next's own loader, so this is exact rather than an approximation of it.
+ * Values are never printed: `summarizeEnvironment` reduces each name to
+ * `{configured, placeholder, forbidden}` before anything reaches the report.
+ */
+function loadProjectEnv(): void {
+  nextEnv.loadEnvConfig(portalRoot, false);
+}
+
 async function main() {
   const useNetwork = process.argv.includes("--network");
   const outputJson = process.argv.includes("--json");
   const strictProduction = process.argv.includes("--strict-production");
+  if (process.argv.includes("--load-env")) loadProjectEnv();
   const network = useNetwork
     ? await Promise.all([
         probe("portal", process.env.NEXT_PUBLIC_SITE_URL),

@@ -46,9 +46,11 @@ npm run validate
 npm run preflight:strict
 ```
 
-The strict preflight is expected to fail while `productionReady` remains locked, including while any production warning is unresolved. It does not read `.env` files, touch any Storage service, or mutate cloud resources.
+The strict preflight is expected to fail while `productionReady` remains locked, including while any production warning is unresolved. It touches no Storage service and mutates no cloud resource.
 
-`npm run validate` passes end to end in the integrated workspace and reports 28 pass, 6 warning, 0 blocked with `sourceReady` true. A `preflight:json` failure at the migration-integrity check is therefore never expected: it means the desktop migration bytes drifted from the reviewed pins and a human must review the migration change before repinning.
+Plain `preflight`/`preflight:json` read `process.env` only. `preflight:env` and `preflight:strict` add `--load-env`, which loads the project's `.env` files through Next's own `loadEnvConfig` so the checks see the configuration the application sees. Values are never emitted either way — each name is reduced to `{configured, placeholder, forbidden}` before it reaches the report.
+
+`npm run validate` passes end to end in the integrated workspace and reports 31 pass, 0 warning, 0 blocked with `sourceReady` true. A `preflight` failure at the migration-integrity check is therefore never expected: it means the desktop migration bytes drifted from the reviewed pins and a human must review the migration change before repinning.
 
 Pin enforcement runs only where the desktop repository is present. `Portal CI` runs `validate:portal`, which stops at `next build` and never reaches preflight, and the focused real-bytes test skips when the sibling desktop checkout is absent. Treat the integrated `npm run validate` run and code review as the enforcement point for migration drift, not CI.
 

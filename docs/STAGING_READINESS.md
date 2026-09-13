@@ -132,7 +132,9 @@ npm run validate
 npm run preflight:strict
 ```
 
-`preflight:strict` exits unsuccessfully while `productionReady` remains false; warnings and blockers therefore cannot unlock production. Offline preflight reads the eleven explicit migration files, performs source-only structural lifecycle/profile checks, evaluates the exported Next.js header rules, and inspects only process-environment names/status. It never opens real `.env` files, emits configured values, connects to PostgreSQL, touches any Storage service, or mutates cloud resources.
+`preflight:strict` exits unsuccessfully while `productionReady` remains false; warnings and blockers therefore cannot unlock production. Offline preflight reads the eleven explicit migration files, performs source-only structural lifecycle/profile checks, evaluates the exported Next.js header rules, and inspects only environment names/status. It never emits configured values, connects to PostgreSQL, touches any Storage service, or mutates cloud resources.
+
+By default it reads `process.env` and nothing else. `--load-env` (used by `preflight:env`, and so by `npm run validate`) additionally loads the project's `.env` files through `loadEnvConfig` from `@next/env` — Next's own loader, so the set of files and their precedence match what the application actually sees at runtime. Without it the three `environment.required.*` checks warn on a correctly configured machine, because `tsx` does not load `.env.local` the way `next` does, and `npm run validate` was therefore checking the shell rather than the application's configuration. Loading values never risks printing one: `summarizeEnvironment` reduces every name to `{configured, placeholder, forbidden}` before it reaches the report.
 
 ## Production gate
 
