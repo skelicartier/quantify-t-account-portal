@@ -19,17 +19,11 @@ export default async function ProfilePage() {
         description="The details shared with your terminal. Your sign-in address is managed under Security."
       />
       <div className="page-content">
-        <div className="settings-row">
-          <div className="settings-row__intro">
-            <p className="eyebrow">Contact details</p>
-            <h2 id="profile-details-heading">Who you are</h2>
-            <p>Saved to your account and visible in the desktop terminal after its next sync.</p>
-          </div>
-          {/* Deliberately unkeyed: a remount on revalidation would reset the action
-              state and discard the saved confirmation. The form tracks the committed
-              version from its own action result. */}
-          <ProfileForm profile={profile} action={updateProfile} />
-        </div>
+        {/* Deliberately unkeyed: a remount on revalidation would reset the action state and
+            discard the saved confirmation. The form tracks the committed version from its
+            own action result. The form introduces each of its own groups, so there is no
+            wrapper row here to leave an empty column beside it. */}
+        <ProfileForm profile={profile} action={updateProfile} />
       </div>
     </>
   );

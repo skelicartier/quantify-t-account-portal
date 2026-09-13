@@ -119,6 +119,13 @@ const view: AccountSubscriptionView = {
   historyUnavailable: false,
 };
 
+/**
+ * Cells of an allowances row: [feature, your allowance, used this period, resets].
+ *
+ * There used to be a fifth, "Included with your plan", sitting before "Your allowance" and
+ * printing the identical value for seven of the nine features. The plan default now appears
+ * inside the allowance cell, and only where it differs from what the account holds.
+ */
 function cellsOf(element: HTMLElement) {
   return within(element).getAllByRole("cell");
 }
@@ -132,30 +139,40 @@ describe("AccountSubscription", () => {
 
     const chat = cellsOf(screen.getByRole("row", { name: /AI chat/iu }));
     expect(chat[1]).toHaveTextContent("300 messages a month");
-    expect(chat[2]).toHaveTextContent("Included with Pro");
-    expect(chat[3]).toHaveTextContent("43 of 300");
+    expect(chat[2]).toHaveTextContent("43 of 300");
+  });
+
+  it("says nothing extra about an allowance that is simply the plan's", () => {
+    // 300 a month IS Pro's published figure. Repeating it as "Included with Pro" beside
+    // itself was the table's largest wasted column.
+    render(<AccountSubscription view={view} now={NOW} />);
+
+    const chat = cellsOf(screen.getByRole("row", { name: /AI chat/iu }));
+    expect(chat[1]).toHaveTextContent("300 messages a month");
+    expect(chat[1]).not.toHaveTextContent("Included with Pro");
   });
 
   it("marks a granted allowance as granted, beside what the plan alone includes", () => {
     render(<AccountSubscription view={view} now={NOW} />);
 
     const research = cellsOf(screen.getByRole("row", { name: /Deep Research/iu }));
-    expect(research[1]).toHaveTextContent("10 reports a month");
-    expect(research[2]).toHaveTextContent("100 reports a month");
-    expect(research[2]).toHaveTextContent("Granted for your account");
-    expect(research[2]).toHaveTextContent("Northgate pilot, agreed 60 days");
+    expect(research[1]).toHaveTextContent("100 reports a month");
+    expect(research[1]).toHaveTextContent("Granted for your account");
+    expect(research[1]).toHaveTextContent("Northgate pilot, agreed 60 days");
+    // The plan's own figure earns its place here, because this is the case where it differs.
+    expect(research[1]).toHaveTextContent("Pro includes 10 reports a month");
   });
 
   it("renders a reset as an instant the reader's browser can localise", () => {
     render(<AccountSubscription view={view} now={NOW} />);
 
     const chat = cellsOf(screen.getByRole("row", { name: /AI chat/iu }));
-    const reset = within(chat[4]!).getByRole("time");
+    const reset = within(chat[3]!).getByRole("time");
     expect(reset).toHaveAttribute("datetime", "2026-10-01T00:00:00.000Z");
     expect(reset).toHaveAttribute("title", "1 Oct 2026, 00:00 UTC (UTC)");
 
     // A ceiling is not a period, so it never claims to reset.
-    expect(cellsOf(screen.getByRole("row", { name: /Watchlists/iu }))[4]).toHaveTextContent(
+    expect(cellsOf(screen.getByRole("row", { name: /Watchlists/iu }))[3]).toHaveTextContent(
       "Does not reset",
     );
   });
@@ -164,8 +181,11 @@ describe("AccountSubscription", () => {
     render(<AccountSubscription view={view} now={NOW} />);
 
     const pulse = cellsOf(screen.getByRole("row", { name: /Pulse universe/iu }));
-    expect(pulse[3]).toHaveTextContent("Not metered");
-    expect(screen.getByText("Never metered")).toBeVisible();
+    expect(pulse[2]).toHaveTextContent("Not metered");
+
+    // And it is not a headline figure either. "Pulse — never metered" was a tile in the
+    // allowances grid: not a number, and beside two live counters it read as though it were.
+    expect(screen.queryByText("Never metered")).not.toBeInTheDocument();
   });
 
   it("lists the changes made to the plan, and says when that list is missing", () => {
@@ -221,10 +241,11 @@ describe("AccountSubscription", () => {
     expect(trial).toHaveTextContent("returns to the Free plan");
     expect(within(trial).getByRole("time")).toHaveAttribute("datetime", "2026-09-26T00:00:00.000Z");
 
-    // The allowances are labelled with the plan they came from, not with the stored tier.
+    // The allowances belong to the plan the trial grants, so the stored tier must not be
+    // named beside them. Labelling them with it put "Free" beside a 1,000-message allowance.
     const row = screen.getByRole("row", { name: /AI chat/iu });
-    expect(row).toHaveTextContent("Included with Desk");
-    expect(row).not.toHaveTextContent("Included with Free");
+    expect(row).toHaveTextContent("1,000 messages a month");
+    expect(row).not.toHaveTextContent("Free");
   });
 
   it("explains a trial's own cap rather than calling it the plan's allowance", () => {

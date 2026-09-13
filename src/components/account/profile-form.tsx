@@ -20,6 +20,39 @@ type ProfileFormProps = {
   action: (state: ProfileActionState, formData: FormData) => Promise<ProfileActionState>;
 };
 
+/**
+ * One group of fields, introduced by the column beside it.
+ *
+ * The page used to put a single intro beside the WHOLE form, which left a heading three
+ * lines long sitting next to a form fifteen fields tall — around a thousand pixels of empty
+ * column. Introducing each group separately means every row is only as tall as its own
+ * content, and the reader gets a heading where they actually need one.
+ */
+function Group({
+  eyebrow,
+  title,
+  description,
+  headingId,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  headingId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="settings-row" aria-labelledby={headingId}>
+      <div className="settings-row__intro">
+        <p className="eyebrow">{eyebrow}</p>
+        <h2 id={headingId}>{title}</h2>
+        <p>{description}</p>
+      </div>
+      <div className="form-group">{children}</div>
+    </section>
+  );
+}
+
 export function ProfileForm({ profile, action }: ProfileFormProps) {
   const [state, formAction, pending] = useActionState(action, INITIAL_PROFILE_ACTION_STATE);
   const version = state.profileVersion ?? profile.profileVersion;
@@ -33,79 +66,86 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
           {errors.profileVersion[0]}
         </Callout>
       )}
-      <div className="form-grid">
-        <Field id="profile-first-name" label="First name" error={errors.firstName[0]}>
-          <Input
-            id="profile-first-name"
-            name="firstName"
-            defaultValue={profile.firstName}
-            maxLength={80}
-            autoComplete="given-name"
-            required
-            disabled={pending}
-            invalid={Boolean(errors.firstName[0])}
-            aria-describedby={describedBy("profile-first-name", { error: errors.firstName[0] })}
-          />
-        </Field>
-        <Field id="profile-last-name" label="Last name" error={errors.lastName[0]}>
-          <Input
-            id="profile-last-name"
-            name="lastName"
-            defaultValue={profile.lastName}
-            maxLength={80}
-            autoComplete="family-name"
-            required
-            disabled={pending}
-            invalid={Boolean(errors.lastName[0])}
-            aria-describedby={describedBy("profile-last-name", { error: errors.lastName[0] })}
-          />
-        </Field>
-        <Field
-          id="profile-email"
-          label="Verified email"
-          hint="Change your sign-in address from Security; it needs a separate confirmation."
-        >
-          <Input id="profile-email" value={profile.email ?? "Unavailable"} readOnly disabled />
-        </Field>
-        <Field id="profile-phone" label="Phone" note="Optional" error={errors.phone[0]}>
-          <Input
-            id="profile-phone"
-            name="phone"
-            type="tel"
-            defaultValue={profile.phone}
-            maxLength={32}
-            autoComplete="tel"
-            disabled={pending}
-            invalid={Boolean(errors.phone[0])}
-            aria-describedby={describedBy("profile-phone", { error: errors.phone[0] })}
-          />
-        </Field>
-        <Field
-          id="profile-country"
-          label="Country"
-          className="form-grid__span"
-          error={errors.country[0]}
-        >
-          <Input
+      <Group
+        eyebrow="Contact details"
+        title="Who you are"
+        description="Saved to your account and visible in the desktop terminal after its next sync."
+        headingId="profile-details-heading"
+      >
+        <div className="form-grid">
+          <Field id="profile-first-name" label="First name" error={errors.firstName[0]}>
+            <Input
+              id="profile-first-name"
+              name="firstName"
+              defaultValue={profile.firstName}
+              maxLength={80}
+              autoComplete="given-name"
+              required
+              disabled={pending}
+              invalid={Boolean(errors.firstName[0])}
+              aria-describedby={describedBy("profile-first-name", { error: errors.firstName[0] })}
+            />
+          </Field>
+          <Field id="profile-last-name" label="Last name" error={errors.lastName[0]}>
+            <Input
+              id="profile-last-name"
+              name="lastName"
+              defaultValue={profile.lastName}
+              maxLength={80}
+              autoComplete="family-name"
+              required
+              disabled={pending}
+              invalid={Boolean(errors.lastName[0])}
+              aria-describedby={describedBy("profile-last-name", { error: errors.lastName[0] })}
+            />
+          </Field>
+          <Field
+            id="profile-email"
+            label="Verified email"
+            hint="Change your sign-in address from Security; it needs a separate confirmation."
+          >
+            <Input id="profile-email" value={profile.email ?? "Unavailable"} readOnly disabled />
+          </Field>
+          <Field id="profile-phone" label="Phone" note="Optional" error={errors.phone[0]}>
+            <Input
+              id="profile-phone"
+              name="phone"
+              type="tel"
+              defaultValue={profile.phone}
+              maxLength={32}
+              autoComplete="tel"
+              disabled={pending}
+              invalid={Boolean(errors.phone[0])}
+              aria-describedby={describedBy("profile-phone", { error: errors.phone[0] })}
+            />
+          </Field>
+          <Field
             id="profile-country"
-            name="country"
-            defaultValue={profile.country}
-            maxLength={80}
-            autoComplete="country-name"
-            required
-            disabled={pending}
-            invalid={Boolean(errors.country[0])}
-            aria-describedby={describedBy("profile-country", { error: errors.country[0] })}
-          />
-        </Field>
-      </div>
+            label="Country"
+            className="form-grid__span"
+            error={errors.country[0]}
+          >
+            <Input
+              id="profile-country"
+              name="country"
+              defaultValue={profile.country}
+              maxLength={80}
+              autoComplete="country-name"
+              required
+              disabled={pending}
+              invalid={Boolean(errors.country[0])}
+              aria-describedby={describedBy("profile-country", { error: errors.country[0] })}
+            />
+          </Field>
+        </div>
+      </Group>
 
-      <fieldset className="fieldset">
-        <legend className="fieldset__legend">About you</legend>
-        <p className="field__hint">
-          All optional. None of it changes what you can do — it changes what the terminal assumes
-          when it has to guess.
-        </p>
+      <Group
+        eyebrow="About you"
+        title="What you do"
+        description="All optional. None of it changes what you can do — it changes what the terminal assumes when it has to guess."
+        headingId="profile-about-heading"
+      >
         <div className="form-grid">
           <Field
             id="profile-display-name"
@@ -205,20 +245,20 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
             />
           </Field>
         </div>
-      </fieldset>
+      </Group>
 
-      <fieldset className="fieldset">
-        <legend className="fieldset__legend">What you follow</legend>
-        <p className="field__hint">
-          These shape the desktop&rsquo;s tab order, its Pulse universe and what a fresh watchlist
-          starts with. You answered them once during setup — this is where you change your mind.
-        </p>
+      <Group
+        eyebrow="What you follow"
+        title="Markets you care about"
+        description="These shape the desktop's tab order, its Pulse universe and what a fresh watchlist starts with. You answered them once during setup — this is where you change your mind."
+        headingId="profile-focus-heading"
+      >
         {errors.focus[0] && (
           <Callout tone="danger" role="alert" compact>
             {errors.focus[0]}
           </Callout>
         )}
-        <p className="field__label">Asset classes</p>
+        <p className="field__label field__label--group">Asset classes</p>
         <div className="choice-list">
           {PROFILE_INTERESTS.map((option) => (
             <Checkbox
@@ -232,7 +272,7 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
             />
           ))}
         </div>
-        <p className="field__label">Markets</p>
+        <p className="field__label field__label--group">Markets</p>
         <div className="choice-list">
           {PROFILE_MARKETS.map((option) => (
             <Checkbox
@@ -264,7 +304,7 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
             ))}
           </Select>
         </Field>
-      </fieldset>
+      </Group>
 
       {state.message && (
         <Callout

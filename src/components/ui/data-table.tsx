@@ -14,6 +14,12 @@ type DataTableProps = {
   isEmpty?: boolean;
   empty?: ReactNode;
   minWidth?: number;
+  /**
+   * Let the frame grow to its rows instead of capping and scrolling. For a table whose
+   * length is fixed by the product (the nine entitlement features, say) the cap only ever
+   * clips the last row.
+   */
+  scroll?: boolean;
   children: ReactNode;
 };
 
@@ -28,11 +34,17 @@ export function DataTable({
   isEmpty = false,
   empty,
   minWidth,
+  scroll = true,
   children,
 }: DataTableProps) {
   if (isEmpty) return <>{empty ?? null}</>;
   return (
-    <div className="table-frame" role="region" aria-label={caption} tabIndex={0}>
+    <div
+      className={scroll ? "table-frame" : "table-frame table-frame--full"}
+      role="region"
+      aria-label={caption}
+      tabIndex={0}
+    >
       <table className="data-table" style={minWidth ? { minWidth } : undefined}>
         <caption className="sr-only">{caption}</caption>
         <thead>

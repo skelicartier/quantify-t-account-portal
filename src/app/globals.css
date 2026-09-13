@@ -1188,18 +1188,29 @@
     background: var(--danger);
   }
 
+  /* A set of short choices, laid out as a grid rather than one per line.
+     Ten options stacked full-width made a 400px column of mostly empty space and pushed the
+     control after them off the first screen.
+
+     The separators are hairlines on the cells rather than a 1px gap over a ruled background:
+     an item count that does not fill its last row is normal here (six asset classes across
+     four columns), and with the gap technique those trailing cells showed the rule colour
+     and read as holes in the box. */
   .choice-list {
     display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     border: 1px solid var(--line);
+    border-bottom: 0;
     background: var(--panel);
   }
 
   .choice-list > * {
-    padding: 14px 16px;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--line-soft);
   }
 
-  .choice-list > * + * {
-    border-top: 1px solid var(--line-soft);
+  .choice-list > *:not(:last-child) {
+    box-shadow: 1px 0 0 0 var(--line-soft);
   }
 
   .fieldset {
@@ -1397,6 +1408,31 @@
     border-top: 0;
   }
 
+  /* The fields side of a settings row: several grids and labels stacked with one rhythm,
+     rather than each block inventing its own margin. */
+  .form-group {
+    display: grid;
+    align-content: start;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  /* A label that titles a group of controls rather than one control. Set apart from the
+     field labels above it so the two do not read as the same level. */
+  .field__label--group {
+    margin-top: 2px;
+    color: var(--text);
+  }
+
+  /* A closing remark on a page — the thing a card was being used for when what was needed
+     was a sentence. */
+  .page-note {
+    max-width: 68ch;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
   .settings-row__intro p {
     margin-top: 8px;
     color: var(--muted);
@@ -1484,6 +1520,17 @@
     border: 1px solid var(--line);
     background: var(--panel);
     scrollbar-width: thin;
+  }
+
+  /* A table whose row count is fixed and small has nothing to gain from its own scrollbar,
+     and a scroll container nested inside a scrolling page hides its last row behind an edge
+     that looks like the end of the table.
+
+     Height only. `overflow: visible` here would also switch off the HORIZONTAL scroll the
+     frame provides, and `.data-table` carries a 720px min-width — which pushed a 412px phone
+     325px sideways. */
+  .table-frame--full {
+    max-height: none;
   }
 
   .data-table {

@@ -1,6 +1,5 @@
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
-import { ButtonLink } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card, Section } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
@@ -38,9 +37,15 @@ type AccountSubscriptionProps = {
   now?: number | undefined;
 };
 
+//: One allowance column, not two.
+//:
+//: There used to be "Included with your plan" beside "Your allowance", and for seven of the
+//: nine features they printed the identical value — "2,000 symbols" next to "2,000 symbols",
+//: with "Included with Desk" under each. Two columns that agree tell the reader nothing and
+//: cost the ones that disagree their emphasis. The plan default now appears only where it
+//: differs from what this account actually holds, which is the only case it explains.
 const INCLUDES_COLUMNS = [
   { key: "feature", label: "Feature" },
-  { key: "plan", label: "Included with your plan" },
   { key: "yours", label: "Your allowance" },
   { key: "used", label: "Used this period" },
   { key: "resets", label: "Resets" },
@@ -54,6 +59,21 @@ const HISTORY_COLUMNS = [
 
 function spentOf(entry: AccountApiEntitlementFeature | undefined): number {
   return (entry?.used ?? 0) + (entry?.reserved ?? 0);
+}
+
+type PlanDefault = ReturnType<typeof planDefault>;
+
+/** Whether this account holds exactly what the published plan says, so the row can stay quiet. */
+function matchesPlanDefault(entry: AccountApiEntitlementFeature, included: PlanDefault): boolean {
+  if (included.kind === "boolean") return Boolean(entry.enabled) === included.enabled;
+  return (entry.limit ?? null) === included.limit;
+}
+
+/** The plan's own figure, in words, for the one case where it differs from the account's. */
+function describeIncluded(feature: FeatureKey, included: PlanDefault): string {
+  if (included.kind === "boolean") return included.enabled ? "it" : "nothing here";
+  const unit = featureUnit(feature);
+  return `${formatAllowance(included.limit)}${unit ? ` ${unit}` : ""}`;
 }
 
 function AllowanceText({
@@ -135,15 +155,18 @@ export function AccountSubscription({ view, now }: AccountSubscriptionProps) {
               <KeyValueRow label="Chat model">
                 {chatModelLabel(entitlements.chat_model) || "Not published"}
               </KeyValueRow>
+              {/* `entitlement_version` is a synchronisation counter. It answers a question
+                  nobody holding a subscription asks, and it sat in the same list as the plan
+                  and the chat model as though it were comparable. */}
               <KeyValueRow label="Checked">
                 <Timestamp value={entitlements.generated_at} now={now} />
-              </KeyValueRow>
-              <KeyValueRow label="Entitlement version" mono>
-                {formatNumber(entitlements.entitlement_version)}
               </KeyValueRow>
             </KeyValue>
           </Card>
 
+          {/* Only the two metered features appear here. "Pulse — never metered" and a count
+              of plan changes were tiles that existed to fill a 2x2 grid: neither is a number
+              that moves, and putting them beside a live allowance implied they were. */}
           <StatGrid columns={2} label="Metered allowances">
             {QUOTA_FEATURES.map((feature) => {
               const entry = features[feature];
@@ -164,17 +187,6 @@ export function AccountSubscription({ view, now }: AccountSubscriptionProps) {
                 />
               );
             })}
-            <Stat
-              label="Pulse"
-              value="Never metered"
-              hint="Pulse is deterministic and costs nothing to run"
-              text
-            />
-            <Stat
-              label="Plan changes"
-              value={formatNumber(history.length)}
-              hint="Recorded against this account"
-            />
           </StatGrid>
         </div>
 
@@ -182,9 +194,13 @@ export function AccountSubscription({ view, now }: AccountSubscriptionProps) {
           id="account-subscription-includes"
           eyebrow="Allowances"
           title="What your plan includes"
-          description="Your allowance beside the published plan default, so a raised limit is visible as one."
         >
-          <DataTable columns={INCLUDES_COLUMNS} caption="What your plan includes" minWidth={860}>
+          <DataTable
+            columns={INCLUDES_COLUMNS}
+            caption="What your plan includes"
+            minWidth={720}
+            scroll={false}
+          >
             {FEATURE_KEYS.map((feature) => {
               const entry = features[feature];
               const included = planDefault(plan, feature);
@@ -192,18 +208,12 @@ export function AccountSubscription({ view, now }: AccountSubscriptionProps) {
               const limit = entry?.limit ?? null;
               const standing = allowanceStanding(spent, limit);
               const granted = entry !== undefined && entry.source !== "plan";
+              const differs = entry !== undefined && !matchesPlanDefault(entry, included);
               return (
                 <tr key={feature}>
                   <td>
                     <span className="data-table__primary">{featureLabel(feature)}</span>
                     <span className="data-table__secondary">{featureNote(feature)}</span>
-                  </td>
-                  <td>
-                    <AllowanceText
-                      feature={feature}
-                      limit={included.kind === "limit" ? included.limit : null}
-                      enabled={included.kind === "boolean" ? included.enabled : undefined}
-                    />
                   </td>
                   <td>
                     {entry ? (
@@ -215,17 +225,22 @@ export function AccountSubscription({ view, now }: AccountSubscriptionProps) {
                             enabled={entry.enabled}
                           />
                         </span>
-                        <span className="data-table__secondary">
-                          {/* The API explains an allowance that is neither the plan
-                              default nor an operator's grant — a trial's own cap — in
-                              `reason`. Dropping it labelled a capped trial allowance as
-                              the plan's, which is a different and larger number. */}
-                          {granted
-                            ? `Granted for your account${entry.reason ? ` · ${entry.reason}` : ""}`
-                            : entry.reason === "trial"
-                              ? `Trial allowance · ${planLabel(plan)} plan default is restored when you subscribe`
-                              : `Included with ${planLabel(plan)}`}
-                        </span>
+                        {/* Said only when it adds something. An allowance that simply is the
+                            plan's needs no sentence under it; one that is a grant, a trial cap
+                            or anything else the server explains in `reason` does. Dropping
+                            `reason` used to label a capped trial allowance as the plan's,
+                            which is a different and larger number. */}
+                        {granted ? (
+                          <span className="data-table__secondary">
+                            {`Granted for your account${entry.reason ? ` · ${entry.reason}` : ""}`}
+                            {differs &&
+                              ` · ${planLabel(plan)} includes ${describeIncluded(feature, included)}`}
+                          </span>
+                        ) : entry.reason === "trial" ? (
+                          <span className="data-table__secondary">
+                            {`Trial allowance · ${planLabel(plan)} includes ${describeIncluded(feature, included)} once you subscribe`}
+                          </span>
+                        ) : null}
                       </>
                     ) : (
                       <span className="quiet">Not published</span>
@@ -267,12 +282,7 @@ export function AccountSubscription({ view, now }: AccountSubscriptionProps) {
           </DataTable>
         </Section>
 
-        <Section
-          id="account-subscription-history"
-          eyebrow="History"
-          title="Changes to your plan"
-          description="Every plan move and allowance grant recorded against this account."
-        >
+        <Section id="account-subscription-history" eyebrow="History" title="Changes to your plan">
           {historyUnavailable && (
             <Callout role="status" tone="attention" compact>
               Your history could not be loaded just now. Your plan and allowances above are current.
@@ -281,6 +291,7 @@ export function AccountSubscription({ view, now }: AccountSubscriptionProps) {
           <DataTable
             columns={HISTORY_COLUMNS}
             caption="Changes to your plan"
+            scroll={false}
             isEmpty={history.length === 0}
             empty={
               <EmptyState
@@ -308,17 +319,14 @@ export function AccountSubscription({ view, now }: AccountSubscriptionProps) {
           </DataTable>
         </Section>
 
-        <Card
-          eyebrow="Changing plan"
-          title="Plans are managed by the Quantify Terminal team"
-          titleId="account-subscription-contact"
-          description="Plans, allowances and trials are set in the cloud console. Ask your account manager, or write to us, and the change applies to every device the moment it is made."
-          actions={
-            <ButtonLink href="/account/notifications" variant="primary">
-              See account notices
-            </ButtonLink>
-          }
-        />
+        {/* A sentence, not a card with a call to action. This was a full-width panel whose
+            primary button went to the notifications page — the loudest control on a page
+            about money, pointing somewhere that changes nothing. What it has to say is one
+            line, and one line is what it gets. */}
+        <p className="page-note">
+          Plans, allowances and trials are set by the Quantify Terminal team. Ask your account
+          manager and the change applies to every device the moment it is made.
+        </p>
       </div>
     </>
   );
