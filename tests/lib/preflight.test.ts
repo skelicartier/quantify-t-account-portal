@@ -1026,6 +1026,19 @@ describe("preflight audit", () => {
     expect(checks.find(({ id }) => id === "desktop.legacy-pin-metadata")?.status).toBe("warning");
   });
 
+  it("still warns when a passcode is mirrored from some other method entirely", () => {
+    // Checking one method by name is necessary and not sufficient: the leak does not have to
+    // be added where the last one was. This is the case that makes the check worth keeping.
+    const checks = auditRepositories({
+      ...completeSnapshot,
+      desktopAuthService: `${completeSnapshot.desktopAuthService}
+    def _sync_everything(self, access_token, user_id, passcode_hash):
+      self._account_api_request('auth/user/profile/update', access_token, payload={'app_passcode': passcode_hash})`,
+    });
+
+    expect(checks.find(({ id }) => id === "desktop.legacy-pin-metadata")?.status).toBe("warning");
+  });
+
   it("still warns when the Azure function learns about passcode hashes at all", () => {
     const checks = auditRepositories({
       ...completeSnapshot,

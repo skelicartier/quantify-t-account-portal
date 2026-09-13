@@ -112,13 +112,32 @@ function keepsAppPasscodeOffTheCloud(
   // AccountApiEvidence: a string search cannot tell a defect from the code that fixes it.
   const push = pythonMethodSource(authService, "_push_app_passcode_to_cloud");
 
+  // Checking that one method is a no-op is necessary and not sufficient: a mirror added to
+  // any *other* method would sail past it. So also assert the property across the whole file
+  // — no single line both names a passcode and hands it to something outbound. That is still
+  // a heuristic, but it is one keyed on the two halves that have to meet for a leak to exist,
+  // rather than on the name of the method somebody happened to use last time.
+  const OUTBOUND = [
+    "payload=",
+    "_account_api_request",
+    "update_user_metadata",
+    "json=",
+    "requests.",
+    "urlopen",
+  ];
+  const mirroredAnywhere = (authService ?? "")
+    .split(/\r?\n/)
+    .some((line) => /passcode/i.test(line) && OUTBOUND.some((call) => line.includes(call)));
+
   return (
-    // The one path that could mirror a verifier upstream is a documented no-op.
+    // The one path that exists to mirror a verifier upstream is a documented no-op.
     includesEvery(push, ["def _push_app_passcode_to_cloud(", "return"]) &&
     !push.includes("requests.") &&
     !push.includes("urlopen") &&
     !push.includes("_account_api_request") &&
     !push.includes("update_user_metadata") &&
+    // Nowhere else sends one either.
+    !mirroredAnywhere &&
     // The profile column carries a marker, not a verifier.
     (authService ?? "").includes("APP_PASSCODE_STORE_MARKER") &&
     // And the cloud function has no notion of one at all.

@@ -475,11 +475,12 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         "lease_seconds",
       ]) &&
       // Every mutating route claims the key first: the desktop app-state upsert, the two
-      // subscription writes the console drives, the three credential writes, and the four
-      // support sends, and the staff grant. The floor is the current count, not a
+      // subscription writes the console drives, the three credential writes, the four
+      // support sends, the staff grant, and the usage reserve/settle pair the desktop spends
+      // its Deep Research allowance through. The floor is the current count, not a
       // comfortable margin below it, which is the point — a route added without a key
       // drops the property instead of hiding under the slack.
-      occursAtLeast(modules.app, "require_key(request)", 24) &&
+      occursAtLeast(modules.app, "require_key(request)", 26) &&
       includesAll(modules.app, ["replay_or_reserve", "scope_for("]) &&
       // The reservation must precede the side effect. Recording afterwards misses the case
       // the module exists for: a request killed between the write and the record.

@@ -1133,6 +1133,68 @@ const server = createServer(async (request, response) => {
   if (route === "me/entitlements") {
     return ok(response, entitlementDocument(me.id, me.tier));
   }
+  // Spending an allowance, against the same USAGE store the entitlement document reads — so
+  // a client that reserves here sees the number move when it asks again, and exhausts the
+  // allowance after the right number of tries. A mock that always answered "allowed" would
+  // let a desktop build with no metering in it look perfectly healthy against this server,
+  // which is the one thing this file exists to prevent.
+  if (route === "me/usage/reserve") {
+    const featureKey = String(json.feature_key ?? "");
+    if (featureKey !== "deep_research") {
+      fail(response, 400, "malformed_request", "Not a client-metered feature.");
+      return;
+    }
+    const feature = entitlementDocument(me.id, me.tier).features[featureKey] as Record<
+      string,
+      unknown
+    >;
+    const limit = typeof feature.limit === "number" ? feature.limit : null;
+    const spend = (USAGE[me.id] ??= {});
+    const counter = (spend[featureKey] ??= { used: 0, reserved: 0 });
+    if (limit !== null && counter.used + counter.reserved + 1 > limit) {
+      fail(response, 429, "quota_exceeded", "Your Deep Research allowance is used.", {
+        feature_key: featureKey,
+        plan: canonicalPlan(me.tier),
+        used: counter.used,
+        reserved: counter.reserved,
+        limit,
+        remaining: 0,
+        period: "month",
+        period_key: periodKey(),
+        resets_at: periodResetsAt(),
+      });
+      return;
+    }
+    counter.reserved += 1;
+    ok(response, {
+      feature_key: featureKey,
+      event_id: `00000000-0000-4000-8000-${String(counter.used + counter.reserved).padStart(12, "0")}`,
+      plan: canonicalPlan(me.tier),
+      period: "month",
+      period_key: periodKey(),
+      used: counter.used,
+      reserved: counter.reserved,
+      limit,
+      remaining: limit === null ? null : Math.max(0, limit - counter.used - counter.reserved),
+      resets_at: periodResetsAt(),
+    });
+    return;
+  }
+  if (route === "me/usage/settle") {
+    const outcome = String(json.outcome ?? "");
+    if (outcome !== "commit" && outcome !== "release") {
+      fail(response, 400, "malformed_request", "Outcome must be commit or release.");
+      return;
+    }
+    const counter = USAGE[me.id]?.deep_research;
+    const settled = Boolean(counter && counter.reserved > 0);
+    if (counter && counter.reserved > 0) {
+      counter.reserved -= 1;
+      if (outcome === "commit") counter.used += 1;
+    }
+    ok(response, { event_id: String(json.event_id ?? ""), outcome, settled });
+    return;
+  }
   if (route.startsWith("sessions/")) {
     return ok(response, { session: session(userId, 0), event: null, replayed: false });
   }
