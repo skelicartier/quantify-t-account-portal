@@ -4,6 +4,7 @@ import {
   extractAzureRoutes,
   preflightExitCode,
 } from "@/lib/preflight/audit";
+import { assertDeploymentAllowed } from "@/lib/deployment/gate";
 import { type RepositorySnapshot } from "@/lib/preflight/model";
 import { renderPreflightMarkdown } from "@/lib/preflight/report";
 import {
@@ -1098,6 +1099,94 @@ describe("preflight audit", () => {
     expect(report.counts.warning).toBeGreaterThan(0);
     expect(preflightExitCode(report)).toBe(0);
     expect(preflightExitCode(report, true)).toBe(1);
+  });
+
+  describe("staging and production readiness", () => {
+    // These were hardcoded false, so `preflight:strict` could never exit 0 — a gate that can
+    // only fail teaches everyone to ignore it. They are now unlockable, but never by source
+    // checks alone: a clean repository is necessary and explicitly not sufficient.
+    const cleanReport = (environment: Record<string, string | undefined>) =>
+      buildPreflightReport({
+        snapshot: completeSnapshot,
+        environment: { ...validEnvironment, ...environment },
+        generatedAt: "2026-09-02T00:00:00.000Z",
+      });
+
+    it("stays locked when nobody has recorded any evidence", () => {
+      const report = cleanReport({});
+
+      expect(report.counts.warning).toBe(0);
+      expect(report.sourceReady).toBe(true);
+      expect(report.stagingReady).toBe(false);
+      expect(report.productionReady).toBe(false);
+    });
+
+    it("unlocks staging only once somebody records the staging evidence", () => {
+      const report = cleanReport({ QT_STAGING_EVIDENCE: "recorded" });
+
+      expect(report.stagingReady).toBe(true);
+      expect(report.productionReady).toBe(false);
+    });
+
+    it("will not unlock production from a go/no-go alone", () => {
+      // Staging evidence is a prerequisite, not an alternative: approving a release of
+      // something nobody has exercised end to end is the failure this ordering prevents.
+      const report = cleanReport({ QT_PRODUCTION_GO_NO_GO: "approved" });
+
+      expect(report.stagingReady).toBe(false);
+      expect(report.productionReady).toBe(false);
+    });
+
+    it("unlocks production on both, and only then does strict pass", () => {
+      const report = cleanReport({
+        QT_STAGING_EVIDENCE: "recorded",
+        QT_PRODUCTION_GO_NO_GO: "approved",
+      });
+
+      expect(report.productionReady).toBe(true);
+      expect(preflightExitCode(report, true)).toBe(0);
+    });
+
+    it("re-locks on a single warning even with both pieces of evidence", () => {
+      // The evidence says a human did the work. It does not say the repository is clean,
+      // and both have to be true at once.
+      const report = buildPreflightReport({
+        snapshot: completeSnapshot,
+        environment: {
+          QT_STAGING_EVIDENCE: "recorded",
+          QT_PRODUCTION_GO_NO_GO: "approved",
+        },
+        generatedAt: "2026-09-02T00:00:00.000Z",
+      });
+
+      expect(report.counts.warning).toBeGreaterThan(0);
+      expect(report.stagingReady).toBe(false);
+      expect(report.productionReady).toBe(false);
+      expect(preflightExitCode(report, true)).toBe(1);
+      // Still only a warning for an ordinary caller, which is what keeps it usable day to day.
+      expect(preflightExitCode(report)).toBe(0);
+    });
+
+    it("reads the same go/no-go constant the deployment gate enforces", () => {
+      // Two signals that disagreed would be worse than one that is strict.
+      const approved = cleanReport({
+        QT_STAGING_EVIDENCE: "recorded",
+        QT_PRODUCTION_GO_NO_GO: "approved",
+      });
+      expect(approved.productionReady).toBe(true);
+      expect(() =>
+        assertDeploymentAllowed({ VERCEL_ENV: "production", QT_PRODUCTION_GO_NO_GO: "approved" }),
+      ).not.toThrow();
+
+      const wrongWord = cleanReport({
+        QT_STAGING_EVIDENCE: "recorded",
+        QT_PRODUCTION_GO_NO_GO: "yes",
+      });
+      expect(wrongWord.productionReady).toBe(false);
+      expect(() =>
+        assertDeploymentAllowed({ VERCEL_ENV: "production", QT_PRODUCTION_GO_NO_GO: "yes" }),
+      ).toThrow();
+    });
   });
 
   it("extracts unique Azure decorator routes", () => {

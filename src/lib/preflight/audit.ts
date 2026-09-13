@@ -642,6 +642,21 @@ export function buildPreflightReport(input: {
   const counts: Record<PreflightStatus, number> = { pass: 0, warning: 0, blocked: 0 };
   for (const item of checks) counts[item.status] += 1;
 
+  // These were hardcoded `false`, which made `preflight:strict` incapable of passing by
+  // construction — a gate that can only ever fail teaches everyone to ignore it. They stay
+  // impossible to unlock from source checks alone, which is what FINAL_LOCAL_CHECKPOINT
+  // means by "must not be changed from local tests alone": a clean repository is necessary
+  // and is explicitly not sufficient. What lifts them is evidence a person recorded after
+  // doing something no static check can do — a staging deployment exercised end to end, and
+  // a go/no-go decision.
+  //
+  // Production reuses the exact constant `assertDeploymentAllowed` already reads, so
+  // `preflight:strict` and `prebuild` now agree on one signal instead of disagreeing on two.
+  // Both default false on an absent variable, so every existing invocation is unchanged.
+  const cleanSource = counts.blocked === 0 && counts.warning === 0;
+  const stagingReady = cleanSource && input.environment.QT_STAGING_EVIDENCE === "recorded";
+  const productionReady = stagingReady && input.environment.QT_PRODUCTION_GO_NO_GO === "approved";
+
   return {
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     mode: network.length > 0 ? "network" : "offline",
@@ -650,11 +665,16 @@ export function buildPreflightReport(input: {
     network,
     counts,
     sourceReady: counts.blocked === 0,
-    stagingReady: false,
-    productionReady: false,
+    stagingReady,
+    productionReady,
   };
 }
 
 export function preflightExitCode(report: PreflightReport, strictProduction = false): 0 | 1 {
-  return report.counts.blocked > 0 || (strictProduction && !report.productionReady) ? 1 : 0;
+  // A warning now fails the strict gate. It could not before — `blocked` was the only thing
+  // that failed anything — so the six warnings this repository carried were invisible to
+  // every automated caller. Ordinary (non-strict) callers are unchanged: a warning is still
+  // a warning there, which is what keeps it usable during development.
+  const strictFailure = strictProduction && (report.counts.warning > 0 || !report.productionReady);
+  return report.counts.blocked > 0 || strictFailure ? 1 : 0;
 }
