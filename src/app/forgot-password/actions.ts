@@ -23,6 +23,20 @@ const SERVICE_ERROR_STATE: RecoveryRequestActionState = {
   fieldErrors: EMPTY_FIELD_ERRORS,
 };
 
+/**
+ * THERE IS DELIBERATELY NO RATE-LIMIT BRANCH HERE, unlike sign-in and registration.
+ *
+ * Recovery IS limited — three requests an hour per address, fifteen per source, which is what
+ * stops this form being used to bury somebody's inbox — but the service enforces it SILENTLY:
+ * it answers exactly as it does when the address has no account, and simply does not send.
+ *
+ * That is the whole point. This route answers identically whether or not an account exists so
+ * it cannot be used to test which addresses are registered. A console that said "too many
+ * attempts" when the limit bit would hand that back: an attacker learns an address is real
+ * precisely because asking about it repeatedly started being refused. So the answer below never
+ * changes, and adding a 429 branch here would be a regression rather than an improvement.
+ */
+
 export async function requestPasswordRecovery(
   _previousState: RecoveryRequestActionState,
   formData: FormData,

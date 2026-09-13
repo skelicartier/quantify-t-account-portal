@@ -66,6 +66,42 @@ export class AzureAuthError extends Error {
   }
 }
 
+/** The header the Account API reads to learn who a proxied call is acting for. */
+export const CLIENT_ADDRESS_HEADER = "X-QT-Client-Address";
+
+/**
+ * The address of the person this request is being made for.
+ *
+ * WHY THE SERVICE CANNOT WORK THIS OUT ITSELF. The console calls the Account API from its own
+ * server, so what the service observes is the console's egress — in production a rotating pool
+ * of AWS addresses, none of them the person signing in. Its per-source rate limits are keyed on
+ * that, which makes them both blind (a thousand accounts tried from one browser look like
+ * ordinary console traffic) and unfair (five strangers landing on the same egress address share
+ * a budget of five signups an hour). Saying who the call is for is what fixes both.
+ *
+ * The service keys on the PAIR of what it observed and what is claimed here, so a forged value
+ * cannot spend anybody else's budget — see `source_key` in the service's throttle module.
+ *
+ * Read through a dynamic import so this module stays usable outside a request: every path that
+ * has no headers — a test, a build-time render — simply forwards nothing, and the service falls
+ * back to what it observes.
+ */
+async function callerAddress(): Promise<string> {
+  try {
+    const { headers } = await import("next/headers");
+    const list = await headers();
+    // `x-real-ip` is set by the platform and is the single address it saw. The leftmost
+    // `x-forwarded-for` entry is the fallback, and it is the client-supplied end of that
+    // header — which is why the service treats a claim as a claim rather than as fact.
+    const direct = (list.get("x-real-ip") ?? "").trim();
+    if (direct) return direct;
+    const forwarded = (list.get("x-forwarded-for") ?? "").split(",")[0]?.trim() ?? "";
+    return forwarded;
+  } catch {
+    return "";
+  }
+}
+
 export class AzureAuthClient {
   private apiUrl: string;
 
@@ -80,8 +116,18 @@ export class AzureAuthClient {
 
   private async request<T>(path: string, init: RequestInit): Promise<T> {
     let res: Response;
+    // Attached here rather than at each call site: there are ten places that build this
+    // client, and a header that has to be remembered at every one of them is a header that
+    // will be missing from the next one somebody adds.
+    const caller = await callerAddress();
+    const init2: RequestInit = caller
+      ? {
+          ...init,
+          headers: { ...(init.headers as Record<string, string>), [CLIENT_ADDRESS_HEADER]: caller },
+        }
+      : init;
     try {
-      res = await fetch(this.endpoint(path), init);
+      res = await fetch(this.endpoint(path), init2);
     } catch (error) {
       void error;
       throw new AzureAuthError({

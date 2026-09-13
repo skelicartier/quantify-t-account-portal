@@ -15,6 +15,7 @@ import { parseTotpCodeOnlyFormData } from "@/lib/auth/security-input";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { createServerAzureClient } from "@/lib/supabase/server";
 import { verifyChallenge } from "@/lib/auth/turnstile";
+import { rateLimitMessage, rateLimitWaitSeconds } from "@/lib/auth/rate-limit";
 
 const AUTHENTICATION_ERROR: LoginActionState = {
   status: "error",
@@ -27,6 +28,21 @@ const SERVICE_ERROR: LoginActionState = {
   message: "Secure sign-in is temporarily unavailable. Please try again.",
   fieldErrors: { email: [], password: [], challenge: [] },
 };
+
+/**
+ * The service refused because too much has been tried, not because anything is broken.
+ *
+ * Says nothing about WHICH limit was reached: the service is careful not to, because "too many
+ * attempts for this account" would confirm the account exists, and repeating it here would
+ * undo that.
+ */
+function rateLimitedState(seconds: number): LoginActionState {
+  return {
+    status: "error",
+    message: rateLimitMessage(seconds),
+    fieldErrors: { email: [], password: [], challenge: [] },
+  };
+}
 
 const CHALLENGE_REJECTED: LoginChallengeActionState = {
   status: "error",
@@ -62,11 +78,20 @@ export async function login(
 
     const azure = await createServerAzureClient();
     const { data, error } = await azure.signInWithPassword(parsed.data.email, parsed.data.password);
-    if (error) return isCredentialRejection(error) ? AUTHENTICATION_ERROR : SERVICE_ERROR;
+    if (error) {
+      // Checked before the credential branch. A 429 is not a rejected password, and telling
+      // somebody their credentials are wrong when the service never looked at them sends them
+      // to the reset form for a problem a minute of waiting solves.
+      const wait = rateLimitWaitSeconds(error);
+      if (wait !== null) return rateLimitedState(wait);
+      return isCredentialRejection(error) ? AUTHENTICATION_ERROR : SERVICE_ERROR;
+    }
     if (!data?.session) return SERVICE_ERROR;
 
     await registerCurrentAccountApiSession(azure);
-  } catch {
+  } catch (error) {
+    const wait = rateLimitWaitSeconds(error);
+    if (wait !== null) return rateLimitedState(wait);
     console.error("[LOGIN ERROR] Secure sign-in failed.");
     return SERVICE_ERROR;
   }

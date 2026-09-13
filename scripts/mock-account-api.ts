@@ -1018,6 +1018,53 @@ function releaseFail(response: ServerResponse, status: number, error: string) {
   send(response, status, { ok: false, error });
 }
 
+/**
+ * The service's authentication limits, in the shape the console has to handle.
+ *
+ * A mock that never refuses is how the console's rate-limit path stays untested: every flow
+ * signs in cleanly, nothing ever returns 429, and the branch that tells somebody how long to
+ * wait is exercised by unit tests alone. The last time this mock was more permissive than the
+ * service it certified a real bug — a broker create posting to a GET-only route — so it
+ * mirrors the policy rather than approximating it.
+ *
+ * Deliberately simplified in one way only: there is no exponential backoff here, because the
+ * console's behaviour does not depend on the second lock being longer than the first. The
+ * numbers that ARE mirrored are the ones a client can observe: the threshold, the 429, the
+ * code, and `retry_after_seconds`.
+ */
+const LOGIN_ATTEMPT_BUDGET = 5;
+const LOGIN_LOCK_SECONDS = 60;
+const loginAttempts = new Map<string, { count: number; lockedUntilMs: number }>();
+
+function loginBucket(key: string): { count: number; lockedUntilMs: number } {
+  const existing = loginAttempts.get(key);
+  if (existing) return existing;
+  const fresh = { count: 0, lockedUntilMs: 0 };
+  loginAttempts.set(key, fresh);
+  return fresh;
+}
+
+/** Seconds still to wait, or 0 when this caller may try. */
+function loginWaitSeconds(key: string, nowMs: number): number {
+  const bucket = loginBucket(key);
+  if (bucket.lockedUntilMs > nowMs) return Math.ceil((bucket.lockedUntilMs - nowMs) / 1000);
+  // The lock has been served: a fresh chance, not a counter still over the threshold. Without
+  // this the first lock silently lasts forever, which is the exact defect the service's own
+  // MERGE had to be fixed for.
+  if (bucket.lockedUntilMs > 0) {
+    bucket.count = 0;
+    bucket.lockedUntilMs = 0;
+  }
+  return 0;
+}
+
+function recordLoginFailure(key: string, nowMs: number): void {
+  const bucket = loginBucket(key);
+  bucket.count += 1;
+  if (bucket.count >= LOGIN_ATTEMPT_BUDGET)
+    bucket.lockedUntilMs = nowMs + LOGIN_LOCK_SECONDS * 1000;
+}
+
 function handleReleaseRoute(
   route: string,
   method: string,
@@ -1196,14 +1243,29 @@ const server = createServer(async (request, response) => {
   if (route === "health") return ok(response, { status: "ok", environment: "mock" });
   if (route === "auth/login") {
     const email = String(json.email ?? "");
+    const bucketKey = email.trim().toLowerCase();
+    const nowMs = Date.now();
+    const wait = loginWaitSeconds(bucketKey, nowMs);
+    // Checked before the credential is looked at, as the service does — password hashing is
+    // expensive and a locked-out caller must not be able to spend it.
+    if (wait > 0) {
+      return fail(response, 429, "rate_limited", "Too many attempts. Wait before trying again.", {
+        retry_after_seconds: wait,
+      });
+    }
     const p = PEOPLE.find((candidate) => candidate.email === email.toLowerCase());
-    if (!p)
+    if (!p) {
+      recordLoginFailure(bucketKey, nowMs);
       return fail(
         response,
         401,
         "invalid_credentials",
         "Unable to sign in with those credentials.",
       );
+    }
+    // Proved: somebody who mistyped four times and then got it right is not one slip from a
+    // lockout for the rest of the window.
+    loginAttempts.delete(bucketKey);
     const token = `mock-${p.role}-${randomUUID()}`;
     tokens.set(token, p.id);
     return ok(response, {

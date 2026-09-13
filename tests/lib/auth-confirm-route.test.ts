@@ -11,7 +11,11 @@ vi.mock("@/lib/azure-auth-config", () => ({
   }),
 }));
 
-vi.mock("@/lib/azure-auth-client", () => ({
+// Partial, not wholesale: the route now also classifies the thrown error, and a mock that
+// replaced the whole module took `AzureAuthError` away with it — so every rejected token became
+// a TypeError inside the classifier rather than the refusal this file is asserting on.
+vi.mock("@/lib/azure-auth-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/azure-auth-client")>()),
   AzureAuthClient: mocks.AzureAuthClient,
 }));
 

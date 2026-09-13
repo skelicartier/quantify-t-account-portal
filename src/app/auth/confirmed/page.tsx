@@ -29,9 +29,26 @@ function first(value: string | string[] | undefined): string | undefined {
  */
 export default async function ConfirmedPage({ searchParams }: ConfirmedPageProps) {
   const parameters = await searchParams;
-  const invalid = first(parameters.reason) === "invalid-confirm-link";
+  const reason = first(parameters.reason);
+  const invalid = reason === "invalid-confirm-link";
+  const throttled = reason === "too-many-attempts";
   const handoffPath = desktopConnectNextPath(first(parameters.next));
   const signInHref = handoffPath ? `/login?next=${encodeURIComponent(handoffPath)}` : "/login";
+
+  if (throttled) {
+    return (
+      <AuthShell
+        title="Too many attempts"
+        description="Too many confirmation links have been opened from here recently. Your link has not been used up — wait a few minutes and open it again."
+      >
+        <div className="auth-form">
+          <ButtonLink href="/login" variant="ghost" block>
+            Back to sign in
+          </ButtonLink>
+        </div>
+      </AuthShell>
+    );
+  }
 
   if (invalid) {
     return (

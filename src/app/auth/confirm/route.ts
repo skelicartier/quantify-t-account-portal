@@ -1,4 +1,5 @@
 import { desktopConnectReturnCookie, readDesktopConnectReturn } from "@/lib/auth/desktop-connect";
+import { rateLimitWaitSeconds } from "@/lib/auth/rate-limit";
 import { AzureAuthClient } from "@/lib/azure-auth-client";
 import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
@@ -33,7 +34,15 @@ export async function GET(request: Request): Promise<Response> {
     const config = getAzureAuthConfig();
     await new AzureAuthClient(config.apiUrl).confirmEmail(token);
     return confirmedRedirect(request, new URL("/auth/confirmed", siteUrl));
-  } catch {}
+  } catch (error) {
+    // A refusal for presenting too many tokens is NOT an expired link, and must not be shown
+    // as one: the invalid-link page tells the reader to go and get a new confirmation email,
+    // which is the one action that makes their situation worse. Their link is probably fine
+    // and waiting is all it needs.
+    if (rateLimitWaitSeconds(error) !== null) {
+      return Response.redirect(new URL("/auth/confirmed?reason=too-many-attempts", siteUrl), 303);
+    }
+  }
 
   // The same generic page for an expired, reused or forged token.
   return Response.redirect(new URL("/auth/confirmed?reason=invalid-confirm-link", siteUrl), 303);

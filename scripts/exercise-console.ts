@@ -239,6 +239,59 @@ async function main() {
   });
 
   // ------------------------------------------------------------------- csrf gate
+  // --------------------------------------------------------------- the rate limit
+  console.log("\nthe rate limit says how long to wait");
+  let refusal = "";
+  await step("repeated wrong passwords earn a wait, not an outage message", async () => {
+    // The failure this catches: the console not recognising the service's 429 and rendering
+    // it as "secure sign-in is temporarily unavailable". That tells a rate-limited person the
+    // product is broken, and a person who believes that retries immediately and keeps
+    // retrying — the behaviour the limit exists to stop.
+    //
+    // The message renders in an alert BESIDE the form, not inside it. Reading the <form>
+    // element finds only the fields, and this step then passes on an empty string forever.
+    const address = `limited-${Date.now()}@example.test`;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await page.goto(`${BASE}/login`);
+      await page.getByRole("textbox", { name: /email address/iu }).fill(address);
+      await page.getByLabel(/^password$/iu).fill("wrong-password-here");
+      await page.getByRole("button", { name: /sign in securely/iu }).click();
+      // Filtered to an alert that actually says something. Next renders its own empty route
+      // announcer with role="alert", and `.first()` matched that instead — which made this
+      // step assert on an empty string and would have passed no matter what the form said.
+      const alert = page.getByRole("alert").filter({ hasText: /\S/u }).first();
+      await alert.waitFor({ state: "visible", timeout: 15_000 });
+      refusal = (await alert.innerText()).replace(/\s+/gu, " ").trim();
+      if (/too many attempts/iu.test(refusal)) break;
+    }
+    assert(
+      /too many attempts/iu.test(refusal),
+      `after eight wrong passwords the form still said: ${refusal.slice(0, 200)}`,
+    );
+    assert(/wait/iu.test(refusal), `the refusal does not say how long to wait: ${refusal}`);
+    assert(!/unavailable/iu.test(refusal), `a rate limit is reported as an outage: ${refusal}`);
+    assert(
+      !/credentials/iu.test(refusal),
+      `a rate limit is reported as a bad password: ${refusal}`,
+    );
+  });
+
+  await step("the refusal names no bucket, no count and no account", async () => {
+    // Every other answer on this route is careful not to confirm that an address is
+    // registered. Repeating the service's internals here would give that back.
+    assert(refusal, "no refusal was captured, so there is nothing to check for disclosure");
+    const lowered = refusal.toLowerCase();
+    for (const leak of ["login:", "attempts remaining", "this account", "locked until", "@"]) {
+      assert(!lowered.includes(leak), `the refusal discloses "${leak}": ${refusal}`);
+    }
+  });
+
+  await step("a correct password still works for everybody else", async () => {
+    // The limit is per address. A shared office or a carrier NAT is one source for hundreds of
+    // honest people, and a per-source budget that caught them would be worse than the attack.
+    await signIn(page, "owner@example.test");
+  });
+
   console.log("\nthe same-origin gate actually refuses");
   await step("a Server Action posted from another origin is refused", async () => {
     // The real claim behind `serverActionsRequireSameOrigin`. Replays the action POST the

@@ -8,6 +8,7 @@ import {
   desktopConnectNextPath,
 } from "@/lib/auth/desktop-connect";
 import { parseSignupFormData, type SignupActionState } from "@/lib/auth/signup";
+import { rateLimitMessage, rateLimitWaitSeconds } from "@/lib/auth/rate-limit";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { createServerAzureClient } from "@/lib/supabase/server";
 import { verifyChallenge } from "@/lib/auth/turnstile";
@@ -32,6 +33,20 @@ const SERVICE_ERROR_STATE: SignupActionState = {
   message: "Secure registration is temporarily unavailable. Please try again.",
   fieldErrors: EMPTY_FIELD_ERRORS,
 };
+
+/**
+ * Registration is limited per source, because every signup sends a confirmation email and the
+ * Brevo quota is shared with every other transactional message in the product. Being told to
+ * wait is the honest answer; "temporarily unavailable" would send somebody who wants an account
+ * away believing the product is broken.
+ */
+function rateLimitedState(seconds: number): SignupActionState {
+  return {
+    status: "error",
+    message: rateLimitMessage(seconds),
+    fieldErrors: EMPTY_FIELD_ERRORS,
+  };
+}
 
 /**
  * The API says the address already has an account (`account_exists`). Say so — the
@@ -110,10 +125,16 @@ export async function signup(
       parsed.data.lastName,
     );
 
-    if (result.error) return existingAccountState(result.error) ?? SERVICE_ERROR_STATE;
+    if (result.error) {
+      const wait = rateLimitWaitSeconds(result.error);
+      if (wait !== null) return rateLimitedState(wait);
+      return existingAccountState(result.error) ?? SERVICE_ERROR_STATE;
+    }
     if (returnTo) await rememberDesktopConnectReturn(returnTo);
     return ACCEPTED_SIGNUP_STATE;
   } catch (e) {
+    const wait = rateLimitWaitSeconds(e);
+    if (wait !== null) return rateLimitedState(wait);
     console.error("[SIGNUP ERROR]", e);
     return SERVICE_ERROR_STATE;
   }
