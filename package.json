@@ -29,7 +29,8 @@
     "validate:portal": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
     "validate": "npm run validate:portal && npm run preflight:env",
     "mock:api": "tsx scripts/mock-account-api.ts",
-    "check:console-ui": "tsx scripts/screenshot-console.ts"
+    "check:console-ui": "tsx scripts/screenshot-console.ts",
+    "check:console-flows": "tsx scripts/exercise-console.ts"
   },
   "dependencies": {
     "lucide-react": "1.39.0",

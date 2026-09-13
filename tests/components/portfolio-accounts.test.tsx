@@ -145,6 +145,63 @@ describe("PortfolioAccounts", () => {
       expect(within(row).getByLabelText(/Benchmark for Main/iu)).toHaveValue("SPY");
     });
 
+    it("returns to the row once the save succeeds", async () => {
+      // The row used to stay a form for ever: the save worked, the new name appeared, the
+      // success message appeared — and "Make default" and "Close" stayed unreachable unless
+      // the reader thought to press Cancel on a change they had already committed.
+      const user = userEvent.setup();
+      const saved = async (): Promise<PortfolioActionState> => ({
+        status: "success",
+        message: "Saved.",
+        fieldErrors: INITIAL_PORTFOLIO_ACTION_STATE.fieldErrors,
+      });
+      render(
+        <PortfolioAccounts
+          portfolios={[portfolio(), SECOND]}
+          maxPortfolios={100}
+          create={noop}
+          rename={saved}
+          makeDefault={noop}
+          close={noop}
+        />,
+      );
+
+      const row = screen.getByRole("row", { name: /Main/iu });
+      await user.click(within(row).getByRole("button", { name: "Rename" }));
+      await user.click(within(row).getByRole("button", { name: "Save" }));
+
+      expect(within(row).queryByLabelText(/Name for Main/iu)).not.toBeInTheDocument();
+      expect(within(row).getByRole("button", { name: "Rename" })).toBeVisible();
+    });
+
+    it("can be reopened after a save, rather than closing itself again", async () => {
+      // The effect-based version of the fix above re-fired on every render and slammed the
+      // form shut the moment it was reopened.
+      const user = userEvent.setup();
+      const saved = async (): Promise<PortfolioActionState> => ({
+        status: "success",
+        message: "Saved.",
+        fieldErrors: INITIAL_PORTFOLIO_ACTION_STATE.fieldErrors,
+      });
+      render(
+        <PortfolioAccounts
+          portfolios={[portfolio(), SECOND]}
+          maxPortfolios={100}
+          create={noop}
+          rename={saved}
+          makeDefault={noop}
+          close={noop}
+        />,
+      );
+
+      const row = screen.getByRole("row", { name: /Main/iu });
+      await user.click(within(row).getByRole("button", { name: "Rename" }));
+      await user.click(within(row).getByRole("button", { name: "Save" }));
+      await user.click(within(row).getByRole("button", { name: "Rename" }));
+
+      expect(within(row).getByLabelText(/Name for Main/iu)).toBeVisible();
+    });
+
     it("can be backed out of without changing anything", async () => {
       const user = userEvent.setup();
       renderPage([portfolio(), SECOND]);

@@ -89,6 +89,23 @@ function RowActions({
   const id = useId();
   const [confirmation, setConfirmation] = useState("");
 
+  // Come back out of the form once the rename has actually been saved.
+  //
+  // Without this the row stayed in edit mode for ever: the save succeeded, the new name
+  // appeared in the heading, the success message appeared under the form — and the row was
+  // still a form, so "Make default" and "Close" were unreachable until the reader thought to
+  // press Cancel on a change they had already committed. `revalidatePath` re-renders the
+  // server component but cannot touch this client component's own state.
+  //
+  // Adjusted during render against the PREVIOUS action state rather than in an effect:
+  // an effect would re-run and force the row back to idle every time it fired, so pressing
+  // Rename a second time would close the form again immediately.
+  const [lastRename, setLastRename] = useState(renameState);
+  if (renameState !== lastRename) {
+    setLastRename(renameState);
+    if (renameState.status === "success") setMode("idle");
+  }
+
   if (mode === "renaming") {
     return (
       <div className="stack stack--tight">
