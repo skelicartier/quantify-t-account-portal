@@ -1859,6 +1859,83 @@ export async function fetchAccountApiSessions(
   return parseAccountApiPayload(accountApiSessionsSchema, payload, "sessions", "GET");
 }
 
+// ------------------------------------------------------------------------- portfolios
+//
+// A portfolio is the book a trade lands in. Nothing here is a secret, but the shapes are
+// `.strict()` for the same reason everything else is: a field the service starts sending is
+// a decision somebody should make here before it reaches a page.
+
+export const portfolioSchema = z
+  .object({
+    id: z.string().max(64),
+    name: z.string().max(80),
+    base_currency: z.string().max(10),
+    benchmark_symbol: z.string().max(20),
+    starting_cash: z.number(),
+    cash_balance: z.number(),
+    is_paper: z.boolean(),
+    is_default: z.boolean(),
+    created_at: z.string().max(64).nullable(),
+    updated_at: z.string().max(64).nullable(),
+  })
+  .strict();
+
+export type AccountApiPortfolio = z.infer<typeof portfolioSchema>;
+
+export const accountApiPortfoliosSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    portfolios: z.array(portfolioSchema).max(100),
+    max_portfolios: z.number().int().positive(),
+  })
+  .strict();
+
+export type AccountApiPortfolios = z.infer<typeof accountApiPortfoliosSchema>;
+
+export async function fetchAccountApiPortfolios(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiPortfolios> {
+  const payload = await fetchAccountApiJson("me/portfolios", accessToken, options);
+  return parseAccountApiPayload(accountApiPortfoliosSchema, payload, "me/portfolios", "GET");
+}
+
+export async function createAccountApiPortfolio(
+  accessToken: string,
+  body: Readonly<Record<string, unknown>>,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<unknown> {
+  return postAccountApiJson("me/portfolios/create", accessToken, body, options);
+}
+
+export async function updateAccountApiPortfolio(
+  accessToken: string,
+  portfolioId: string,
+  body: Readonly<Record<string, unknown>>,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<unknown> {
+  return postAccountApiJson(
+    `me/portfolios/${encodeURIComponent(portfolioId)}/update`,
+    accessToken,
+    body,
+    options,
+  );
+}
+
+export async function deleteAccountApiPortfolio(
+  accessToken: string,
+  portfolioId: string,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<unknown> {
+  return postAccountApiJson(
+    `me/portfolios/${encodeURIComponent(portfolioId)}/delete`,
+    accessToken,
+    {},
+    options,
+  );
+}
+
 // ------------------------------------------------------------------ broker connections
 //
 // The service never returns a credential, so neither does anything here. Each schema is
@@ -1908,7 +1985,11 @@ export async function createAccountApiBrokerConnection(
   body: Readonly<Record<string, unknown>>,
   options: AccountApiFetchOptions & { idempotencyKey: string },
 ): Promise<unknown> {
-  return postAccountApiJson("me/brokers", accessToken, body, options);
+  // `me/brokers/create`, not `me/brokers`. The service registers the bare path as GET only,
+  // so a POST to it is refused — and the mock used to accept both, which is exactly how this
+  // shipped: every create in production answered "method not allowed" while the local check
+  // passed. The mock now mirrors the real route table.
+  return postAccountApiJson("me/brokers/create", accessToken, body, options);
 }
 
 export async function testAccountApiBrokerConnection(

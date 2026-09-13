@@ -52,6 +52,7 @@ const ROUTES = [
   "/account/profile",
   "/account/subscription",
   "/account/preferences",
+  "/account/portfolios",
   "/account/brokers",
   "/account/security",
   "/account/sessions",

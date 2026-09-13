@@ -1113,6 +1113,67 @@ function publicBrokerView(row: MockBrokerConnection) {
   return view;
 }
 
+/**
+ * A portfolio, written out for the same reason: a field added here and not to the console's
+ * `.strict()` schema fails the type check rather than a page render.
+ */
+type MockPortfolio = {
+  id: string;
+  user_id: string;
+  name: string;
+  base_currency: string;
+  benchmark_symbol: string;
+  starting_cash: number;
+  cash_balance: number;
+  is_paper: boolean;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+const portfolios: MockPortfolio[] = [
+  {
+    id: "3f1b6c20-8d4a-4e59-91b7-0c2a5e8d4f10",
+    user_id: OWNER_ID,
+    name: "Main",
+    base_currency: "USD",
+    benchmark_symbol: "SPY",
+    starting_cash: 250000,
+    cash_balance: 182430.5,
+    is_paper: false,
+    is_default: true,
+    created_at: iso(60 * 24 * 240),
+    updated_at: iso(60 * 24 * 3),
+  },
+  {
+    id: "9c7e2a11-5b3d-4f88-a0c6-1d4f7b2e9a35",
+    user_id: OWNER_ID,
+    name: "Momentum sandbox",
+    base_currency: "USD",
+    benchmark_symbol: "QQQ",
+    starting_cash: 100000,
+    cash_balance: 100000,
+    is_paper: true,
+    is_default: false,
+    created_at: iso(60 * 24 * 30),
+    updated_at: iso(60 * 24 * 30),
+  },
+];
+
+/**
+ * What each book holds, which is what makes a close refusable. Keyed separately because the
+ * service counts these with their own query rather than storing a total on the portfolio.
+ */
+const portfolioContents: Record<string, { holdings: number; transactions: number }> = {
+  "3f1b6c20-8d4a-4e59-91b7-0c2a5e8d4f10": { holdings: 7, transactions: 214 },
+};
+
+function publicPortfolioView(row: MockPortfolio) {
+  const { user_id: _owner, ...view } = row;
+  void _owner;
+  return view;
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://127.0.0.1:${PORT}`);
   const route = url.pathname.replace(/^\/api\/v1\/?/u, "").replace(/\/+$/u, "");
@@ -2315,7 +2376,10 @@ const server = createServer(async (request, response) => {
       encryption_configured: process.env.MOCK_BROKER_ENCRYPTION !== "unconfigured",
     });
   }
-  if (route === "me/brokers" && method === "POST") {
+  // Deliberately `me/brokers/create`, matching the service's route table. An earlier version
+  // of this mock answered POST on the bare `me/brokers` too, and that leniency hid a console
+  // that was posting creates to a GET-only route in production.
+  if (route === "me/brokers/create" && method === "POST") {
     const broker = String(json.broker ?? "");
     if (!["alpaca", "upstox"].includes(broker)) {
       return fail(response, 400, "malformed_request", "no adapter; available: alpaca, upstox");
@@ -2365,6 +2429,114 @@ const server = createServer(async (request, response) => {
       row.last_error = "";
       row.account_reference = row.broker === "upstox" ? "UP1234" : "PA3XYZ";
       return ok(response, { ok: true, message: "Connected.", connection: publicBrokerView(row) });
+    }
+    return fail(response, 404, "not_found", `No route for ${method} ${route}.`);
+  }
+
+  // ---- portfolios ------------------------------------------------------------------
+  //
+  // Models the three rules the service enforces, because a mock that did not would let a
+  // page pass here and fail in production: exactly one default, the last book is never
+  // closed, and a book holding anything is never closed.
+  if (route === "me/portfolios" && method === "GET") {
+    return ok(response, {
+      portfolios: portfolios.filter((row) => row.user_id === userId).map(publicPortfolioView),
+      max_portfolios: 100,
+    });
+  }
+  if (route === "me/portfolios/create" && method === "POST") {
+    const name = String(json.name ?? "").trim();
+    if (!name) return fail(response, 400, "malformed_request", "A portfolio needs a name.");
+    const mine = portfolios.filter((row) => row.user_id === userId);
+    if (mine.some((row) => row.name === name)) {
+      return fail(response, 403, "forbidden", "That name is already used by another portfolio.");
+    }
+    const startingCash = Number(json.starting_cash ?? 0);
+    const created = {
+      id: randomUUID(),
+      user_id: userId,
+      name,
+      base_currency: String(json.base_currency ?? "USD"),
+      benchmark_symbol: String(json.benchmark_symbol ?? "SPY"),
+      starting_cash: startingCash,
+      cash_balance: startingCash,
+      is_paper: json.is_paper !== false,
+      // The first book is the default whatever the request said.
+      is_default: Boolean(json.is_default) || mine.length === 0,
+      created_at: iso(0),
+      updated_at: iso(0),
+    };
+    if (created.is_default) {
+      for (const row of mine) row.is_default = false;
+    }
+    portfolios.push(created);
+    return ok(response, { portfolio: publicPortfolioView(created) }, 201);
+  }
+  if (route.startsWith("me/portfolios/") && method === "POST") {
+    const [, , portfolioId, action] = route.split("/");
+    const row = portfolios.find((item) => item.id === portfolioId && item.user_id === userId);
+    if (!row) return fail(response, 404, "not_found", "No such portfolio.");
+    const mine = portfolios.filter((item) => item.user_id === userId);
+
+    if (action === "update") {
+      if (typeof json.name === "string") {
+        const name = json.name.trim();
+        if (mine.some((item) => item.id !== row.id && item.name === name)) {
+          return fail(response, 403, "forbidden", "That name is already used.");
+        }
+        row.name = name;
+      }
+      if (typeof json.benchmark_symbol === "string") row.benchmark_symbol = json.benchmark_symbol;
+      if (typeof json.base_currency === "string") row.base_currency = json.base_currency;
+      if (json.is_paper !== undefined && Boolean(json.is_paper) !== row.is_paper) {
+        const contents = portfolioContents[row.id];
+        if (contents && (contents.holdings || contents.transactions)) {
+          return fail(
+            response,
+            403,
+            "forbidden",
+            "This portfolio has trades, so it cannot change between paper and real money.",
+          );
+        }
+        row.is_paper = Boolean(json.is_paper);
+      }
+      if (json.is_default !== undefined) {
+        if (!json.is_default && row.is_default) {
+          return fail(
+            response,
+            403,
+            "forbidden",
+            "Make another portfolio the default instead of clearing this one.",
+          );
+        }
+        if (json.is_default) {
+          for (const item of mine) item.is_default = false;
+          row.is_default = true;
+        }
+      }
+      row.updated_at = iso(0);
+      return ok(response, { portfolio: publicPortfolioView(row) });
+    }
+
+    if (action === "delete") {
+      if (mine.length <= 1) {
+        return fail(response, 403, "forbidden", "An account keeps at least one portfolio.");
+      }
+      const contents = portfolioContents[row.id];
+      if (contents && (contents.holdings || contents.transactions)) {
+        return fail(
+          response,
+          403,
+          "forbidden",
+          `This portfolio still holds ${contents.holdings} position(s) and ${contents.transactions} transaction(s).`,
+        );
+      }
+      portfolios.splice(portfolios.indexOf(row), 1);
+      const remaining = portfolios.filter((item) => item.user_id === userId);
+      if (remaining.length && !remaining.some((item) => item.is_default)) {
+        remaining[0]!.is_default = true;
+      }
+      return ok(response, { portfolios: remaining.map(publicPortfolioView) });
     }
     return fail(response, 404, "not_found", `No route for ${method} ${route}.`);
   }
