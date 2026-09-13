@@ -285,7 +285,22 @@ export type AdminStaffAccess =
       assurance: AssuranceState;
       staff: AccountApiAdminStaff;
     }
-  | { status: "unavailable"; me: AccountApiMe; assurance: AssuranceState }
+  | {
+      status: "unavailable";
+      me: AccountApiMe;
+      assurance: AssuranceState;
+      /**
+       * Why the directory is missing, and the id that finds it in the service's logs.
+       *
+       * The page said only "could not be read" for every cause — a missing capability, an
+       * unreachable service, and a response this console refused to parse all produced one
+       * sentence, and each needs a different response from whoever is looking at it. A
+       * console that cannot say which is not diagnosable from the screen, which is what
+       * made a live failure here impossible to act on.
+       */
+      reason: "forbidden" | "unreachable" | "unreadable";
+      correlationId: string | null;
+    }
   | { status: "mfa-required"; me: AccountApiMe; assurance: AssuranceState }
   | { status: "forbidden"; me: AccountApiMe }
   | {
@@ -1058,7 +1073,30 @@ export const getAdminStaffAccess = cache(async (): Promise<AdminStaffAccess> => 
     };
   } catch (error) {
     if (error instanceof AccountApiRequestError && error.status === 401) throw error;
-    return { status: "unavailable", me, assurance };
+    if (error instanceof AccountApiRequestError) {
+      // 403 is not an outage. Telling someone to "check the account service" when the real
+      // answer is "your role cannot read this" sends them to the wrong place entirely.
+      return {
+        status: "unavailable",
+        me,
+        assurance,
+        reason: error.status === 403 ? "forbidden" : "unreachable",
+        correlationId: error.correlationId,
+      };
+    }
+    if (error instanceof AccountApiUnavailableError) {
+      // Raised both when the service cannot be reached and when its answer fails this
+      // console's schema. The logged outcome separates them; from here the honest label is
+      // that the answer was not usable.
+      return {
+        status: "unavailable",
+        me,
+        assurance,
+        reason: "unreadable",
+        correlationId: error.correlationId ?? null,
+      };
+    }
+    throw error;
   }
 });
 

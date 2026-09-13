@@ -218,11 +218,48 @@ describe("AdminAccess", () => {
     expect(screen.getByText(/missing from it/i)).toBeInTheDocument();
   });
 
-  it("says the directory could not be read rather than showing an empty one", () => {
-    render(<AdminAccess access={{ status: "unavailable", me, assurance }} now={NOW} />);
+  it.each([
+    ["forbidden", /cannot read the staff directory/i],
+    ["unreachable", /could not be reached/i],
+    ["unreadable", /could not read/i],
+  ] as const)("says why the directory is missing when it is %s", (reason, expected) => {
+    render(
+      <AdminAccess
+        access={{ status: "unavailable", me, assurance, reason, correlationId: null }}
+        now={NOW}
+      />,
+    );
 
-    expect(screen.getByRole("alert")).toHaveTextContent(/not an empty directory/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(expected);
     expect(screen.queryByRole("region", { name: "Staff accounts" })).not.toBeInTheDocument();
+  });
+
+  it("prints the correlation id so the failing read can be found in the service logs", () => {
+    render(
+      <AdminAccess
+        access={{
+          status: "unavailable",
+          me,
+          assurance,
+          reason: "unreachable",
+          correlationId: "qt-abc123",
+        }}
+        now={NOW}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("qt-abc123");
+  });
+
+  it("does not invent a reference when the service gave no correlation id", () => {
+    render(
+      <AdminAccess
+        access={{ status: "unavailable", me, assurance, reason: "forbidden", correlationId: null }}
+        now={NOW}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/reference/i);
   });
 
   it("shows a tenancy with no staff as empty, not as an error", () => {

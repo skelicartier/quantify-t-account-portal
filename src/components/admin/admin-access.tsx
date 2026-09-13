@@ -85,6 +85,37 @@ function RoleCard({ entry }: { entry: AccountApiStaffRoleCatalogue }) {
   );
 }
 
+/**
+ * What to tell someone when the directory is missing.
+ *
+ * Three causes that need three different next actions. The page used to give one sentence
+ * for all of them, which meant a permissions problem read as an outage and sent the reader
+ * to check a service that was working perfectly.
+ */
+const STAFF_FAILURE: Record<
+  Extract<AdminStaffAccess, { status: "unavailable" }>["reason"],
+  { title: string; body: string }
+> = {
+  forbidden: {
+    title: "This account cannot read the staff directory",
+    body:
+      "The account service refused the read. Reading the directory needs the staff:write " +
+      "capability, which only an Owner holds — nothing is wrong with the service.",
+  },
+  unreachable: {
+    title: "The account service could not be reached",
+    body:
+      "Nothing has changed — this is a read that failed. Reload in a moment; if it persists, " +
+      "the service itself is the place to look.",
+  },
+  unreadable: {
+    title: "The account service answered with something this console could not read",
+    body:
+      "The response did not match the shape this console expects, so it was refused rather " +
+      "than rendered. That usually means the two are on different versions.",
+  },
+};
+
 export function AdminAccess({ access, now }: AdminAccessProps) {
   const authorized = access.status === "authorized" ? access : null;
   const staff = authorized?.staff ?? null;
@@ -105,9 +136,14 @@ export function AdminAccess({ access, now }: AdminAccessProps) {
       />
       <div className="page-content">
         {access.status === "unavailable" ? (
-          <Callout tone="danger" role="alert">
-            The staff directory could not be read. This is not an empty directory — reload in a
-            moment, and check the account service if it persists.
+          <Callout tone="danger" role="alert" title={STAFF_FAILURE[access.reason].title}>
+            {STAFF_FAILURE[access.reason].body}
+            {access.correlationId && (
+              <>
+                {" "}
+                Reference <span className="mono">{access.correlationId}</span>.
+              </>
+            )}
           </Callout>
         ) : (
           <AdminGate access={access} section="Access control">
