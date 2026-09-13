@@ -1544,17 +1544,50 @@ export type AccountApiEntitlementUpdateBody = {
   remove?: boolean;
 };
 
+/**
+ * Mirrors PROFILE_UPDATE_ALLOWED_FIELDS in the Account API's `auth_routes.py`.
+ *
+ * Every key here is one the server accepts; anything else is refused with the field name, so
+ * this type is the first of four gates a new field has to pass and the only one that fails at
+ * compile time rather than at runtime.
+ */
 export type AccountApiProfileUpdateBody = {
   expected_profile_version: number;
+  // identity
   first_name?: string;
   last_name?: string;
   phone?: string;
   country?: string;
+  // who the holder is
+  display_name?: string;
+  occupation?: string;
+  company?: string;
+  bio?: string;
+  website?: string;
+  // what they follow, in the terminal's own vocabulary
+  interests?: string;
+  markets?: string;
+  primary_workflow?: string;
+  experience_level?: string;
+  // how the terminal behaves
   timezone?: string;
   default_currency?: string;
+  ui_density?: string;
+  start_tab?: string;
+  time_format?: string;
+  show_market_times_in_local?: boolean;
+  gain_colour?: string;
+  change_display?: string;
+  pulse_min_severity?: string;
+  pulse_desktop_alerts?: boolean;
+  research_ai_drafting?: boolean;
+  // what reaches their inbox
   notify_price_alerts?: boolean;
   notify_portfolio_moves?: boolean;
   notify_news_digest?: boolean;
+  notify_weekly_summary?: boolean;
+  notify_research_complete?: boolean;
+  notify_security_alerts?: boolean;
 };
 
 type AccountApiJsonRequestOptions = AccountApiFetchOptions & {

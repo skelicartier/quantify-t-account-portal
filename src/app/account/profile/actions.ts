@@ -74,6 +74,19 @@ export async function updateProfile(
         last_name: parsed.data.lastName,
         phone: parsed.data.phone,
         country: parsed.data.country,
+        display_name: parsed.data.displayName,
+        occupation: parsed.data.occupation,
+        company: parsed.data.company,
+        website: parsed.data.website,
+        bio: parsed.data.bio,
+        experience_level: parsed.data.experienceLevel,
+        // Interests and markets are the terminal's own vocabulary: the same tokens the
+        // desktop's first-run wizard maps to tab order, watchlist seeding and panel presets.
+        // Changing them here re-tunes the product, which is why they belong on the profile
+        // rather than only in a wizard nobody can reopen.
+        interests: parsed.data.interests,
+        markets: parsed.data.markets,
+        primary_workflow: parsed.data.primaryWorkflow,
       },
       { idempotencyKey: randomUUID() },
     );

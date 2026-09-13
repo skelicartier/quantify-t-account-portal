@@ -14,6 +14,26 @@ export type AccountProfileDto = {
   notifyPriceAlerts: boolean;
   notifyPortfolioMoves: boolean;
   notifyNewsDigest: boolean;
+  notifyWeeklySummary: boolean;
+  notifyResearchComplete: boolean;
+  notifySecurityAlerts: boolean;
+  displayName: string;
+  occupation: string;
+  company: string;
+  bio: string;
+  website: string;
+  interests: string[];
+  markets: string[];
+  primaryWorkflow: string;
+  experienceLevel: string;
+  uiDensity: string;
+  timeFormat: string;
+  showMarketTimesInLocal: boolean;
+  gainColour: string;
+  changeDisplay: string;
+  pulseMinSeverity: string;
+  pulseDesktopAlerts: boolean;
+  researchAiDrafting: boolean;
   profileVersion: number;
   updatedAt: string;
 };
@@ -34,12 +54,40 @@ const profileSchema = z.object({
   notify_price_alerts: z.boolean(),
   notify_portfolio_moves: z.boolean(),
   notify_news_digest: z.boolean(),
+  notify_weekly_summary: z.boolean().optional(),
+  notify_research_complete: z.boolean().optional(),
+  notify_security_alerts: z.boolean().optional(),
+  display_name: z.string().optional(),
+  occupation: z.string().optional(),
+  company: z.string().optional(),
+  bio: z.string().optional(),
+  website: z.string().optional(),
+  interests: z.string().optional(),
+  markets: z.string().optional(),
+  primary_workflow: z.string().optional(),
+  experience_level: z.string().optional(),
+  ui_density: z.string().optional(),
+  time_format: z.string().optional(),
+  show_market_times_in_local: z.boolean().optional(),
+  gain_colour: z.string().optional(),
+  change_display: z.string().optional(),
+  pulse_min_severity: z.string().optional(),
+  pulse_desktop_alerts: z.boolean().optional(),
+  research_ai_drafting: z.boolean().optional(),
   profile_version: z.number().int().positive(),
   updated_at: z.string().datetime({ offset: true }),
 });
 
 function cleanText(value: string, maximumLength: number): string {
   return value.trim().replace(/\s+/gu, " ").slice(0, maximumLength);
+}
+
+/** A stored comma-separated token list, as an array the form can tick boxes from. */
+function tokens(value: string | undefined): string[] {
+  return String(value ?? "")
+    .split(",")
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function mapAccountProfile(
@@ -64,6 +112,26 @@ export function mapAccountProfile(
     notifyPriceAlerts: row.notify_price_alerts,
     notifyPortfolioMoves: row.notify_portfolio_moves,
     notifyNewsDigest: row.notify_news_digest,
+    notifyWeeklySummary: row.notify_weekly_summary ?? false,
+    notifyResearchComplete: row.notify_research_complete ?? true,
+    notifySecurityAlerts: row.notify_security_alerts ?? true,
+    displayName: cleanText(row.display_name ?? "", 80),
+    occupation: cleanText(row.occupation ?? "", 120),
+    company: cleanText(row.company ?? "", 120),
+    bio: (row.bio ?? "").trim().slice(0, 500),
+    website: cleanText(row.website ?? "", 200),
+    interests: tokens(row.interests),
+    markets: tokens(row.markets),
+    primaryWorkflow: cleanText(row.primary_workflow ?? "", 24),
+    experienceLevel: cleanText(row.experience_level ?? "", 24),
+    uiDensity: cleanText(row.ui_density ?? "", 16) || "comfortable",
+    timeFormat: cleanText(row.time_format ?? "", 8) || "24h",
+    showMarketTimesInLocal: row.show_market_times_in_local ?? true,
+    gainColour: cleanText(row.gain_colour ?? "", 16) || "green_up",
+    changeDisplay: cleanText(row.change_display ?? "", 16) || "percent",
+    pulseMinSeverity: cleanText(row.pulse_min_severity ?? "", 16) || "medium",
+    pulseDesktopAlerts: row.pulse_desktop_alerts ?? true,
+    researchAiDrafting: row.research_ai_drafting ?? true,
     profileVersion: row.profile_version,
     updatedAt: row.updated_at,
   };

@@ -1,4 +1,6 @@
 import {
+  PROFILE_INTERESTS,
+  PROFILE_MARKETS,
   parsePreferencesFormData,
   parseProfileFormData,
   PROFILE_COUNTRY_MAX_LENGTH,
@@ -56,6 +58,18 @@ describe("profile input policy", () => {
         lastName: "Stone",
         phone: "+1 (415) 555-0100",
         country: "United States",
+        // Not sent by this form, and that is the point: a field the client omits parses as
+        // its default rather than failing the whole submission, so a desktop or a form that
+        // renders a subset keeps working.
+        displayName: "",
+        occupation: "",
+        company: "",
+        website: "",
+        bio: "",
+        experienceLevel: "",
+        primaryWorkflow: "",
+        interests: "",
+        markets: "",
         profileVersion: 7,
       },
     });
@@ -164,6 +178,19 @@ describe("profile input policy", () => {
         notifyPriceAlerts: true,
         notifyPortfolioMoves: false,
         notifyNewsDigest: true,
+        notifyWeeklySummary: false,
+        notifyResearchComplete: false,
+        notifySecurityAlerts: false,
+        showMarketTimesInLocal: false,
+        pulseDesktopAlerts: false,
+        researchAiDrafting: false,
+        // Absent select values fall back to the column defaults, so a form rendering a
+        // subset of the controls does not reset the rest to the first option in each list.
+        uiDensity: "comfortable",
+        timeFormat: "24h",
+        gainColour: "green_up",
+        changeDisplay: "percent",
+        pulseMinSeverity: "medium",
         profileVersion: 7,
       },
     });
@@ -247,5 +274,79 @@ describe("profile input policy", () => {
       success: false,
       state: { status: "error" },
     });
+  });
+});
+
+describe("profile detail and the terminal's vocabulary", () => {
+  it("accepts only interest tokens the terminal recognises", () => {
+    const form = profileForm();
+    form.append("interests", "stocks");
+    form.append("interests", "tulips");
+
+    expect(parseProfileFormData(form)).toMatchObject({ success: false });
+  });
+
+  it("normalises and de-duplicates the interests it accepts", () => {
+    const form = profileForm();
+    form.append("interests", "Crypto");
+    form.append("interests", "crypto");
+    form.append("interests", "macro");
+
+    const result = parseProfileFormData(form);
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.interests).toBe("crypto,macro");
+  });
+
+  it("keeps the vocabulary identical to the one the Account API validates", () => {
+    // Three copies of one list — desktop, Account API, console — in repositories that cannot
+    // import from each other. If they drift, a user picks an interest the terminal has never
+    // heard of and nothing changes, which looks exactly like personalisation that worked.
+    expect(PROFILE_INTERESTS.map((option) => option.value)).toEqual([
+      "stocks",
+      "crypto",
+      "commodities",
+      "currencies",
+      "rates",
+      "macro",
+    ]);
+    expect(PROFILE_MARKETS.map((option) => option.value)).toEqual([
+      "us",
+      "europe",
+      "india",
+      "asia",
+    ]);
+  });
+
+  it("refuses a website that is not a full URL", () => {
+    const form = profileForm();
+    form.set("website", "quantifyterminal.com");
+
+    expect(parseProfileFormData(form)).toMatchObject({ success: false });
+  });
+
+  it("accepts an empty website, because it is optional", () => {
+    const form = profileForm();
+    form.set("website", "");
+
+    expect(parseProfileFormData(form)).toMatchObject({ success: true });
+  });
+
+  it("offers red-up as a gain colour", () => {
+    // The convention across much of Asia.
+    const form = preferencesForm();
+    form.set("gainColour", "red_up");
+
+    const result = parsePreferencesFormData(form);
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.gainColour).toBe("red_up");
+  });
+
+  it("refuses a display choice outside its set", () => {
+    const form = preferencesForm();
+    form.set("gainColour", "purple_up");
+
+    expect(parsePreferencesFormData(form)).toMatchObject({ success: false });
   });
 });

@@ -105,6 +105,18 @@ describe("profile Server Actions", () => {
         last_name: "Stone",
         phone: "+1 415 555 0100",
         country: "United States",
+        // The descriptive half of the profile. A form that renders a field must send it even
+        // when it is empty, or clearing a value would be indistinguishable from not touching
+        // it and the field could never be emptied once set.
+        display_name: "",
+        occupation: "",
+        company: "",
+        website: "",
+        bio: "",
+        experience_level: "",
+        interests: "",
+        markets: "",
+        primary_workflow: "",
       },
       { idempotencyKey: expect.any(String) },
     );
@@ -131,6 +143,17 @@ describe("profile Server Actions", () => {
         notify_price_alerts: true,
         notify_portfolio_moves: false,
         notify_news_digest: true,
+        notify_weekly_summary: false,
+        notify_research_complete: false,
+        notify_security_alerts: false,
+        ui_density: "comfortable",
+        time_format: "24h",
+        show_market_times_in_local: false,
+        gain_colour: "green_up",
+        change_display: "percent",
+        pulse_min_severity: "medium",
+        pulse_desktop_alerts: false,
+        research_ai_drafting: false,
       },
       { idempotencyKey: expect.any(String) },
     );
