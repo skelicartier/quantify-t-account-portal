@@ -33,6 +33,7 @@ function connection(overrides: Partial<BrokerConnection> = {}): BrokerConnection
     credential_last_four: "0API",
     last_test_at: "2026-09-13T11:00:00Z",
     last_test_success: true,
+    trading_enabled: true,
     last_error: "",
     created_at: "2026-09-13T10:00:00Z",
     updated_at: "2026-09-13T11:00:00Z",
@@ -145,6 +146,14 @@ describe("BrokerConnections", () => {
       const row = screen.getByRole("row", { name: /Paper desk/iu });
       expect(row).toHaveTextContent("Needs a test");
       expect(row).toHaveTextContent("Never tested");
+    });
+
+    it("holds a connection back when its trading switch is off", () => {
+      // The service checks this before anything else and refuses the order. Saying "Ready"
+      // here promised something the order route would decline.
+      renderPage([connection({ trading_enabled: false })]);
+
+      expect(screen.getByRole("row", { name: /Paper desk/iu })).toHaveTextContent("Needs a test");
     });
 
     it("surfaces the reason the last test failed", () => {

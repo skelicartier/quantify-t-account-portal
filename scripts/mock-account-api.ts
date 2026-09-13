@@ -1099,6 +1099,7 @@ type MockBrokerConnection = {
   credential_last_four: string;
   last_test_at: string | null;
   last_test_success: boolean;
+  trading_enabled: boolean;
   last_error: string;
   created_at: string;
   updated_at: string;
@@ -2398,6 +2399,9 @@ const server = createServer(async (request, response) => {
       credential_last_four: primary.length >= 12 ? primary.slice(-4) : "",
       last_test_at: null as string | null,
       last_test_success: false,
+      // A new connection cannot trade until it has been tested, which is what the service
+      // does: `record_broker_test_result` is what turns this on.
+      trading_enabled: false,
       last_error: "",
       created_at: iso(0),
       updated_at: iso(0),
@@ -2426,6 +2430,7 @@ const server = createServer(async (request, response) => {
       }
       row.last_test_success = true;
       row.last_test_at = iso(0);
+      row.trading_enabled = true;
       row.last_error = "";
       row.account_reference = row.broker === "upstox" ? "UP1234" : "PA3XYZ";
       return ok(response, { ok: true, message: "Connected.", connection: publicBrokerView(row) });

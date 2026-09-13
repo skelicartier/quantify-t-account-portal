@@ -146,6 +146,8 @@ export type BrokerConnection = {
   credential_last_four: string;
   last_test_at: string | null;
   last_test_success: boolean;
+  /** The connection's own switch. Off means the service refuses orders on it. */
+  trading_enabled: boolean;
   last_error: string;
   created_at: string | null;
   updated_at: string | null;
@@ -171,6 +173,12 @@ export function connectionReadiness(
   connection: BrokerConnection,
   now: number,
 ): { ready: boolean; reason: string } {
+  // Checked first, because it is the one the customer can act on immediately and the one the
+  // service checks before anything else. Saying "Ready" for a connection whose switch is off
+  // promises something the order route will refuse.
+  if (!connection.trading_enabled) {
+    return { ready: false, reason: "Trading is switched off for this connection." };
+  }
   if (!connection.last_test_success) {
     return { ready: false, reason: "Test this connection before trading with it." };
   }

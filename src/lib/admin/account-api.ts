@@ -1954,6 +1954,9 @@ export const brokerConnectionSchema = z
     credential_last_four: z.string().max(8),
     last_test_at: z.string().max(64).nullable(),
     last_test_success: z.boolean(),
+    // The connection's own kill switch. `.strict()` means this has to be declared here the
+    // moment the service starts sending it, or every broker read fails to parse.
+    trading_enabled: z.boolean(),
     last_error: z.string().max(400),
     created_at: z.string().max(64).nullable(),
     updated_at: z.string().max(64).nullable(),
