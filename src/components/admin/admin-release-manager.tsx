@@ -331,67 +331,59 @@ function Announcement({
 function ServingControls({
   version,
   disabled,
-  setDisabled,
+  formAction,
+  pending,
 }: {
   version: string;
   disabled: boolean;
-  setDisabled: ReleaseAction;
+  formAction: (formData: FormData) => void;
+  pending: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(setDisabled, INITIAL_RELEASE_ACTION_STATE);
   return (
-    <div className="stack stack--tight">
-      <form action={formAction} className="inline-actions">
-        <input type="hidden" name="version" value={version} />
-        <input type="hidden" name="disabled" value={String(!disabled)} />
-        <Button variant={disabled ? "primary" : "danger"} type="submit" disabled={pending}>
-          {pending
-            ? "Working…"
-            : disabled
-              ? "Serve this release again"
-              : "Stop serving this release"}
-        </Button>
-      </form>
-      <Result state={state} />
-    </div>
+    <form action={formAction} className="inline-actions">
+      <input type="hidden" name="version" value={version} />
+      <input type="hidden" name="disabled" value={String(!disabled)} />
+      <Button variant={disabled ? "primary" : "danger"} type="submit" disabled={pending}>
+        {pending ? "Working…" : disabled ? "Serve this release again" : "Stop serving this release"}
+      </Button>
+    </form>
   );
 }
 
 function RollbackForm({
   entry,
-  rollback,
+  formAction,
+  pending,
 }: {
   entry: ReleaseHistoryEntry;
-  rollback: ReleaseAction;
+  formAction: (formData: FormData) => void;
+  pending: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(rollback, INITIAL_RELEASE_ACTION_STATE);
   const id = useId();
   const [confirmation, setConfirmation] = useState("");
   return (
-    <div className="stack stack--tight">
-      <form action={formAction} className="inline-actions">
-        <input type="hidden" name="version" value={entry.version} />
-        <label className="sr-only" htmlFor={`${id}-confirm`}>
-          Type {entry.version} to roll back to it
-        </label>
-        <Input
-          id={`${id}-confirm`}
-          name="confirm_version"
-          value={confirmation}
-          onChange={(event) => setConfirmation(event.currentTarget.value)}
-          placeholder={entry.version}
-          autoComplete="off"
-          inputMode="decimal"
-        />
-        <Button
-          variant="danger"
-          type="submit"
-          disabled={pending || confirmation.trim() !== entry.version}
-        >
-          {pending ? "Rolling back…" : "Roll back"}
-        </Button>
-      </form>
-      <Result state={state} />
-    </div>
+    <form action={formAction} className="inline-actions">
+      <input type="hidden" name="version" value={entry.version} />
+      <label className="sr-only" htmlFor={`${id}-confirm`}>
+        Type {entry.version} to roll back to it
+      </label>
+      <Input
+        id={`${id}-confirm`}
+        name="confirm_version"
+        value={confirmation}
+        onChange={(event) => setConfirmation(event.currentTarget.value)}
+        placeholder={entry.version}
+        autoComplete="off"
+        inputMode="decimal"
+      />
+      <Button
+        variant="danger"
+        type="submit"
+        disabled={pending || confirmation.trim() !== entry.version}
+      >
+        {pending ? "Rolling back…" : "Roll back"}
+      </Button>
+    </form>
   );
 }
 
@@ -412,74 +404,95 @@ function Catalogue({
   rollback: ReleaseAction;
   setDisabled: ReleaseAction;
 }) {
+  // One action state for the whole table rather than one per row, because a successful
+  // rollback moves which row is current: the row that submitted stops rendering a rollback
+  // form and starts rendering the serving controls, and a message held inside it would be
+  // thrown away at the exact moment the operator needs to read it.
+  const [rollbackState, rollbackAction, rollbackPending] = useActionState(
+    rollback,
+    INITIAL_RELEASE_ACTION_STATE,
+  );
+  const [servingState, servingAction, servingPending] = useActionState(
+    setDisabled,
+    INITIAL_RELEASE_ACTION_STATE,
+  );
   return (
-    <DataTable
-      caption="Published releases, newest first"
-      columns={HISTORY_COLUMNS}
-      minWidth={880}
-      isEmpty={catalogue.entries.length === 0}
-      empty={
-        <EmptyState
-          title="No release has been published"
-          description="The catalogue is empty. The first publish from this page starts it."
-        />
-      }
-    >
-      {catalogue.entries.map((entry) => {
-        const isCurrent = entry.version === catalogue.currentVersion;
-        return (
-          <tr key={entry.version}>
-            <td>
-              <span className="data-table__primary mono">{entry.version}</span>
-              {entry.title && <span className="data-table__secondary">{entry.title}</span>}
-            </td>
-            <td>
-              {entry.created_at ? (
-                <LocalTime value={entry.created_at} />
-              ) : (
-                <span className="muted">Not recorded</span>
-              )}
-              <span className="data-table__secondary">{entry.channel}</span>
-            </td>
-            <td>
-              <span className="data-table__primary">
-                {entry.force_update
-                  ? "Required"
-                  : (RELEASE_SEVERITY_LABELS[
-                      entry.severity as keyof typeof RELEASE_SEVERITY_LABELS
-                    ] ?? entry.severity)}
-              </span>
-              {!entry.signed && <span className="data-table__secondary">Unsigned</span>}
-            </td>
-            <td>
-              {/* Explicit tone and label: "serving" and "superseded" are release words, not
+    <div className="stack">
+      <Result state={rollbackState} />
+      <Result state={servingState} />
+      <DataTable
+        caption="Published releases, newest first"
+        columns={HISTORY_COLUMNS}
+        minWidth={880}
+        isEmpty={catalogue.entries.length === 0}
+        empty={
+          <EmptyState
+            title="No release has been published"
+            description="The catalogue is empty. The first publish from this page starts it."
+          />
+        }
+      >
+        {catalogue.entries.map((entry) => {
+          const isCurrent = entry.version === catalogue.currentVersion;
+          return (
+            <tr key={entry.version}>
+              <td>
+                <span className="data-table__primary mono">{entry.version}</span>
+                {entry.title && <span className="data-table__secondary">{entry.title}</span>}
+              </td>
+              <td>
+                {entry.created_at ? (
+                  <LocalTime value={entry.created_at} />
+                ) : (
+                  <span className="muted">Not recorded</span>
+                )}
+                <span className="data-table__secondary">{entry.channel}</span>
+              </td>
+              <td>
+                <span className="data-table__primary">
+                  {entry.force_update
+                    ? "Required"
+                    : (RELEASE_SEVERITY_LABELS[
+                        entry.severity as keyof typeof RELEASE_SEVERITY_LABELS
+                      ] ?? entry.severity)}
+                </span>
+                {!entry.signed && <span className="data-table__secondary">Unsigned</span>}
+              </td>
+              <td>
+                {/* Explicit tone and label: "serving" and "superseded" are release words, not
                   part of the console's shared status vocabulary, and inferring a tone from
                   a word the table does not recognise renders every row neutral. */}
-              {isCurrent ? (
-                <StatusPill
-                  value={entry.disabled ? "disabled" : "enabled"}
-                  tone={entry.disabled ? "danger" : "live"}
-                  label={entry.disabled ? "Not served" : "Serving"}
-                />
-              ) : (
-                <StatusPill value="superseded" tone="neutral" label="Superseded" />
-              )}
-            </td>
-            <td className="data-table__actions">
-              {isCurrent ? (
-                <ServingControls
-                  version={entry.version}
-                  disabled={entry.disabled}
-                  setDisabled={setDisabled}
-                />
-              ) : (
-                <RollbackForm entry={entry} rollback={rollback} />
-              )}
-            </td>
-          </tr>
-        );
-      })}
-    </DataTable>
+                {isCurrent ? (
+                  <StatusPill
+                    value={entry.disabled ? "disabled" : "enabled"}
+                    tone={entry.disabled ? "danger" : "live"}
+                    label={entry.disabled ? "Not served" : "Serving"}
+                  />
+                ) : (
+                  <StatusPill value="superseded" tone="neutral" label="Superseded" />
+                )}
+              </td>
+              <td className="data-table__actions">
+                {isCurrent ? (
+                  <ServingControls
+                    version={entry.version}
+                    disabled={entry.disabled}
+                    formAction={servingAction}
+                    pending={servingPending}
+                  />
+                ) : (
+                  <RollbackForm
+                    entry={entry}
+                    formAction={rollbackAction}
+                    pending={rollbackPending}
+                  />
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </DataTable>
+    </div>
   );
 }
 
@@ -489,8 +502,12 @@ export function AdminReleaseManager({
   rollback,
   setDisabled,
 }: ReleaseManagerProps) {
+  // A fragment, not another `.board`: the page already provides one, and a nested grid item
+  // takes `min-width: auto`, which stops it shrinking below the min-content width of the
+  // release table inside it. The table then pushes the whole page sideways at phone width
+  // even though it has its own scroll container.
   return (
-    <div className="board">
+    <>
       {!catalogue.signingConfigured && (
         <Callout tone="danger" role="alert" title="Release signing is not configured">
           The release service has no signing key, so it will refuse to publish. Put the Ed25519
@@ -516,6 +533,6 @@ export function AdminReleaseManager({
       >
         <Catalogue catalogue={catalogue} rollback={rollback} setDisabled={setDisabled} />
       </Card>
-    </div>
+    </>
   );
 }

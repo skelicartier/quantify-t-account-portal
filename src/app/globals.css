@@ -1473,6 +1473,12 @@
 
   /* tables */
   .table-frame {
+    /* A containing block, so that an absolutely positioned descendant is clipped by this
+       scroll container rather than by whatever is positioned above it. `.sr-only` is
+       `position: absolute`, and a visually-hidden label in a far-right column of a wide
+       table would otherwise resolve against the enclosing card and push the whole page
+       sideways — 190px of horizontal scroll from a 1px element nobody can see. */
+    position: relative;
     max-height: min(72vh, 720px);
     overflow: auto;
     border: 1px solid var(--line);
@@ -2869,6 +2875,11 @@
   .board {
     display: grid;
     gap: 20px;
+    /* Grid items default to `min-width: auto`, which refuses to shrink below the
+       min-content width of what is inside. A board holding a wide table — or nested inside
+       another board — then pushes the whole page sideways at phone width, even though the
+       table has its own scroll container. Every card already sets this for the same reason. */
+    min-width: 0;
   }
 
   @media (max-width: 720px) {

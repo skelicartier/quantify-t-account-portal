@@ -955,12 +955,141 @@ function bearer(request: IncomingMessage): string | null {
   return userId ?? null;
 }
 
+// ---- release deploy function -----------------------------------------------------
+//
+// A second service, served from the same process on purpose. The console reaches the
+// release function at `QT_UPDATE_DEPLOY_URL`, whose routes live under `/api` rather than
+// `/api/v1`, so pointing that variable at this mock's origin exercises the real client
+// against the real shapes without a second port to start and wait on.
+//
+// Its envelope is the deploy function's own — `{ok, error: "text"}` — not the Account
+// API's `{error: {code, message}}`. Using `fail()` here would make the console's release
+// error handling pass against a shape production never sends.
+
+type MockRelease = Record<string, unknown>;
+
+const releaseCatalogue: MockRelease[] = [
+  {
+    name: "Quantify Terminal",
+    title: "Faster charts",
+    version: "1.4.0",
+    description: "Chart rendering is roughly twice as fast on large books.",
+    features: ["Faster charts", "New geopolitics layers"],
+    severity: "recommended",
+    channel: "stable",
+    download_page_url: "https://www.quantifyterminal.com/download",
+    windows_url: "https://releases.example.test/quantify-terminal-1.4.0.exe",
+    mac_url: "https://releases.example.test/quantify-terminal-1.4.0.dmg",
+    linux_appimage_url: "",
+    linux_deb_url: "",
+    linux_rpm_url: "",
+    checksums: { windows: "a".repeat(64), mac: "b".repeat(64) },
+    force_update: false,
+    min_supported_version: "",
+    disabled: false,
+    created_at: "2026-09-10T09:00:00Z",
+    signature: "ff".repeat(32),
+  },
+  {
+    name: "Quantify Terminal",
+    title: "Pulse severity tuning",
+    version: "1.3.0",
+    description: "Pulse suppression no longer hides a second move on the same symbol.",
+    features: ["Pulse suppression fix"],
+    severity: "low",
+    channel: "stable",
+    download_page_url: "https://www.quantifyterminal.com/download",
+    windows_url: "https://releases.example.test/quantify-terminal-1.3.0.exe",
+    mac_url: "",
+    linux_appimage_url: "",
+    linux_deb_url: "",
+    linux_rpm_url: "",
+    checksums: { windows: "c".repeat(64) },
+    force_update: false,
+    min_supported_version: "",
+    disabled: false,
+    created_at: "2026-08-22T09:00:00Z",
+    signature: "ee".repeat(32),
+  },
+];
+let releaseCurrentVersion = "1.4.0";
+
+function releaseFail(response: ServerResponse, status: number, error: string) {
+  send(response, status, { ok: false, error });
+}
+
+function handleReleaseRoute(
+  route: string,
+  method: string,
+  json: Record<string, unknown>,
+  request: IncomingMessage,
+  response: ServerResponse,
+): boolean {
+  if (route !== "deploy_update" && route !== "release_history") return false;
+
+  const userId = bearer(request);
+  if (!userId) {
+    releaseFail(response, 401, "Invalid or expired session.");
+    return true;
+  }
+  const caller = person(userId);
+  if (caller.role !== "owner" && caller.role !== "admin") {
+    releaseFail(response, 403, "Administrator access required.");
+    return true;
+  }
+
+  if (route === "release_history") {
+    send(response, 200, {
+      ok: true,
+      signing_configured: process.env.MOCK_RELEASE_SIGNING !== "unconfigured",
+      current_version: releaseCurrentVersion,
+      releases: releaseCatalogue.map((entry) => {
+        const { signature, ...rest } = entry;
+        return { ...rest, signed: Boolean(signature) };
+      }),
+    });
+    return true;
+  }
+
+  if (method !== "POST") {
+    releaseFail(response, 405, "Method not allowed.");
+    return true;
+  }
+  // Owner-only, mirroring PUBLISH_RELEASE. An Admin can read the catalogue and not change it.
+  if (caller.role !== "owner") {
+    releaseFail(response, 403, "Publishing a release requires an Owner account.");
+    return true;
+  }
+  if (process.env.MOCK_RELEASE_SIGNING === "unconfigured") {
+    releaseFail(response, 503, "Release signing is not configured on this deployment.");
+    return true;
+  }
+  const version = String(json.version ?? "").trim();
+  if (!version) {
+    releaseFail(response, 400, "version is required.");
+    return true;
+  }
+  const manifest: MockRelease = { ...json, version, signature: "ff".repeat(32) };
+  const index = releaseCatalogue.findIndex((entry) => entry.version === version);
+  if (index >= 0) releaseCatalogue.splice(index, 1);
+  releaseCatalogue.unshift(manifest);
+  const serving = json.disabled !== true || releaseCurrentVersion === version;
+  if (serving) releaseCurrentVersion = version;
+  send(response, 200, { ok: true, version, serving });
+  return true;
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://127.0.0.1:${PORT}`);
   const route = url.pathname.replace(/^\/api\/v1\/?/u, "").replace(/\/+$/u, "");
   const method = request.method ?? "GET";
   const body = method === "POST" ? await readBody(request) : "";
   const json = body ? (JSON.parse(body) as Record<string, unknown>) : {};
+
+  if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/v1/")) {
+    const releaseRoute = url.pathname.replace(/^\/api\/?/u, "").replace(/\/+$/u, "");
+    if (handleReleaseRoute(releaseRoute, method, json, request, response)) return;
+  }
 
   if (DEGRADED.has(route)) {
     fail(response, 503, "upstream_unavailable", "A dependency is unavailable. Please retry.");
