@@ -58,7 +58,22 @@ export function AccountOverview({ account, canEnterAdmin = false, now }: Account
 
           <StatGrid columns={2} label="Account standing">
             <Stat label="Status" value={<StatusPill value={account.status} />} text />
-            <Stat label="Plan" value={planLabel(account.subscriptionTier)} text />
+            {/* Not asserted when the profile could not be read. `canonicalPlan` resolves
+                anything it does not recognise — including the empty string a failed read
+                leaves behind — to "free", so this stat printed "Free" with full confidence
+                directly beneath the callout saying the details were unavailable. Telling a
+                Desk customer they are on Free is worse than telling them nothing. */}
+            <Stat
+              label="Plan"
+              value={
+                account.profileState === "ready" ? (
+                  planLabel(account.subscriptionTier)
+                ) : (
+                  <span className="quiet">Unavailable</span>
+                )
+              }
+              text
+            />
             <Stat
               label="Last sign-in"
               value={<Timestamp value={account.lastSignInAt} now={now} />}
