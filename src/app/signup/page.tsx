@@ -6,6 +6,7 @@ import { SignupForm } from "@/components/auth/signup-form";
 import { Callout } from "@/components/ui/callout";
 import { isDesktopConnectNextPath } from "@/lib/auth/desktop-connect";
 import { sanitizeNextPath } from "@/lib/auth/login";
+import { turnstileSiteKey as resolveTurnstileSiteKey } from "@/lib/auth/turnstile";
 
 export const metadata = {
   title: "Create account",
@@ -25,7 +26,10 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   const nextPath = sanitizeNextPath(requestedPath);
   // Only the desktop handoff is worth carrying through sign-up and email confirmation.
   const returnsToDesktop = isDesktopConnectNextPath(nextPath);
-  const turnstileSiteKey = "";
+  // Rendered only when the challenge is fully configured — both the site key AND the secret
+  // this server verifies tokens with. A widget nothing verifies is theatre, and the site key
+  // alone was set in production while every page hardcoded "".
+  const turnstileSiteKey = resolveTurnstileSiteKey();
 
   return (
     <AuthShell

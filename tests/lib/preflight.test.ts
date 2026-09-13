@@ -380,6 +380,10 @@ const completeSnapshot: RepositorySnapshot = {
 const validEnvironment = {
   NEXT_PUBLIC_SITE_URL: "https://console.quantifyterminal.com",
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: "turnstile-public-value",
+  // Both halves, because half a bot challenge is not a complete contract: the site key
+  // renders the widget and the secret is what lets the server verify the token it produces.
+  // Production had only the first, and the preflight reported it as configured.
+  TURNSTILE_SECRET_KEY: "turnstile-secret-value",
   QT_ACCOUNT_API_URL: "https://account-api.azurewebsites.net/api/v1",
   // Required since release publishing moved into the console: without it there is no way
   // to ship a fix from a deployed portal.

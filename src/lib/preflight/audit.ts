@@ -16,6 +16,10 @@ const REQUIRED_PUBLIC_ENVIRONMENT = [
   "QT_UPDATE_DEPLOY_URL",
 ] as const;
 
+//: Observed, not required. The bot challenge is optional, but when half of it is configured
+//: that is worth saying — see the `auth.bot-challenge` check.
+const OBSERVED_ENVIRONMENT = ["TURNSTILE_SECRET_KEY"] as const;
+
 const FORBIDDEN_PORTAL_ENVIRONMENT = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
@@ -316,6 +320,17 @@ export function summarizeEnvironment(
     };
   });
 
+  // Observed but not required: absence is fine, and only `auth.bot-challenge` reads them.
+  // Marked neither required nor forbidden, so the required/forbidden loop ignores them and
+  // nobody is nagged for a control they have deliberately switched off.
+  const observed = OBSERVED_ENVIRONMENT.map((name) => ({
+    name,
+    configured: String(environment[name] ?? "").trim().length > 0,
+    placeholder: false,
+    forbidden: false,
+    observed: true,
+  }));
+
   const forbidden = FORBIDDEN_PORTAL_ENVIRONMENT.map((name) => ({
     name,
     configured: String(environment[name] ?? "").trim().length > 0,
@@ -323,7 +338,7 @@ export function summarizeEnvironment(
     forbidden: true,
   }));
 
-  return [...required, ...forbidden];
+  return [...required, ...observed, ...forbidden];
 }
 
 export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[] {
@@ -635,6 +650,9 @@ export function buildPreflightReport(input: {
           `${variable.name} must not exist in the portal runtime.`,
         ),
       );
+    } else if (variable.observed) {
+      // Reported by name only;  says what its presence means.
+      continue;
     } else if (!variable.forbidden && (!variable.configured || variable.placeholder)) {
       checks.push(
         check(
@@ -656,6 +674,43 @@ export function buildPreflightReport(input: {
         ),
       );
     }
+  }
+
+  // The bot challenge needs a site key AND a secret. Only the site key was ever set, and the
+  // required-variable check above reported it as present — so the preflight said the control
+  // was configured while no widget rendered and nothing called siteverify. A check that
+  // reports half a control as a whole one is worse than no check.
+  {
+    // Read from the presence summary, which carries only {name, configured, placeholder} —
+    // never a value. Whether a key exists is all this check needs.
+    const present = (name: string): boolean => {
+      const entry = environment.find((variable) => variable.name === name);
+      return Boolean(entry?.configured) && !entry?.placeholder;
+    };
+    const site = present("NEXT_PUBLIC_TURNSTILE_SITE_KEY");
+    const secret = present("TURNSTILE_SECRET_KEY");
+    const both = site && secret;
+    const neither = !site && !secret;
+    checks.push(
+      check(
+        "auth.bot-challenge",
+        "environment",
+        both || neither ? "pass" : "warning",
+        both
+          ? "The sign-in bot challenge is configured and verified server-side."
+          : neither
+            ? "The sign-in bot challenge is switched off; no widget is rendered and none is required."
+            : "The sign-in bot challenge is half-configured, so it protects nothing.",
+        both || neither
+          ? []
+          : [
+              site
+                ? "NEXT_PUBLIC_TURNSTILE_SITE_KEY is set but TURNSTILE_SECRET_KEY is not, so no token can be verified."
+                : "TURNSTILE_SECRET_KEY is set but NEXT_PUBLIC_TURNSTILE_SITE_KEY is not, so no token is ever produced.",
+              "The challenge stays off until both are set, rather than showing a check nothing verifies.",
+            ],
+      ),
+    );
   }
 
   for (const probe of network) {

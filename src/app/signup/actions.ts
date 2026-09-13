@@ -10,6 +10,7 @@ import {
 import { parseSignupFormData, type SignupActionState } from "@/lib/auth/signup";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { createServerAzureClient } from "@/lib/supabase/server";
+import { verifyChallenge } from "@/lib/auth/turnstile";
 
 const EMPTY_FIELD_ERRORS: SignupActionState["fieldErrors"] = {
   fullName: [],
@@ -90,6 +91,17 @@ export async function signup(
 
   try {
     await requireSameOriginServerAction();
+    // The challenge, checked with Cloudflare rather than merely collected. A no-op unless
+    // both halves are configured, so a deployment that has not set them up is unaffected.
+    const challenge = await verifyChallenge(parsed.data.captchaToken);
+    if (!challenge.ok) {
+      return {
+        status: "error",
+        message: challenge.message,
+        fieldErrors: { ...EMPTY_FIELD_ERRORS, challenge: [challenge.message] },
+      };
+    }
+
     const azure = await createServerAzureClient();
     const result = await azure.signUp(
       parsed.data.email,

@@ -6,6 +6,7 @@ import { LoginForm } from "@/components/auth/login-form";
 import { Callout } from "@/components/ui/callout";
 import { isDesktopConnectNextPath } from "@/lib/auth/desktop-connect";
 import { sanitizeNextPath } from "@/lib/auth/login";
+import { turnstileSiteKey as resolveTurnstileSiteKey } from "@/lib/auth/turnstile";
 
 export const metadata = {
   title: "Sign in",
@@ -55,8 +56,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const notice = noticeKey ? NOTICES[noticeKey] : undefined;
   // The desktop app sent the visitor here; the handoff rides along into sign-up too.
   const returnsToDesktop = isDesktopConnectNextPath(nextPath);
-  // Turnstile enforcement is not enabled for this deployment; the field stays inert.
-  const turnstileSiteKey = "";
+  // Rendered only when the challenge is fully configured — both the site key AND the secret
+  // this server verifies tokens with. A widget nothing verifies is theatre, and the site key
+  // alone was set in production while every page hardcoded "".
+  const turnstileSiteKey = resolveTurnstileSiteKey();
 
   return (
     <AuthShell

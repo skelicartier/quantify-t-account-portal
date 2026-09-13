@@ -171,6 +171,8 @@ export type EnvironmentPresence = {
   configured: boolean;
   placeholder: boolean;
   forbidden: boolean;
+  /** Reported on, never required. Absence is a legitimate configuration. */
+  observed?: boolean;
 };
 
 export type NetworkProbe = {

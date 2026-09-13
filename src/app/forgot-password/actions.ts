@@ -4,6 +4,7 @@ import { parseRecoveryRequestFormData, type RecoveryRequestActionState } from "@
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { AzureAuthClient } from "@/lib/azure-auth-client";
 import { getAzureAuthConfig } from "@/lib/azure-auth-config";
+import { verifyChallenge } from "@/lib/auth/turnstile";
 
 const EMPTY_FIELD_ERRORS: RecoveryRequestActionState["fieldErrors"] = {
   email: [],
@@ -31,6 +32,17 @@ export async function requestPasswordRecovery(
 
   try {
     await requireSameOriginServerAction();
+    // The challenge, checked with Cloudflare rather than merely collected. A no-op unless
+    // both halves are configured, so a deployment that has not set them up is unaffected.
+    const challenge = await verifyChallenge(parsed.data.captchaToken);
+    if (!challenge.ok) {
+      return {
+        status: "error",
+        message: challenge.message,
+        fieldErrors: { email: [], challenge: [challenge.message] },
+      };
+    }
+
     const config = getAzureAuthConfig();
     const client = new AzureAuthClient(config.apiUrl);
     await client.forgotPassword(parsed.data.email);

@@ -14,6 +14,7 @@ import {
 import { parseTotpCodeOnlyFormData } from "@/lib/auth/security-input";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
 import { createServerAzureClient } from "@/lib/supabase/server";
+import { verifyChallenge } from "@/lib/auth/turnstile";
 
 const AUTHENTICATION_ERROR: LoginActionState = {
   status: "error",
@@ -48,6 +49,17 @@ export async function login(
 
   try {
     await requireSameOriginServerAction();
+    // The challenge, checked with Cloudflare rather than merely collected. A no-op unless
+    // both halves are configured, so a deployment that has not set them up is unaffected.
+    const challenge = await verifyChallenge(parsed.data.captchaToken);
+    if (!challenge.ok) {
+      return {
+        status: "error",
+        message: challenge.message,
+        fieldErrors: { email: [], password: [], challenge: [challenge.message] },
+      };
+    }
+
     const azure = await createServerAzureClient();
     const { data, error } = await azure.signInWithPassword(parsed.data.email, parsed.data.password);
     if (error) return isCredentialRejection(error) ? AUTHENTICATION_ERROR : SERVICE_ERROR;

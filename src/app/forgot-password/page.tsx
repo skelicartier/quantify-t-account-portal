@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requestPasswordRecovery } from "@/app/forgot-password/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { RecoveryRequestForm } from "@/components/auth/recovery-request-form";
+import { turnstileSiteKey as resolveTurnstileSiteKey } from "@/lib/auth/turnstile";
 
 export const metadata = {
   title: "Recover account",
@@ -11,7 +12,10 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default function ForgotPasswordPage() {
-  const turnstileSiteKey = "";
+  // Rendered only when the challenge is fully configured — both the site key AND the secret
+  // this server verifies tokens with. A widget nothing verifies is theatre, and the site key
+  // alone was set in production while every page hardcoded "".
+  const turnstileSiteKey = resolveTurnstileSiteKey();
 
   return (
     <AuthShell
