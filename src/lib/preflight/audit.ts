@@ -11,6 +11,9 @@ const REQUIRED_PUBLIC_ENVIRONMENT = [
   "NEXT_PUBLIC_SITE_URL",
   "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
   "QT_ACCOUNT_API_URL",
+  // The update function's origin. Required rather than optional because the console is the
+  // only place a release can be published from: without it there is no way to ship a fix.
+  "QT_UPDATE_DEPLOY_URL",
 ] as const;
 
 const FORBIDDEN_PORTAL_ENVIRONMENT = [
@@ -29,6 +32,7 @@ const FORBIDDEN_PORTAL_ENVIRONMENT = [
 // activation and passwords are the Account API's.
 const CURRENT_AZURE_ROUTES = [
   "deploy_update",
+  "release_history",
   "set_app_config",
   "app_config",
   "management_set_notifications",

@@ -247,6 +247,7 @@ const completeSnapshot: RepositorySnapshot = {
     "NEXT_PUBLIC_SITE_URL=https://account.example.invalid",
     "NEXT_PUBLIC_TURNSTILE_SITE_KEY=replace-with-site-key",
     "QT_ACCOUNT_API_URL=https://api.example.invalid",
+    "QT_UPDATE_DEPLOY_URL=https://updates.example.invalid/api",
     "QT_MARKETING_SITE_URL=https://www.example.invalid",
     "QT_DESKTOP_PROJECT_PATH=../Quantify Terminal",
   ].join("\n"),
@@ -323,6 +324,7 @@ const completeSnapshot: RepositorySnapshot = {
     "Access-Control-Allow-Origin: https://console.quantifyterminal.com",
     ...[
       "deploy_update",
+      "release_history",
       "set_app_config",
       "app_config",
       "management_set_notifications",
@@ -379,6 +381,9 @@ const validEnvironment = {
   NEXT_PUBLIC_SITE_URL: "https://console.quantifyterminal.com",
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: "turnstile-public-value",
   QT_ACCOUNT_API_URL: "https://account-api.azurewebsites.net/api/v1",
+  // Required since release publishing moved into the console: without it there is no way
+  // to ship a fix from a deployed portal.
+  QT_UPDATE_DEPLOY_URL: "https://qt-update.azurewebsites.net/api",
 };
 
 describe("preflight audit", () => {

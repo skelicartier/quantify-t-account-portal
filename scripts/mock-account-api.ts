@@ -38,6 +38,7 @@ const CAPABILITIES: Record<Persona, string[]> = {
     "configuration:read",
     "credentials:read-status",
     "releases:read-status",
+    "releases:publish",
     "subscription:write",
     "secrets:read",
     "secrets:write",
@@ -1826,6 +1827,7 @@ const server = createServer(async (request, response) => {
       "configuration:read",
       "credentials:read-status",
       "notifications:write",
+      "releases:publish",
       "releases:read-status",
       "roles:read-report",
       "roles:write",
@@ -2137,13 +2139,13 @@ const server = createServer(async (request, response) => {
     return ok(response, {
       generated_at: iso(0),
       release_management: {
-        configured: false,
-        publish_enabled: false,
-        rollback_enabled: false,
+        configured: true,
+        publish_enabled: true,
+        rollback_enabled: true,
         requires_https_url: true,
         requires_checksum: true,
         requires_server_signature: true,
-        status: "source-locked",
+        status: "console",
       },
     });
   }

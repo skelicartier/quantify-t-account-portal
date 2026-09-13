@@ -19,6 +19,15 @@ export const CONFIGURATION_CAPABILITY = "configuration:read";
 export const CREDENTIAL_STATUS_CAPABILITY = "credentials:read-status";
 export const RELEASE_STATUS_CAPABILITY = "releases:read-status";
 /**
+ * Publishing a release, rolling one back, disabling one.
+ *
+ * Owner-only, and separated from reading release status for the same reason the two secret
+ * capabilities are separated — only more so. Every other write in this console changes what
+ * one account may do; this one changes what executable every installed desktop downloads,
+ * and whether it installs without asking.
+ */
+export const RELEASE_PUBLISH_CAPABILITY = "releases:publish";
+/**
  * The credentials the product spends — provider keys, market-data keys, map tokens — as
  * distinct from the account service's own settings (`CREDENTIAL_STATUS_CAPABILITY`).
  *
@@ -763,7 +772,11 @@ export const accountApiAdminReleaseStatusSchema = z
         requires_https_url: z.boolean(),
         requires_checksum: z.boolean(),
         requires_server_signature: z.boolean(),
-        status: z.enum(["source-locked"]),
+        // `source-locked` said publishing happened at the deployment source and not here.
+        // It does happen here now, so the value changed with the code rather than being
+        // left to contradict the form beside it. Both spellings are accepted so a console
+        // deployed ahead of the Account API still renders.
+        status: z.enum(["source-locked", "console"]),
       })
       .strict(),
   })

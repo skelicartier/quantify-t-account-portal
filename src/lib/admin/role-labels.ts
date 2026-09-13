@@ -96,6 +96,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   "configuration:read": "View configuration",
   "credentials:read-status": "View credential status",
   "releases:read-status": "View release status",
+  "releases:publish": "Publish and roll back releases",
   "secrets:read": "View provider key status",
   "secrets:write": "Replace provider keys",
   "support:read": "Read support conversations",

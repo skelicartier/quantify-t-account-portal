@@ -4,6 +4,11 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import { heartbeatAccountApiSession } from "@/lib/account/session-lifecycle";
+import {
+  fetchReleaseCatalogue,
+  releaseApiConfigured,
+  type ReleaseCatalogue,
+} from "@/lib/admin/release-api";
 import { getCurrentAssurance } from "@/lib/dal/assurance-guard";
 import {
   AccountApiRequestError,
@@ -32,6 +37,7 @@ import {
   fetchAccountApiRoleReport,
   ENTITLEMENT_CHANGED_EVENT,
   NOTIFICATIONS_CAPABILITY,
+  RELEASE_PUBLISH_CAPABILITY,
   RELEASE_STATUS_CAPABILITY,
   ROLE_REPORT_CAPABILITY,
   STAFF_WRITE_CAPABILITY,
@@ -334,12 +340,19 @@ export type AdminSupportConversationAccess =
       capability: typeof SUPPORT_READ_CAPABILITY;
     };
 
+/** Why the release catalogue is missing; the page renders the rest either way. */
+export type ReleaseCatalogueFailure = "unconfigured" | "unreachable" | "forbidden";
+
 export type AdminReleaseStatusAccess =
   | {
       status: "authorized";
       me: AccountApiMe;
       assurance: AssuranceState;
       releaseStatus: AccountApiAdminReleaseStatus;
+      /** Whether this account holds `releases:publish`; the form is read-only without it. */
+      canPublish: boolean;
+      catalogue: ReleaseCatalogue | null;
+      catalogueFailure: ReleaseCatalogueFailure | null;
     }
   | { status: "mfa-required"; me: AccountApiMe; assurance: AssuranceState }
   | { status: "forbidden"; me: AccountApiMe }
@@ -427,6 +440,10 @@ export function canWriteManagedSecrets(me: AccountApiMe): boolean {
 
 export function canReadReleaseStatus(me: AccountApiMe): boolean {
   return me.capabilities.includes(RELEASE_STATUS_CAPABILITY);
+}
+
+export function canPublishRelease(me: AccountApiMe): boolean {
+  return me.capabilities.includes(RELEASE_PUBLISH_CAPABILITY);
 }
 
 /**
@@ -1131,10 +1148,31 @@ export const getAdminReleaseStatusAccess = cache(async (): Promise<AdminReleaseS
     };
   }
 
+  const canPublish = canPublishRelease(me);
+  // Two services, read together but failing apart. The release policy comes from the
+  // Account API and the catalogue from the deploy function, and a deploy function that is
+  // unreachable must not take the page down — an operator arriving during an incident needs
+  // to see what the requirements are even when the publishing endpoint is not answering.
+  const [releaseStatus, catalogue] = await Promise.all([
+    fetchAccountApiAdminReleaseStatus(accessToken),
+    (async (): Promise<ReleaseCatalogue | ReleaseCatalogueFailure> => {
+      if (!canPublish) return "forbidden";
+      if (!releaseApiConfigured()) return "unconfigured";
+      try {
+        return await fetchReleaseCatalogue(accessToken);
+      } catch {
+        return "unreachable";
+      }
+    })(),
+  ]);
+
   return {
     status: "authorized",
     me,
     assurance,
-    releaseStatus: await fetchAccountApiAdminReleaseStatus(accessToken),
+    releaseStatus,
+    canPublish,
+    catalogue: typeof catalogue === "string" ? null : catalogue,
+    catalogueFailure: typeof catalogue === "string" ? catalogue : null,
   };
 });

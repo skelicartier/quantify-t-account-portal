@@ -108,7 +108,8 @@ export const CONSTRUCT_ONLY_PROPERTIES: readonly string[] = [
   "adminUserSessionRevokeRoute",
   // Requires source-only notification targeting, admin authoring, receipts and safe links.
   "notificationRoutes",
-  // Requires Owner-only source status for configuration, credentials and release locks.
+  // Requires Owner-only status routes for configuration and credentials, and that release
+  // publishing is a capability of its own rather than folded into reading release status.
   "ownerStatusRoutes",
   // Requires the four managed-credential route constants and both capability constants.
   // It cannot prove that no other route returns a credential value; it does reject the
@@ -842,7 +843,10 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         "def admin_credential_status_dto",
         "def admin_release_status_dto",
         '"rotation": "source-locked"',
-        '"status": "source-locked"',
+        // Releases are no longer locked at the deployment source — they are published from
+        // the console, under an Owner-only capability. The evidence moved with the code so
+        // that a silent revert to the old literal fails here instead of passing quietly.
+        '"status": "console"',
       ]) &&
       includesAll(modules.config, [
         "email_worker_enabled",
@@ -870,6 +874,9 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
         'READ_CONFIGURATION = "configuration:read"',
         'READ_CREDENTIAL_STATUS = "credentials:read-status"',
         'READ_RELEASE_STATUS = "releases:read-status"',
+        // Separate from reading status, and granted to Owner alone. Publishing decides what
+        // executable every installed desktop downloads; reading status does not.
+        'PUBLISH_RELEASE = "releases:publish"',
       ]),
     managedSecretRoutes:
       includesAll(modules.app, [

@@ -1,4 +1,5 @@
 import { AdminGate } from "@/components/admin/admin-gate";
+import { AdminReleaseManager } from "@/components/admin/admin-release-manager";
 import { PageHeader } from "@/components/shell/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -12,10 +13,14 @@ import type {
   AdminConfigurationAccess,
   AdminCredentialStatusAccess,
   AdminReleaseStatusAccess,
+  ReleaseCatalogueFailure,
 } from "@/lib/admin/access";
 import { formatBytes, formatDurationSeconds, formatLabel, formatNumber } from "@/lib/format";
+import type { ReleaseActionState } from "@/lib/releases/release-input";
 
 type StatusProps<T> = { access: T; now?: number | undefined };
+
+type ReleaseAction = (state: ReleaseActionState, formData: FormData) => Promise<ReleaseActionState>;
 
 function FeatureRow({
   label,
@@ -248,63 +253,118 @@ function RequirementRow({ label, required }: { label: string; required: boolean 
   );
 }
 
-export function AdminReleases({ access, now }: StatusProps<AdminReleaseStatusAccess>) {
-  const status = access.status === "authorized" ? access.releaseStatus : null;
+/** Why there is no catalogue to show, said in the operator's terms rather than the API's. */
+const CATALOGUE_FAILURES: Record<ReleaseCatalogueFailure, { title: string; body: string }> = {
+  unconfigured: {
+    title: "The release service is not configured for this console",
+    body:
+      "Set QT_UPDATE_DEPLOY_URL to the update function's origin. Until then this page can show " +
+      "what a release must carry, but not what has been published or how to publish one.",
+  },
+  unreachable: {
+    title: "The release service could not be reached",
+    body:
+      "Nothing has changed — this is a read that failed. What is already published is still " +
+      "being served to every desktop; reload once the function is answering.",
+  },
+  forbidden: {
+    title: "This account can read release status but not publish",
+    body:
+      "Publishing, rollback and disabling need the releases:publish capability, which only an " +
+      "Owner holds. A release decides what executable every installed desktop downloads.",
+  },
+};
+
+type ReleasesProps = StatusProps<AdminReleaseStatusAccess> & {
+  publish: ReleaseAction;
+  rollback: ReleaseAction;
+  setDisabled: ReleaseAction;
+};
+
+export function AdminReleases({ access, now, publish, rollback, setDisabled }: ReleasesProps) {
+  const authorized = access.status === "authorized" ? access : null;
+  const status = authorized?.releaseStatus ?? null;
   const release = status?.release_management ?? null;
+  const failure = authorized?.catalogueFailure ?? null;
   return (
     <>
       <PageHeader
         eyebrow="Administration"
         title="Releases"
         titleId="admin-platform-heading"
-        description="Desktop release publishing status. Publishing itself happens at the deployment source."
+        description="Publish, roll back and stop serving the desktop build. This is the only place any of that happens."
         meta={
           status ? <Timestamp value={status.generated_at} now={now} prefix="Updated" /> : undefined
         }
       />
       <div className="page-content">
         <AdminGate access={access} section="Releases">
-          {release && (
-            <div className="card-grid card-grid--2">
-              <Card
-                eyebrow="Release management"
-                title="Controls"
-                titleId="admin-release-controls-heading"
+          <div className="board">
+            {failure && (
+              <Callout
+                tone={failure === "forbidden" ? "attention" : "danger"}
+                role={failure === "forbidden" ? "status" : "alert"}
+                title={CATALOGUE_FAILURES[failure].title}
               >
-                <KeyValue>
-                  <KeyValueRow label="Status">
-                    <StatusPill value={release.status} />
-                  </KeyValueRow>
-                  <KeyValueRow label="Configured">
-                    <YesNoPill value={release.configured} yes="Configured" no="Not configured" />
-                  </KeyValueRow>
-                  <KeyValueRow label="Publishing">
-                    <YesNoPill value={release.publish_enabled} yes="Enabled" no="Disabled" />
-                  </KeyValueRow>
-                  <KeyValueRow label="Rollback">
-                    <YesNoPill value={release.rollback_enabled} yes="Enabled" no="Disabled" />
-                  </KeyValueRow>
-                </KeyValue>
-              </Card>
-              <Card
-                eyebrow="Requirements"
-                title="Every release must have"
-                titleId="admin-release-requirements-heading"
-              >
-                <ul className="list-rows">
-                  <RequirementRow
-                    label="HTTPS download URLs"
-                    required={release.requires_https_url}
-                  />
-                  <RequirementRow label="Checksums" required={release.requires_checksum} />
-                  <RequirementRow
-                    label="Server signatures"
-                    required={release.requires_server_signature}
-                  />
-                </ul>
-              </Card>
-            </div>
-          )}
+                {CATALOGUE_FAILURES[failure].body}
+              </Callout>
+            )}
+            {authorized?.catalogue && (
+              <AdminReleaseManager
+                catalogue={authorized.catalogue}
+                publish={publish}
+                rollback={rollback}
+                setDisabled={setDisabled}
+              />
+            )}
+            {release && (
+              <div className="card-grid card-grid--2">
+                <Card
+                  eyebrow="Release management"
+                  title="Policy"
+                  titleId="admin-release-controls-heading"
+                  description="What this product allows, wherever it is deployed. Whether this console can reach the publishing endpoint is answered above."
+                >
+                  <KeyValue>
+                    <KeyValueRow label="Publishing happens">
+                      <StatusPill
+                        value={release.status}
+                        label={
+                          release.status === "console" ? "In this console" : "Locked at source"
+                        }
+                      />
+                    </KeyValueRow>
+                    <KeyValueRow label="Configured">
+                      <YesNoPill value={release.configured} yes="Configured" no="Not configured" />
+                    </KeyValueRow>
+                    <KeyValueRow label="Publishing">
+                      <YesNoPill value={release.publish_enabled} yes="Enabled" no="Disabled" />
+                    </KeyValueRow>
+                    <KeyValueRow label="Rollback">
+                      <YesNoPill value={release.rollback_enabled} yes="Enabled" no="Disabled" />
+                    </KeyValueRow>
+                  </KeyValue>
+                </Card>
+                <Card
+                  eyebrow="Requirements"
+                  title="Every release must have"
+                  titleId="admin-release-requirements-heading"
+                >
+                  <ul className="list-rows">
+                    <RequirementRow
+                      label="HTTPS download URLs"
+                      required={release.requires_https_url}
+                    />
+                    <RequirementRow label="Checksums" required={release.requires_checksum} />
+                    <RequirementRow
+                      label="Server signatures"
+                      required={release.requires_server_signature}
+                    />
+                  </ul>
+                </Card>
+              </div>
+            )}
+          </div>
         </AdminGate>
       </div>
     </>

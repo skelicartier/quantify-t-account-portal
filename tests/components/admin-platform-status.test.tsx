@@ -12,6 +12,7 @@ import type {
   AccountApiMe,
 } from "@/lib/admin/account-api";
 import type { AssuranceState } from "@/lib/auth/assurance";
+import { INITIAL_RELEASE_ACTION_STATE } from "@/lib/releases/release-input";
 
 const me: AccountApiMe = {
   ok: true,
@@ -87,15 +88,28 @@ const releaseStatus: AccountApiAdminReleaseStatus = {
   correlation_id: "qt-releases",
   generated_at: "2026-09-06T01:00:00Z",
   release_management: {
-    configured: false,
-    publish_enabled: false,
-    rollback_enabled: false,
+    configured: true,
+    publish_enabled: true,
+    rollback_enabled: true,
     requires_https_url: true,
     requires_checksum: true,
     requires_server_signature: true,
-    status: "source-locked",
+    status: "console",
   },
 };
+
+const noopAction = async () => INITIAL_RELEASE_ACTION_STATE;
+
+/** The release page with no catalogue: the policy half must still render. */
+const releaseAccess = {
+  status: "authorized",
+  me,
+  assurance,
+  releaseStatus,
+  canPublish: false,
+  catalogue: null,
+  catalogueFailure: "forbidden",
+} as const;
 
 describe("admin platform status", () => {
   it("renders configuration status without configured values", () => {
@@ -112,7 +126,12 @@ describe("admin platform status", () => {
     render(
       <>
         <AdminCredentials access={{ status: "authorized", me, assurance, credentialStatus }} />
-        <AdminReleases access={{ status: "authorized", me, assurance, releaseStatus }} />
+        <AdminReleases
+          access={releaseAccess}
+          publish={noopAction}
+          rollback={noopAction}
+          setDisabled={noopAction}
+        />
       </>,
     );
 
