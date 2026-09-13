@@ -78,13 +78,20 @@ function ConnectForm({ connect }: { connect: BrokerAction }) {
           <Input id={`${id}-name`} name="name" required maxLength={120} placeholder={broker.name} />
         </Field>
 
-        {broker.fields.map((field) => (
+        {/* Said once, under the last of them, rather than repeated verbatim under each.
+            Two and sometimes three identical twenty-word paragraphs stacked down the form
+            made the one thing worth reading here look like boilerplate. */}
+        {broker.fields.map((field, index) => (
           <Field
             key={field}
             id={`${id}-${field}`}
             label={CREDENTIAL_LABELS[field]}
             className="form-grid__span"
-            hint="Sent straight to the account service and encrypted there. It is never stored in this browser and never sent to the desktop app."
+            hint={
+              index === broker.fields.length - 1
+                ? "Sent straight to the account service and encrypted there. Never stored in this browser, and never sent to the desktop app."
+                : undefined
+            }
           >
             <Input
               id={`${id}-${field}`}
