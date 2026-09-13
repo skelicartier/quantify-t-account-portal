@@ -98,6 +98,34 @@ function pythonMethodSource(source: string | null, methodName: string): string {
   return next < 0 ? rest : rest.slice(0, marker.length + next);
 }
 
+function keepsAppPasscodeOffTheCloud(
+  authService: string | null,
+  azureFunction: string | null,
+): boolean {
+  // The property is "the app passcode never leaves the device", not "the string
+  // app_passcode_hash does not appear". Matching the bare identifier flagged the desktop for
+  // the twenty-odd lines that exist to *remove* the legacy data: the keychain key name, the
+  // save/read pair, and the migration that lifts a legacy hash out of the profile column and
+  // leaves APP_PASSCODE_STORE_MARKER in its place. Deleting those to satisfy the check would
+  // strand every install that has not migrated yet — the check would pass and the product
+  // would be worse. This is the same limitation model.ts already records about
+  // AccountApiEvidence: a string search cannot tell a defect from the code that fixes it.
+  const push = pythonMethodSource(authService, "_push_app_passcode_to_cloud");
+
+  return (
+    // The one path that could mirror a verifier upstream is a documented no-op.
+    includesEvery(push, ["def _push_app_passcode_to_cloud(", "return"]) &&
+    !push.includes("requests.") &&
+    !push.includes("urlopen") &&
+    !push.includes("_account_api_request") &&
+    !push.includes("update_user_metadata") &&
+    // The profile column carries a marker, not a verifier.
+    (authService ?? "").includes("APP_PASSCODE_STORE_MARKER") &&
+    // And the cloud function has no notion of one at all.
+    !includesAny(azureFunction, ["app_passcode_hash"])
+  );
+}
+
 function hasDesktopCloudPasswordLock(source: string | null): boolean {
   const helper = pythonMethodSource(source, "_hash_cloud_local_password_lock");
   const upsert = pythonMethodSource(source, "_upsert_local_cloud_user");
@@ -378,11 +406,10 @@ export function auditRepositories(snapshot: RepositorySnapshot): PreflightCheck[
     check(
       "desktop.legacy-pin-metadata",
       "desktop",
-      includesAny(snapshot.desktopAuthService, ["app_passcode_hash"]) ||
-        includesAny(snapshot.desktopAzureFunction, ["app_passcode_hash"])
-        ? "warning"
-        : "pass",
-      "Legacy cloud PIN metadata must remain blocked from portal contracts and be removed only after desktop migration.",
+      keepsAppPasscodeOffTheCloud(snapshot.desktopAuthService, snapshot.desktopAzureFunction)
+        ? "pass"
+        : "warning",
+      "The app passcode verifier must stay on the device: never mirrored to cloud metadata, never known to the Azure function.",
     ),
   );
   checks.push(

@@ -311,6 +311,11 @@ const completeSnapshot: RepositorySnapshot = {
       body = {key: value for key, value in changes.items() if key in ACCOUNT_PROFILE_UPDATE_FIELDS}
       body['expected_profile_version'] = max(version, 1)
       self._account_api_request('auth/user/profile/update', access_token, payload=body, idempotency_key=key)
+    def _push_app_passcode_to_cloud(self, user_id: int, passcode_hash: str) -> None:
+      _ = user_id, passcode_hash
+      return
+    def _read_app_passcode_hash(self, user_id: int) -> str:
+      user.app_passcode_hash = APP_PASSCODE_STORE_MARKER
   `,
   desktopSupabaseService: null,
   desktopAzureFunction: [
@@ -993,6 +998,40 @@ describe("preflight audit", () => {
     expect(checks.find(({ id }) => id === "azure.wildcard-cors")?.status).toBe("warning");
     expect(checks.find(({ id }) => id === "desktop.legacy-pin-metadata")?.status).toBe("warning");
     expect(checks.find(({ id }) => id === "azure.dependency-pins")?.status).toBe("warning");
+  });
+
+  it("passes the passcode check on a desktop that keeps the verifier on the device", () => {
+    // The check used to match the bare identifier `app_passcode_hash`, which flagged the
+    // desktop for the code that *removes* legacy data: the keychain accessors and the
+    // migration that lifts a hash out of the profile column and leaves a marker behind.
+    // Satisfying it would have meant deleting the migration and stranding every install
+    // that had not run it yet.
+    const checks = auditRepositories(completeSnapshot);
+
+    expect(checks.find(({ id }) => id === "desktop.legacy-pin-metadata")?.status).toBe("pass");
+  });
+
+  it("still warns when the desktop mirrors a passcode verifier to the cloud", () => {
+    // The property the check is actually for. If this ever stops warning, the narrowing
+    // above went too far and the check has become decoration.
+    const checks = auditRepositories({
+      ...completeSnapshot,
+      desktopAuthService: completeSnapshot.desktopAuthService!.replace(
+        "      _ = user_id, passcode_hash\n      return",
+        "      self._account_api_request('me/profile', token, payload={'passcode': passcode_hash})",
+      ),
+    });
+
+    expect(checks.find(({ id }) => id === "desktop.legacy-pin-metadata")?.status).toBe("warning");
+  });
+
+  it("still warns when the Azure function learns about passcode hashes at all", () => {
+    const checks = auditRepositories({
+      ...completeSnapshot,
+      desktopAzureFunction: `${completeSnapshot.desktopAzureFunction}\napp_passcode_hash`,
+    });
+
+    expect(checks.find(({ id }) => id === "desktop.legacy-pin-metadata")?.status).toBe("warning");
   });
 
   it("requires desktop cloud auth to avoid reusable local password verifiers", () => {
