@@ -1859,6 +1859,87 @@ export async function fetchAccountApiSessions(
   return parseAccountApiPayload(accountApiSessionsSchema, payload, "sessions", "GET");
 }
 
+// ------------------------------------------------------------------ broker connections
+//
+// The service never returns a credential, so neither does anything here. Each schema is
+// `.strict()`, which is the enforcement: a field the API started sending — including one
+// named `api_key` — fails the parse instead of reaching a component that might render it.
+
+export const brokerConnectionSchema = z
+  .object({
+    id: z.string().max(64),
+    broker: z.string().max(40),
+    name: z.string().max(120),
+    account_reference: z.string().max(120),
+    paper: z.boolean(),
+    is_active: z.boolean(),
+    credential_fingerprint: z.string().max(32),
+    credential_last_four: z.string().max(8),
+    last_test_at: z.string().max(64).nullable(),
+    last_test_success: z.boolean(),
+    last_error: z.string().max(400),
+    created_at: z.string().max(64).nullable(),
+    updated_at: z.string().max(64).nullable(),
+  })
+  .strict();
+
+export const accountApiBrokerConnectionsSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    connections: z.array(brokerConnectionSchema).max(50),
+    implemented_brokers: z.array(z.string().max(40)).max(50),
+    encryption_configured: z.boolean(),
+  })
+  .strict();
+
+export type AccountApiBrokerConnections = z.infer<typeof accountApiBrokerConnectionsSchema>;
+
+export async function fetchAccountApiBrokerConnections(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiBrokerConnections> {
+  const payload = await fetchAccountApiJson("me/brokers", accessToken, options);
+  return parseAccountApiPayload(accountApiBrokerConnectionsSchema, payload, "me/brokers", "GET");
+}
+
+export async function createAccountApiBrokerConnection(
+  accessToken: string,
+  body: Readonly<Record<string, unknown>>,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<unknown> {
+  return postAccountApiJson("me/brokers", accessToken, body, options);
+}
+
+export async function testAccountApiBrokerConnection(
+  accessToken: string,
+  connectionId: string,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<unknown> {
+  return postAccountApiJson(
+    `me/brokers/${encodeURIComponent(connectionId)}/test`,
+    accessToken,
+    {},
+    options,
+  );
+}
+
+export async function deleteAccountApiBrokerConnection(
+  accessToken: string,
+  connectionId: string,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<unknown> {
+  // Expressed as a POST to an explicit `/delete` rather than an HTTP DELETE because
+  // `fetchAccountApiJson` requires an Idempotency-Key on every body-carrying call, and a
+  // delete that can be replayed safely is worth more here than method purity.
+  return postAccountApiJson(
+    `me/brokers/${encodeURIComponent(connectionId)}/delete`,
+    accessToken,
+    {},
+    options,
+  );
+}
+
 export async function fetchAccountApiActivity(
   accessToken: string,
   options: AccountApiFetchOptions = {},

@@ -1079,6 +1079,40 @@ function handleReleaseRoute(
   return true;
 }
 
+/**
+ * Broker connections, per user.
+ *
+ * Never holds a credential value — only a fabricated digest and the last four characters,
+ * which is the same property the real store has. The shape is written out rather than left
+ * as a loose record so that a field added here without being added to the console's
+ * `.strict()` schema fails the type check before it fails a page render.
+ */
+type MockBrokerConnection = {
+  id: string;
+  user_id: string;
+  broker: string;
+  name: string;
+  account_reference: string;
+  paper: boolean;
+  is_active: boolean;
+  credential_fingerprint: string;
+  credential_last_four: string;
+  last_test_at: string | null;
+  last_test_success: boolean;
+  last_error: string;
+  created_at: string;
+  updated_at: string;
+};
+
+const brokerConnections: MockBrokerConnection[] = [];
+
+/** The only shape of a connection the mock returns — an allowlist, like `public_view`. */
+function publicBrokerView(row: MockBrokerConnection) {
+  const { user_id: _owner, ...view } = row;
+  void _owner;
+  return view;
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://127.0.0.1:${PORT}`);
   const route = url.pathname.replace(/^\/api\/v1\/?/u, "").replace(/\/+$/u, "");
@@ -2263,6 +2297,78 @@ const server = createServer(async (request, response) => {
     ]);
     return ok(response, secretWriteReceipt(slot, appended ? "append" : "set"));
   }
+  // ---- broker connections ----------------------------------------------------------
+  //
+  // Fabricated fingerprints only. No value is stored here and none is derivable from what
+  // is — the same property the real store has, so a page that renders against this renders
+  // against production.
+  if (route === "me/brokers" && method === "GET") {
+    return ok(response, {
+      // user_id is stripped, not filtered out afterwards: the real route returns
+      // `broker_vault.public_view`, which is an allowlist, and the console's schema is
+      // `.strict()` — so a mock that returns one extra field fails the parse exactly the way
+      // production would. That is the point of keeping the shapes identical.
+      connections: brokerConnections
+        .filter((row) => row.user_id === userId)
+        .map((row) => publicBrokerView(row)),
+      implemented_brokers: ["alpaca", "upstox"],
+      encryption_configured: process.env.MOCK_BROKER_ENCRYPTION !== "unconfigured",
+    });
+  }
+  if (route === "me/brokers" && method === "POST") {
+    const broker = String(json.broker ?? "");
+    if (!["alpaca", "upstox"].includes(broker)) {
+      return fail(response, 400, "malformed_request", "no adapter; available: alpaca, upstox");
+    }
+    const primary = String(json.passphrase ?? json.api_key ?? json.secret_key ?? "");
+    if (!primary) return fail(response, 400, "malformed_request", "credentials are required");
+    const created = {
+      id: randomUUID(),
+      user_id: userId,
+      broker,
+      name: String(json.name ?? broker),
+      account_reference: "",
+      paper: json.paper !== false,
+      is_active: true,
+      credential_fingerprint: createHash("sha256").update(primary).digest("hex").slice(0, 12),
+      credential_last_four: primary.length >= 12 ? primary.slice(-4) : "",
+      last_test_at: null as string | null,
+      last_test_success: false,
+      last_error: "",
+      created_at: iso(0),
+      updated_at: iso(0),
+    };
+    brokerConnections.unshift(created);
+    return ok(response, { connection: publicBrokerView(created) });
+  }
+  if (route.startsWith("me/brokers/") && method === "POST") {
+    const [, , connectionId, action] = route.split("/");
+    const row = brokerConnections.find(
+      (item) => item.id === connectionId && item.user_id === userId,
+    );
+    if (!row) return fail(response, 404, "not_found", "No such broker connection.");
+    if (action === "delete") {
+      brokerConnections.splice(brokerConnections.indexOf(row), 1);
+      return ok(response, { deleted: true });
+    }
+    if (action === "test") {
+      // MOCK_BROKER_TEST=reject exercises the "broker said no" branch, which is a
+      // successful request with a negative answer rather than an error.
+      if (process.env.MOCK_BROKER_TEST === "reject") {
+        row.last_test_success = false;
+        row.last_test_at = iso(0);
+        row.last_error = "The broker rejected these credentials.";
+        return ok(response, { ok: false, message: row.last_error });
+      }
+      row.last_test_success = true;
+      row.last_test_at = iso(0);
+      row.last_error = "";
+      row.account_reference = row.broker === "upstox" ? "UP1234" : "PA3XYZ";
+      return ok(response, { ok: true, message: "Connected.", connection: publicBrokerView(row) });
+    }
+    return fail(response, 404, "not_found", `No route for ${method} ${route}.`);
+  }
+
   if (route === "admin/releases") {
     if (!requires("releases:read-status")) return;
     return ok(response, {

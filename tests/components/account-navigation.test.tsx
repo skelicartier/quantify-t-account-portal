@@ -15,6 +15,7 @@ const LINKS = [
   { href: "/account/profile", name: "Profile" },
   { href: "/account/subscription", name: "Subscription" },
   { href: "/account/preferences", name: "Preferences" },
+  { href: "/account/brokers", name: "Brokers" },
   { href: "/account/security", name: "Security" },
   { href: "/account/sessions", name: "Sessions" },
   { href: "/account/activity", name: "Activity" },
