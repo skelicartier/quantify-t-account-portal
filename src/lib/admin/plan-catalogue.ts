@@ -85,7 +85,8 @@ const RESEARCH_MODEL_BY_PLAN: Record<PlanKey, string> = {
   teams: "claude-sonnet",
 };
 
-const CHAT_MODEL_LABELS: Record<string, string> = {
+/** Model id to the name a person reads. Shared by chat and research: the ids are the same. */
+const MODEL_LABELS: Record<string, string> = {
   "claude-haiku": "Claude Haiku",
   "claude-sonnet": "Claude Sonnet",
   "claude-opus": "Claude Opus",
@@ -279,9 +280,9 @@ export function researchModelForPlan(value: string | null | undefined): string {
   return RESEARCH_MODEL_BY_PLAN[canonicalPlan(value)];
 }
 
-export function chatModelLabel(model: string | null | undefined): string {
+export function modelLabel(model: string | null | undefined): string {
   const key = String(model ?? "").trim();
-  return CHAT_MODEL_LABELS[key] ?? key;
+  return MODEL_LABELS[key] ?? key;
 }
 
 export type PlanDefault =

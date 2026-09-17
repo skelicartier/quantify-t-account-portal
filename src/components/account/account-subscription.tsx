@@ -14,7 +14,7 @@ import type { AccountApiEntitlementFeature } from "@/lib/admin/account-api";
 import {
   allowanceStanding,
   canonicalPlan,
-  chatModelLabel,
+  modelLabel,
   featureLabel,
   featureNote,
   featureUnit,
@@ -153,7 +153,7 @@ export function AccountSubscription({ view, now }: AccountSubscriptionProps) {
                 )}
               </KeyValueRow>
               <KeyValueRow label="Chat model">
-                {chatModelLabel(entitlements.chat_model) || "Not published"}
+                {modelLabel(entitlements.chat_model) || "Not published"}
               </KeyValueRow>
               {/* `entitlement_version` is a synchronisation counter. It answers a question
                   nobody holding a subscription asks, and it sat in the same list as the plan
