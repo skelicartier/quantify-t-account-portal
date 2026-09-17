@@ -61,17 +61,34 @@ export const TRIAL_PLAN: PlanKey = "desk";
 export const TRIAL_DAYS = 14;
 export const TRIAL_DEEP_RESEARCH_CAP = 8;
 
+/**
+ * Every plan is Anthropic. One provider is one bill, one status page and one set of terms
+ * to have read — and a Free account differs from a Desk one by which Claude it reaches
+ * rather than by which company answers it.
+ */
 const CHAT_MODEL_BY_PLAN: Record<PlanKey, string> = {
-  free: "gemini-flash",
+  free: "claude-haiku",
   pro: "claude-haiku",
   desk: "claude-sonnet",
   teams: "claude-sonnet",
 };
 
+/**
+ * Deep Research runs on its own model. The two are different jobs: a chat turn is waited
+ * through, where Haiku's speed is the feature; a report is unattended, cited, and read as
+ * evidence later, so it gets the stronger model on every plan that sells one.
+ */
+const RESEARCH_MODEL_BY_PLAN: Record<PlanKey, string> = {
+  free: "claude-haiku",
+  pro: "claude-sonnet",
+  desk: "claude-sonnet",
+  teams: "claude-sonnet",
+};
+
 const CHAT_MODEL_LABELS: Record<string, string> = {
-  "gemini-flash": "Gemini Flash",
   "claude-haiku": "Claude Haiku",
   "claude-sonnet": "Claude Sonnet",
+  "claude-opus": "Claude Opus",
 };
 
 /**
@@ -255,6 +272,11 @@ export function featurePeriod(feature: FeatureKey): FeaturePeriod {
 
 export function chatModelForPlan(value: string | null | undefined): string {
   return CHAT_MODEL_BY_PLAN[canonicalPlan(value)];
+}
+
+/** Which model this plan's Deep Research runs on, which is not always its chat model. */
+export function researchModelForPlan(value: string | null | undefined): string {
+  return RESEARCH_MODEL_BY_PLAN[canonicalPlan(value)];
 }
 
 export function chatModelLabel(model: string | null | undefined): string {

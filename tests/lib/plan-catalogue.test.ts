@@ -4,6 +4,7 @@ import {
   canonicalPlan,
   CANONICAL_PLANS,
   chatModelForPlan,
+  researchModelForPlan,
   FEATURE_KEYS,
   featureLabel,
   featureNote,
@@ -100,6 +101,24 @@ describe("plan catalogue", () => {
     expect(featureNote("intelligence")).toContain("deterministically");
   });
 
+  it("runs every plan on one provider", () => {
+    // One bill, one status page, one set of terms. A plan differs from another by which
+    // Claude it reaches, never by which company answers it.
+    for (const plan of CANONICAL_PLANS) {
+      expect(chatModelForPlan(plan)).toMatch(/^claude-/);
+      expect(researchModelForPlan(plan)).toMatch(/^claude-/);
+    }
+  });
+
+  it("gives research its own model, stronger than chat on every paid plan", () => {
+    // Different jobs: a chat turn is waited through, a report is unattended and cited.
+    expect(researchModelForPlan("free")).toBe("claude-haiku");
+    for (const plan of ["pro", "desk", "teams"] as const) {
+      expect(researchModelForPlan(plan)).toBe("claude-sonnet");
+    }
+    expect(researchModelForPlan("pro")).not.toBe(chatModelForPlan("pro"));
+  });
+
   it("resolves an unknown or legacy tier without granting anything extra", () => {
     expect(canonicalPlan("professional")).toBe("desk");
     expect(canonicalPlan("starter")).toBe("pro");
@@ -110,7 +129,7 @@ describe("plan catalogue", () => {
   });
 
   it("pins the chat model each plan runs on", () => {
-    expect(chatModelForPlan("free")).toBe("gemini-flash");
+    expect(chatModelForPlan("free")).toBe("claude-haiku");
     expect(chatModelForPlan("pro")).toBe("claude-haiku");
     expect(chatModelForPlan("desk")).toBe("claude-sonnet");
     expect(chatModelForPlan("teams")).toBe("claude-sonnet");
