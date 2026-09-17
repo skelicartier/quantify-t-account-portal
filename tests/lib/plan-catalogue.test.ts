@@ -5,6 +5,8 @@ import {
   CANONICAL_PLANS,
   chatModelForPlan,
   FEATURE_KEYS,
+  featureLabel,
+  featureNote,
   featurePeriod,
   formatAllowance,
   isBooleanFeature,
@@ -31,11 +33,11 @@ import type { AccountApiEntitlementOverride } from "@/lib/admin/account-api";
  */
 const EXPECTED: Record<string, Array<number | null | boolean>> = {
   // ai_chat, deep_research, pulse_universe, tracked_symbols, watchlists,
-  // portfolios, saved_screens, history_years, point_in_time, export
-  free: [20, 1, 25, 50, 2, 1, 2, 5, false, false],
-  pro: [300, 10, 250, 500, 25, 10, 50, 15, true, true],
-  desk: [1000, 40, 2000, 5000, null, 100, null, null, true, true],
-  teams: [1000, 40, 2000, 5000, null, null, null, null, true, true],
+  // portfolios, saved_screens, history_years, point_in_time, export, intelligence
+  free: [20, 1, 25, 50, 2, 1, 2, 5, false, false, false],
+  pro: [300, 10, 250, 500, 25, 10, 50, 15, true, true, true],
+  desk: [1000, 40, 2000, 5000, null, 100, null, null, true, true, true],
+  teams: [1000, 40, 2000, 5000, null, null, null, null, true, true, true],
 };
 
 function override(
@@ -78,7 +80,24 @@ describe("plan catalogue", () => {
     expect(QUOTA_FEATURES).toEqual(["ai_chat", "deep_research"]);
     expect(isQuotaFeature("pulse_universe")).toBe(false);
     expect(featurePeriod("pulse_universe")).toBe("lifetime");
-    expect(FEATURE_KEYS.filter(isBooleanFeature)).toEqual(["point_in_time", "export"]);
+    expect(FEATURE_KEYS.filter(isBooleanFeature)).toEqual([
+      "point_in_time",
+      "export",
+      "intelligence",
+    ]);
+    expect(isQuotaFeature("intelligence")).toBe(false);
+  });
+
+  it("gives the model-assisted reading to paying plans only", () => {
+    // Free is deliberately false rather than absent. The command bar and the planner read
+    // the common phrasings deterministically on every plan; what this switch buys is a
+    // model being asked about the phrasings they do not cover.
+    expect(planDefault("free", "intelligence")).toEqual({ kind: "boolean", enabled: false });
+    for (const plan of ["pro", "desk", "teams"] as const) {
+      expect(planDefault(plan, "intelligence")).toEqual({ kind: "boolean", enabled: true });
+    }
+    expect(featureLabel("intelligence")).toBe("Model-assisted intelligence");
+    expect(featureNote("intelligence")).toContain("deterministically");
   });
 
   it("resolves an unknown or legacy tier without granting anything extra", () => {

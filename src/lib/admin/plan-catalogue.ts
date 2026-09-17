@@ -31,13 +31,14 @@ export const FEATURE_KEYS = [
   "history_years",
   "point_in_time",
   "export",
+  "intelligence",
 ] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
 
 /** Metered: these cost money per use and are the only features that carry a counter. */
 export const QUOTA_FEATURES = ["ai_chat", "deep_research"] as const;
 /** On or off, never counted. */
-export const BOOLEAN_FEATURES = ["point_in_time", "export"] as const;
+export const BOOLEAN_FEATURES = ["point_in_time", "export", "intelligence"] as const;
 
 export type FeaturePeriod = "day" | "month" | "lifetime";
 
@@ -52,6 +53,7 @@ const FEATURE_PERIODS: Record<FeatureKey, FeaturePeriod> = {
   history_years: "lifetime",
   point_in_time: "lifetime",
   export: "lifetime",
+  intelligence: "lifetime",
 };
 
 /** A trial is Desk for fourteen days with Deep Research held below Desk's allowance. */
@@ -89,6 +91,7 @@ const PLAN_LIMITS: Record<PlanKey, Record<FeatureKey, number | boolean | null>> 
     history_years: 5,
     point_in_time: false,
     export: false,
+    intelligence: false,
   },
   pro: {
     ai_chat: 300,
@@ -101,6 +104,7 @@ const PLAN_LIMITS: Record<PlanKey, Record<FeatureKey, number | boolean | null>> 
     history_years: 15,
     point_in_time: true,
     export: true,
+    intelligence: true,
   },
   desk: {
     ai_chat: 1000,
@@ -113,6 +117,7 @@ const PLAN_LIMITS: Record<PlanKey, Record<FeatureKey, number | boolean | null>> 
     history_years: null,
     point_in_time: true,
     export: true,
+    intelligence: true,
   },
   // Teams is not sold. It is where an account negotiated by hand sits, and every number
   // on it is expected to be replaced by an override.
@@ -127,6 +132,7 @@ const PLAN_LIMITS: Record<PlanKey, Record<FeatureKey, number | boolean | null>> 
     history_years: null,
     point_in_time: true,
     export: true,
+    intelligence: true,
   },
 };
 
@@ -155,6 +161,7 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
   history_years: "History depth",
   point_in_time: "Point-in-time data",
   export: "Export",
+  intelligence: "Model-assisted intelligence",
 };
 
 const FEATURE_UNITS: Record<FeatureKey, string> = {
@@ -168,6 +175,7 @@ const FEATURE_UNITS: Record<FeatureKey, string> = {
   history_years: "years",
   point_in_time: "",
   export: "",
+  intelligence: "",
 };
 
 const FEATURE_NOTES: Record<FeatureKey, string> = {
@@ -181,6 +189,8 @@ const FEATURE_NOTES: Record<FeatureKey, string> = {
   history_years: "How far back history reaches.",
   point_in_time: "Data as it stood on a past date, without later restatements.",
   export: "Downloading data out of the terminal.",
+  intelligence:
+    "Lets a model read an objective or a typed phrase the terminal did not recognise on its own. Off does not mean no intelligence: the command bar and the planner read the common phrasings deterministically on every plan.",
 };
 
 /**
