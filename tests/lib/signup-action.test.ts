@@ -1,5 +1,10 @@
 import { CHALLENGE_FIELD_NAME } from "@/lib/auth/challenge";
-import { LEGAL_CONSENT_FIELD_NAME } from "@/lib/auth/consent";
+import {
+  CONSENT_SCHEMA_VERSION,
+  LEGAL_CONSENT_FIELD_NAME,
+  PRIVACY_VERSION,
+  TERMS_VERSION,
+} from "@/lib/auth/consent";
 import { INITIAL_SIGNUP_STATE } from "@/lib/auth/signup";
 
 const mocks = vi.hoisted(() => ({
@@ -40,11 +45,21 @@ describe("signup Server Action", () => {
 
     const result = await signup(INITIAL_SIGNUP_STATE, signupFormData());
 
+    // The fifth argument is the consent record. The tick box was always enforced; the
+    // versions were never sent, so the account service could say somebody consented and
+    // not to what. Only this side knows, because only this side renders the links.
     expect(signUp).toHaveBeenCalledWith(
       "new.user@example.com",
       "twelve-character-password",
       "",
       "",
+      expect.objectContaining({
+        consent_schema_version: CONSENT_SCHEMA_VERSION,
+        terms_version: TERMS_VERSION,
+        privacy_version: PRIVACY_VERSION,
+        consent_source: "account_portal_signup",
+        consent_captured_at: expect.any(String),
+      }),
     );
     expect(result.status).toBe("accepted");
     expect(JSON.stringify(result)).not.toContain("twelve-character-password");

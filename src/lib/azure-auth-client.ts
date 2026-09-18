@@ -5,6 +5,8 @@
  * Stores JWT in httpOnly cookies and provides user/session management.
  */
 
+import type { SignupConsentMetadata } from "@/lib/auth/consent";
+
 const COOKIE_NAME = "qt-session";
 const REFRESH_COOKIE_NAME = "qt-refresh";
 const COOKIE_OPTIONS = {
@@ -180,11 +182,20 @@ export class AzureAuthClient {
   /**
    * Sign up with email/password
    */
+  /**
+   * Create an account.
+   *
+   * `consent` records which terms and privacy versions the person was shown when they
+   * ticked the box. The tick was always enforced; the versions were never sent, so the
+   * account service could say that somebody consented and not to what. Only this side
+   * knows, because only this side rendered the links.
+   */
   async signUp(
     email: string,
     password: string,
     firstName?: string,
     lastName?: string,
+    consent?: SignupConsentMetadata,
   ): Promise<AuthResponse> {
     return this.request<AuthResponse>("/auth/signup", {
       method: "POST",
@@ -194,6 +205,7 @@ export class AzureAuthClient {
         password,
         first_name: firstName,
         last_name: lastName,
+        ...(consent ? { consent } : {}),
       }),
     });
   }

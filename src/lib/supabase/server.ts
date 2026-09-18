@@ -9,6 +9,7 @@ import "server-only";
 import { cookies } from "next/headers";
 
 import { AzureAuthClient, AuthUser } from "@/lib/azure-auth-client";
+import type { SignupConsentMetadata } from "@/lib/auth/consent";
 import { getAzureAuthConfig } from "@/lib/azure-auth-config";
 
 type ServerClientOptions = {
@@ -145,10 +146,16 @@ export async function createServerAzureClient({
     /**
      * Sign up with email/password
      */
-    async signUp(email: string, password: string, firstName = "", lastName = "") {
+    async signUp(
+      email: string,
+      password: string,
+      firstName = "",
+      lastName = "",
+      consent?: SignupConsentMetadata,
+    ) {
       const client = new AzureAuthClient(config.apiUrl);
       try {
-        const result = await client.signUp(email, password, firstName, lastName);
+        const result = await client.signUp(email, password, firstName, lastName, consent);
         return { data: result, error: null };
       } catch (e) {
         return {

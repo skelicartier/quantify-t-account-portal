@@ -7,6 +7,7 @@ import {
   DESKTOP_CONNECT_RETURN_MAX_AGE_SECONDS,
   desktopConnectNextPath,
 } from "@/lib/auth/desktop-connect";
+import { createSignupConsentMetadata } from "@/lib/auth/consent";
 import { parseSignupFormData, type SignupActionState } from "@/lib/auth/signup";
 import { rateLimitMessage, rateLimitWaitSeconds } from "@/lib/auth/rate-limit";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
@@ -123,6 +124,9 @@ export async function signup(
       parsed.data.password,
       parsed.data.firstName,
       parsed.data.lastName,
+      // Which terms and privacy versions this page showed. Recorded with the signup, because
+      // a record that somebody consented, without what they consented to, is not a record.
+      createSignupConsentMetadata(),
     );
 
     if (result.error) {
