@@ -114,9 +114,6 @@ export async function changePassword(
   const parsed = parsePasswordChangeFormData(formData);
   if (!parsed.success) return parsed.state;
 
-  // Cleared other sessions? Only claim it in the success copy if it actually happened.
-  const otherSessionsCleared = false;
-
   try {
     await requireSameOriginServerAction();
     // Assurance first, before any password is checked: an AAL1 caller must not be
@@ -140,10 +137,18 @@ export async function changePassword(
     const accessToken = azure.getAccessToken();
     if (!accessToken) return PASSWORD_SERVICE_ERROR;
 
+    // The service ends the other sessions now, and says how many, so the copy below is
+    // what happened rather than a guess. It used to leave them all running: the reason
+    // somebody changes a password in a hurry is that they think a session is not theirs.
+    let otherSessionsCleared = -1;
     try {
       const config = getAzureAuthConfig();
       const authClient = new AzureAuthClient(config.apiUrl);
-      await authClient.updatePassword(accessToken, parsed.data.password);
+      otherSessionsCleared = await authClient.updatePassword(
+        accessToken,
+        parsed.data.password,
+        parsed.data.currentPassword,
+      );
     } catch {
       return PASSWORD_SERVICE_ERROR;
     }
@@ -151,9 +156,12 @@ export async function changePassword(
     refreshSecurityRoutes();
     return {
       status: "success",
-      message: otherSessionsCleared
-        ? "Password updated. Other signed-in sessions were signed out."
-        : "Password updated. Other sessions could not be signed out — sign out everywhere from each device you still trust.",
+      message:
+        otherSessionsCleared > 0
+          ? "Password updated. Other signed-in sessions were signed out."
+          : otherSessionsCleared === 0
+            ? "Password updated. No other sessions were signed in."
+            : "Password updated. Other sessions could not be signed out — sign out everywhere from each device you still trust.",
       fieldErrors: { currentPassword: [], password: [], passwordConfirmation: [] },
     };
   } catch {

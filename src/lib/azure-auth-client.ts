@@ -259,17 +259,33 @@ export class AzureAuthClient {
   }
 
   /**
-   * Update password
+   * Change the signed-in account's password.
+   *
+   * The current password goes to the service, not only to the reauthentication call this
+   * console makes first. That check is a convenience for the person typing; the service is
+   * what holds the credential, and it used to accept a bearer token and a new password
+   * with nothing else — so anything holding a token could take the account over.
+   *
+   * Returns how many other sessions the service ended, so the success copy can say what
+   * actually happened rather than guess.
    */
-  async updatePassword(accessToken: string, newPassword: string): Promise<void> {
-    await this.request("/auth/password/update", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
+  async updatePassword(
+    accessToken: string,
+    newPassword: string,
+    currentPassword: string,
+  ): Promise<number> {
+    const data = await this.request<{ other_sessions_revoked?: number }>(
+      "/auth/password/update",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ password: newPassword, current_password: currentPassword }),
       },
-      body: JSON.stringify({ password: newPassword }),
-    });
+    );
+    return typeof data?.other_sessions_revoked === "number" ? data.other_sessions_revoked : -1;
   }
 
   /**

@@ -130,13 +130,14 @@ beforeEach(() => {
   installAzure();
   mocks.verifyCurrentPassword.mockResolvedValue("verified");
   mocks.AzureAuthClient.mockImplementation(function (this: Record<string, unknown>) {
-    this.updatePassword = vi.fn().mockResolvedValue(undefined);
+    // The service answers with how many other sessions it ended; -1 means it could not.
+    this.updatePassword = vi.fn().mockResolvedValue(-1);
   });
 });
 
 describe("password change action", () => {
   it("reauthenticates before updating through the Azure Account API", async () => {
-    const authClient = { updatePassword: vi.fn().mockResolvedValue(undefined) };
+    const authClient = { updatePassword: vi.fn().mockResolvedValue(-1) };
     mocks.AzureAuthClient.mockImplementation(function (this: Record<string, unknown>) {
       this.updatePassword = authClient.updatePassword;
     });
@@ -145,7 +146,14 @@ describe("password change action", () => {
 
     expect(mocks.verifyCurrentPassword).toHaveBeenCalledWith(CURRENT_EMAIL, CURRENT_PASSWORD);
     expect(mocks.AzureAuthClient).toHaveBeenCalledWith("https://account-api.example.com");
-    expect(authClient.updatePassword).toHaveBeenCalledWith("access-token", NEW_PASSWORD);
+    // The current password goes to the service too. Reauthenticating here is a convenience
+    // for the person typing; the service holds the credential and used to accept a bearer
+    // token and a new password with nothing else.
+    expect(authClient.updatePassword).toHaveBeenCalledWith(
+      "access-token",
+      NEW_PASSWORD,
+      CURRENT_PASSWORD,
+    );
     expect(result).toMatchObject({ status: "success" });
     expect(result.message).toContain("could not be signed out");
     expect(JSON.stringify(result)).not.toContain(NEW_PASSWORD);
@@ -154,7 +162,7 @@ describe("password change action", () => {
 
   it("rejects a wrong current password without touching the account", async () => {
     mocks.verifyCurrentPassword.mockResolvedValue("rejected");
-    const authClient = { updatePassword: vi.fn().mockResolvedValue(undefined) };
+    const authClient = { updatePassword: vi.fn().mockResolvedValue(-1) };
     mocks.AzureAuthClient.mockImplementation(function (this: Record<string, unknown>) {
       this.updatePassword = authClient.updatePassword;
     });
@@ -169,7 +177,7 @@ describe("password change action", () => {
 
   it("fails closed when no Azure access token is available", async () => {
     installAzure({ accessToken: null });
-    const authClient = { updatePassword: vi.fn().mockResolvedValue(undefined) };
+    const authClient = { updatePassword: vi.fn().mockResolvedValue(-1) };
     mocks.AzureAuthClient.mockImplementation(function (this: Record<string, unknown>) {
       this.updatePassword = authClient.updatePassword;
     });
@@ -258,5 +266,40 @@ describe("source-locked security actions", () => {
     expect(state.status).toBe("error");
     expect(state.message).toContain("authenticator code");
     expect(mocks.verifyCurrentPassword).not.toHaveBeenCalled();
+  });
+});
+
+describe("password change reports what happened to the other sessions", () => {
+  function clientReturning(count: number) {
+    const authClient = { updatePassword: vi.fn().mockResolvedValue(count) };
+    mocks.AzureAuthClient.mockImplementation(function (this: Record<string, unknown>) {
+      this.updatePassword = authClient.updatePassword;
+    });
+    return authClient;
+  }
+
+  it("says they were signed out when the service ended some", async () => {
+    clientReturning(3);
+
+    const result = await changePassword(INITIAL_PASSWORD_CHANGE_STATE, passwordForm());
+
+    expect(result).toMatchObject({ status: "success" });
+    expect(result.message).toContain("Other signed-in sessions were signed out");
+  });
+
+  it("says there were none rather than implying a failure", async () => {
+    clientReturning(0);
+
+    const result = await changePassword(INITIAL_PASSWORD_CHANGE_STATE, passwordForm());
+
+    expect(result.message).toContain("No other sessions were signed in");
+  });
+
+  it("still tells the truth when the service could not end them", async () => {
+    clientReturning(-1);
+
+    const result = await changePassword(INITIAL_PASSWORD_CHANGE_STATE, passwordForm());
+
+    expect(result.message).toContain("could not be signed out");
   });
 });
