@@ -22,6 +22,23 @@ async function read(relative: string): Promise<string> {
   return readFile(resolve(PACKAGE_ROOT, relative), "utf8");
 }
 
+/**
+ * These cases read the sibling desktop checkout, which a portal-only checkout does not
+ * have — and CI clones one repository. Without this the three cases below did not report
+ * a parity problem, they reported `ENOENT` on a directory that was never going to be
+ * there, and every push since has mailed "Portal CI failed" about it. A check that cannot
+ * pass in the environment it runs in is not a check.
+ *
+ * Skipping is the same decision `account-api-analysis.test.ts` already took for the same
+ * files, for the same reason, and it is safe in the same way: the integrated workspace is
+ * where this evidence is gated, and that is where the parity bug this test exists for
+ * (a console POST to a GET-only `me/brokers`) would be caught.
+ */
+const packageAvailable = await read("account_api/app.py").then(
+  () => true,
+  () => false,
+);
+
 /** Every route the service registers, with the method it accepts.
  *
  * Route names are module constants and NOT all of them live in `app.py` — the auth ones are
@@ -65,7 +82,15 @@ function toPattern(route: string): RegExp {
   return new RegExp(`^${escaped}$`, "u");
 }
 
-describe("route parity with the Account API", () => {
+describe("desktop checkout resolution", () => {
+  // Outside the skipped block on purpose: a portal-only run must still prove it skipped
+  // for the right reason rather than because the resolver quietly returned nothing.
+  it("resolves the sibling desktop checkout to a path", () => {
+    expect(PACKAGE_ROOT.endsWith("cloud/azure/account_function")).toBe(true);
+  });
+});
+
+describe.skipIf(!packageAvailable)("route parity with the Account API", () => {
   it("reads a route table from the service at all", async () => {
     const routes = await serviceRoutes();
     // A parser that silently found nothing would make every test below vacuous.
