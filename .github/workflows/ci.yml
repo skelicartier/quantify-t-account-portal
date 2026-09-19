@@ -32,4 +32,14 @@ jobs:
       # a standalone checkout validates all portal-owned contracts here.
       - run: npm run validate:portal
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - name: e2e
+        # The job-level NEXT_PUBLIC_SITE_URL is a deliberately unresolvable placeholder,
+        # which is right for `npm run build` — nothing should reach a real host at build
+        # time. It is wrong here. These tests run the server for real, and `/auth/confirm`
+        # redirects to an absolute URL built from this value, so the browser was sent to
+        # `account.example.invalid` and failed to resolve it. That read as a failure of the
+        # open-redirect test, which is the one test in the suite whose failure looks like a
+        # security regression; it was configuration.
+        run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
