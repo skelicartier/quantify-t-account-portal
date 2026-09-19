@@ -274,17 +274,14 @@ export class AzureAuthClient {
     newPassword: string,
     currentPassword: string,
   ): Promise<number> {
-    const data = await this.request<{ other_sessions_revoked?: number }>(
-      "/auth/password/update",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ password: newPassword, current_password: currentPassword }),
+    const data = await this.request<{ other_sessions_revoked?: number }>("/auth/password/update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
       },
-    );
+      body: JSON.stringify({ password: newPassword, current_password: currentPassword }),
+    });
     return typeof data?.other_sessions_revoked === "number" ? data.other_sessions_revoked : -1;
   }
 

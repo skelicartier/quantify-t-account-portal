@@ -477,9 +477,7 @@ export function AdminUserSubscription({
           <KeyValueRow label="Chat model">{modelLabel(chatModelForPlan(plan))}</KeyValueRow>
           {/* Deep Research runs on its own model, and on Pro it is the stronger one. Showing
               only the chat model told an operator the plan ran Haiku for everything. */}
-          <KeyValueRow label="Research model">
-            {modelLabel(researchModelForPlan(plan))}
-          </KeyValueRow>
+          <KeyValueRow label="Research model">{modelLabel(researchModelForPlan(plan))}</KeyValueRow>
           <KeyValueRow label="Counters read">
             <Timestamp value={usage?.generated_at} now={now} fallback="Unavailable" />
           </KeyValueRow>

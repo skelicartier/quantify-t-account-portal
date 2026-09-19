@@ -5,3 +5,8 @@ package-lock.json
 playwright-report
 test-results
 *.tsbuildinfo
+
+# Another tool keeps a git worktree here. Git skips it because it is a worktree;
+# Prettier does not, so an unrelated checkout of the same files failed format:check
+# locally while CI (a fresh clone) passed.
+.kilo

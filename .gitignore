@@ -37,3 +37,6 @@ npm-debug.log*
 .vercel
 .env*
 supabase/.temp/
+
+# Stale worktrees from other tooling.
+.kilo
