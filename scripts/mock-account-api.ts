@@ -754,7 +754,6 @@ const SECRET_CATALOGUE: MockSecretSlot[] = [
     prefixes: ["nvapi-"],
   }),
   slotEntry("POLYGON_API_KEY", "api", "Polygon", "single", "Intraday quotes and aggregates."),
-  slotEntry("FINNHUB_API_KEY", "api", "Finnhub", "single", "Quotes, fundamentals and earnings."),
   slotEntry("ALPHA_VANTAGE_API_KEY", "api", "Alpha Vantage", "single", "Fallback quotes.", {
     hint: "Free tier is 25 requests a day in total.",
   }),
@@ -845,7 +844,7 @@ const secretStore = new Map<string, MockSecretEntry[]>([
     ],
   ],
   ["GEMINI_API_KEY", [seededEntry("GEMINI_API_KEY", 0, 39, "AIza", "valid", 180)]],
-  ["FINNHUB_API_KEY", [seededEntry("FINNHUB_API_KEY", 0, 20, "", "rejected", 15)]],
+  ["FMP_API_KEY", [seededEntry("FMP_API_KEY", 0, 20, "", "rejected", 15)]],
   ["POLYGON_API_KEY", [seededEntry("POLYGON_API_KEY", 0, 32, "", "valid", 300)]],
   ["ALPHA_VANTAGE_API_KEY", [seededEntry("ALPHA_VANTAGE_API_KEY", 0, 16, "", "unsupported", 0)]],
   ["opensky_client_id", [seededEntry("opensky_client_id", 0, 27, "", "unsupported", 0)]],

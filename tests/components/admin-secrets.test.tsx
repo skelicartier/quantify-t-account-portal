@@ -52,13 +52,13 @@ function entry(overrides: Record<string, unknown> = {}) {
 
 function slot(overrides: Record<string, unknown> = {}) {
   return {
-    slot: "FINNHUB_API_KEY",
+    slot: "FMP_API_KEY",
     namespace: "api" as const,
-    label: "Finnhub",
+    label: "Financial Modeling Prep",
     kind: "single" as const,
     group: null,
     hint: "",
-    blast_radius: "Quotes, fundamentals, earnings and the company profile.",
+    blast_radius: "Dividends, IPO calendar and statement history.",
     is_secret: true,
     configured: true,
     distribution: "every-device" as const,
@@ -100,7 +100,7 @@ describe("AdminSecrets", () => {
     render(<AdminSecrets access={authorized()} now={NOW} />);
 
     const body = document.body.textContent ?? "";
-    expect(body).not.toContain("finnhub-secret");
+    expect(body).not.toContain("fmp-secret");
     expect(body.toLowerCase()).not.toContain("reveal");
     expect(screen.queryByRole("button", { name: /copy/iu })).not.toBeInTheDocument();
     // The fingerprint is what identifies a credential here.
@@ -204,7 +204,7 @@ describe("AdminSecrets", () => {
      */
     render(<AdminSecrets access={authorized({}, false)} now={NOW} />);
 
-    expect(screen.getAllByText("Finnhub").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Financial Modeling Prep").length).toBeGreaterThan(0);
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
@@ -236,8 +236,8 @@ describe("AdminSecrets", () => {
           slots: [
             slot({ slot: "POLYGON_API_KEY", label: "Polygon" }),
             slot({
-              slot: "FINNHUB_API_KEY",
-              label: "Finnhub",
+              slot: "FMP_API_KEY",
+              label: "Financial Modeling Prep",
               entries: [
                 entry({ verification: { state: "rejected", checked_at: "2026-09-12T10:00:00Z" } }),
               ],
@@ -250,7 +250,7 @@ describe("AdminSecrets", () => {
 
     const table = screen.getAllByRole("table")[0]!;
     const rows = within(table).getAllByRole("row").slice(1);
-    expect(rows[0]).toHaveTextContent("Finnhub");
+    expect(rows[0]).toHaveTextContent("Financial Modeling Prep");
   });
 
   it("tells an operator that no credential document exists, and what that usually means", () => {
