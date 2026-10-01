@@ -2,6 +2,8 @@
 
 Secure, web-only account surface for Quantify Terminal.
 
+The console is the customer's own account and nothing else. The product's administration — accounts, plans, notices, email, the audit trail, reports, configuration, provider keys, credentials, releases and roles — moved to HQ on 2026-10-01: HQ's Product section runs the Account API's own `admin/*` routes as each staff member's linked Quantify Terminal account. `/admin` is not a route here. The history below describes the work as it was built, including the administration that has since moved.
+
 Current progress and next tasks: [Account Work Log](docs/ACCOUNT_WORK_LOG.md). Azure Account API-backed auth, notification/email, audit/report, Owner-status, account data export/deletion, same-origin Server Action guard coverage, private signed artifact-download endpoints, and disabled-by-default report/export/deletion cleanup workers are implemented in source only; staging and production remain locked.
 
 ## Current rollout status
@@ -27,7 +29,7 @@ Task 8 is complete in source only and independently approved; Task 9 now has sou
 - Required Terms/Privacy acceptance is captured with server-owned version, source, and timestamp metadata. This source metadata is not claimed to be an immutable legal receipt.
 - `/connect/desktop` completes the desktop app's browser sign-in. The app asks the Account API to begin a handoff (`auth/handoff/begin`, a PKCE challenge in, an opaque id and a short code out), opens this page with the id, and polls `auth/handoff/poll` with the id and its verifier. The signed-in visitor sees the code and the requesting device and clicks Connect (`auth/handoff/{id}/approve`) or Cancel request (`/deny`); the app's next poll signs it in. Nothing is redirected to the visitor's computer and the verifier never leaves the app. Sign-in and sign-up carry the handoff in `next`; sign-up also remembers it in a short-lived cookie so email confirmation returns to it.
 - `/auth/confirm` accepts one bounded Azure confirmation token and lands on `/auth/confirmed`, which says the email is verified (or that the link is invalid or expired) and points at sign-in; a remembered desktop handoff rides along. Password reset accepts one bounded Azure reset token and clears the browser recovery marker after a successful update.
-- `/account`, `/account/sessions`, `/account/activity`, `/account/data`, and `/admin` routes are protected by the Next.js proxy and independently revalidated in server-only DAL/API guards.
+- `/account`, `/account/sessions`, `/account/activity` and `/account/data` routes are protected by the Next.js proxy and independently revalidated in server-only DAL/API guards.
 - Overview, profile, sessions, and activity pages read through the Account API using the verified Azure bearer token; the portal no longer carries Azure SQL client code or database credentials.
 - Session and activity pages consume Account API `/sessions` and `/activity` DTOs; they do not render provider session IDs, metadata, network addresses, user-agent strings, tokens, or PIN/passcode fields.
 - Web sign-out ends the current Account API session best-effort, asks Azure auth to revoke the refresh session, and always clears this portal's cookie family.
@@ -66,17 +68,11 @@ QT_ACCOUNT_API_URL=http://127.0.0.1:7071/api/v1 npm run dev
 npm run check:console-ui                           # screenshots → test-results/console/
 ```
 
-`check:console-ui` signs in as each mock persona, captures every route at desktop and phone widths in both console themes, opens the mobile navigation, and fails on horizontal overflow or any serious/critical axe finding.
+`check:console-ui` signs in as each mock persona, captures every route at desktop and phone widths in both console themes, opens the mobile navigation, checks that `/admin` answers 404 even for staff, and fails on horizontal overflow or any serious/critical axe finding.
 
 ## Console UI
 
 The console shares quantifyterminal.com's palette: the signed-in shell defaults to the dark theme and offers a per-device dark/light switch in the sidebar (stored in the `qt-console-theme` cookie by the `setConsoleTheme` Server Action). The sign-in, sign-up and recovery pages are always dark. Space Grotesk (headings) and JetBrains Mono (identifiers, timestamps, micro labels) are shipped with the app from `src/app/fonts/` under the SIL Open Font License, so no request ever leaves for a font CDN and the `font-src 'self'` policy holds. The favicon is the marketing site's.
-
-`/admin/users` opens with account KPIs and 30-day daily charts (signups, sign-ins, authentication outcomes) from `admin/metrics`, supports `?q=` (email or name) and `?status=active|inactive` filters that the API applies server-side, and offers a CSV export at `/admin/users/export` (same gates as the page, formula-safe cells, up to 5,000 rows).
-
-`/admin/notifications` and `/admin/email` target selected accounts through a directory picker: the composer searches `/admin/users/search?q=` (same gates as the email page, 20 results, never cached) by name or email and keeps the chosen accounts as removable chips, so nobody pastes account ids. Addresses outside the directory still go in the email-addresses box.
-
-Owners (`roles:write`) change another account's role from `/admin/users/[userId]`; the Account API refuses self-changes, demoting the last active Owner, and changing an account pinned by the break-glass configuration.
 
 ## Deployment
 

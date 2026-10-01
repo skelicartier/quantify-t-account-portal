@@ -1,4 +1,4 @@
-export type ShellSection = "account" | "admin";
+export type ShellSection = "account";
 
 export type ShellIdentity = {
   email: string | null;
@@ -7,7 +7,6 @@ export type ShellIdentity = {
   role: string | null;
   plan?: string | null;
   environment?: string | null;
-  canEnterAdmin: boolean;
   /** The demo's personas, offered in the identity menu; development only. */
   devPersonas?: ReadonlyArray<{ email: string; label: string }> | undefined;
 };

@@ -40,7 +40,7 @@ export const metadata: Metadata = {
     default: "Quantify Terminal Console",
     template: "%s | Quantify Terminal",
   },
-  description: "Account and administration console for Quantify Terminal.",
+  description: "Your Quantify Terminal account: profile, plan, security and sessions.",
   robots: {
     index: false,
     follow: false,

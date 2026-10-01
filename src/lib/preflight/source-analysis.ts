@@ -8,7 +8,6 @@ const REQUIRED_NO_STORE_ROUTES = [
   "/forgot-password",
   "/reset-password",
   "/account/:path*",
-  "/admin/:path*",
   "/auth/:path*",
   "/connect/:path*",
 ] as const;
@@ -25,13 +24,6 @@ export const SAME_ORIGIN_SERVER_ACTION_PATHS = [
   "src/app/account/preferences/actions.ts",
   "src/app/account/profile/actions.ts",
   "src/app/account/security/actions.ts",
-  "src/app/admin/access/actions.ts",
-  "src/app/admin/email/actions.ts",
-  "src/app/admin/notifications/actions.ts",
-  "src/app/admin/reports/actions.ts",
-  "src/app/admin/secrets/actions.ts",
-  "src/app/admin/support/actions.ts",
-  "src/app/admin/users/[userId]/actions.ts",
   "src/app/connect/desktop/actions.ts",
   "src/app/forgot-password/actions.ts",
   "src/app/login/actions.ts",
@@ -247,11 +239,7 @@ function hasPortalSessionLifecycleHooks({
     compactDal.includes(
       "awaitrequireSatisfiedAssurance();awaitheartbeatProtectedAccountApiSession();",
     ) &&
-    includesEvery(adminAccess, [
-      "fetchAccountApiMe",
-      "heartbeatAccountApiSession",
-      "fetchAccountApiRoleReport",
-    ]) &&
+    includesEvery(adminAccess, ["fetchAccountApiMe", "heartbeatAccountApiSession"]) &&
     compactAdminAccess.includes(
       "constme=awaitfetchAccountApiMe(accessToken);awaitheartbeatAccountApiSession(accessToken);",
     )

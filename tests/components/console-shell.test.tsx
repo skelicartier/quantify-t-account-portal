@@ -21,7 +21,6 @@ const identity = {
   role: "owner",
   plan: "professional",
   environment: "production",
-  canEnterAdmin: true,
 };
 
 describe("ConsoleShell", () => {
@@ -30,7 +29,7 @@ describe("ConsoleShell", () => {
     document.documentElement.removeAttribute("data-nav-open");
   });
 
-  it("renders one frame: the account's sections, staff administration, and one sign-out", () => {
+  it("renders one frame: the account's sections and one sign-out, and no administration", () => {
     render(
       <ConsoleShell section="account" identity={identity} signOutAction={signOut}>
         <p>Page body</p>
@@ -38,11 +37,14 @@ describe("ConsoleShell", () => {
     );
 
     expect(screen.getByRole("navigation", { name: "Account sections" })).toBeVisible();
-    // Staff get administration in the same rail; there is no separate console to switch to.
-    expect(screen.getByRole("navigation", { name: "Administration sections" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("href", "/admin/users");
-    // The rail's two groups and the context bar's breadcrumb; no footer.
-    expect(screen.getAllByRole("navigation")).toHaveLength(3);
+    // The console is the customer's own account, staff included: the product's
+    // administration is run from HQ, so there is nothing else in the rail.
+    expect(
+      screen.queryByRole("navigation", { name: "Administration sections" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    // The rail's one group and the context bar's breadcrumb; no footer.
+    expect(screen.getAllByRole("navigation")).toHaveLength(2);
     expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
     expect(screen.getByText("Page body")).toBeVisible();
@@ -58,25 +60,28 @@ describe("ConsoleShell", () => {
     }
   });
 
-  it("marks the current administration page and names a non-production environment", () => {
-    navigation.pathname = "/admin/users/abc";
+  it("marks the current page and names a non-production environment", () => {
+    navigation.pathname = "/account/sessions";
     render(
       <ConsoleShell
-        section="admin"
+        section="account"
         identity={{ ...identity, environment: "staging" }}
         signOutAction={signOut}
       >
-        <p>Admin body</p>
+        <p>Sessions body</p>
       </ConsoleShell>,
     );
 
-    expect(screen.getByRole("navigation", { name: "Administration sections" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
+    const sections = screen.getByRole("navigation", { name: "Account sections" });
+    expect(within(sections).getByRole("link", { name: "Sessions" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     expect(screen.getByText("Owner · Desk plan · staging")).toBeVisible();
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
-    expect(within(crumbs).getByRole("link", { name: "Administration" })).toHaveAttribute(
+    expect(within(crumbs).getByRole("link", { name: "Account" })).toHaveAttribute(
       "href",
-      "/admin",
+      "/account",
     );
   });
 
@@ -112,21 +117,17 @@ describe("ConsoleShell", () => {
     await waitFor(() => expect(shell).toHaveAttribute("data-theme", "dark"));
   });
 
-  it("shows no administration to an account the backend does not admit", () => {
+  it("names a customer by their plan alone", () => {
     render(
       <ConsoleShell
         section="account"
-        identity={{ ...identity, canEnterAdmin: false, role: null }}
+        identity={{ ...identity, role: null }}
         signOutAction={signOut}
       >
         <p>Body</p>
       </ConsoleShell>,
     );
 
-    expect(
-      screen.queryByRole("navigation", { name: "Administration sections" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
     expect(screen.getByText("Desk plan")).toBeVisible();
   });
 });

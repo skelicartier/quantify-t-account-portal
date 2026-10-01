@@ -5,12 +5,10 @@
  * may do: every number below is a *label for what the server already decided*, never an
  * input to a decision. Nothing in the console grants, denies, or meters anything.
  *
- * The mirror exists because two of the three screens have no other way to show a plan
- * default. `GET me/entitlements` returns the resolved value and its source but not the
- * default it was resolved from, and there is no administrative read of another account's
- * resolved entitlements at all — so "Pro allows 300, this account was raised to 900" can
- * only be rendered with the plan template in hand. Showing the effective number alone is
- * what makes an operator approve a comp they cannot see the size of.
+ * The mirror exists because the subscription page has no other way to show a plan
+ * default: `GET me/entitlements` returns the resolved value and its source but not the
+ * default it was resolved from, so "Pro allows 300, your account was raised to 900" can
+ * only be rendered with the plan template in hand.
  *
  * When the catalogue changes in the API, change it here in the same commit. The two are
  * pinned together by tests/lib/plan-catalogue.test.ts, which states the expected numbers
@@ -40,50 +38,9 @@ export const QUOTA_FEATURES = ["ai_chat", "deep_research"] as const;
 /** On or off, never counted. */
 export const BOOLEAN_FEATURES = ["point_in_time", "export", "intelligence"] as const;
 
-export type FeaturePeriod = "day" | "month" | "lifetime";
-
-const FEATURE_PERIODS: Record<FeatureKey, FeaturePeriod> = {
-  ai_chat: "month",
-  deep_research: "month",
-  pulse_universe: "lifetime",
-  tracked_symbols: "lifetime",
-  watchlists: "lifetime",
-  portfolios: "lifetime",
-  saved_screens: "lifetime",
-  history_years: "lifetime",
-  point_in_time: "lifetime",
-  export: "lifetime",
-  intelligence: "lifetime",
-};
-
 /** A trial is Desk for fourteen days with Deep Research held below Desk's allowance. */
 export const TRIAL_PLAN: PlanKey = "desk";
-export const TRIAL_DAYS = 14;
 export const TRIAL_DEEP_RESEARCH_CAP = 8;
-
-/**
- * Every plan is Anthropic. One provider is one bill, one status page and one set of terms
- * to have read — and a Free account differs from a Desk one by which Claude it reaches
- * rather than by which company answers it.
- */
-const CHAT_MODEL_BY_PLAN: Record<PlanKey, string> = {
-  free: "claude-haiku",
-  pro: "claude-haiku",
-  desk: "claude-sonnet",
-  teams: "claude-sonnet",
-};
-
-/**
- * Deep Research runs on its own model. The two are different jobs: a chat turn is waited
- * through, where Haiku's speed is the feature; a report is unattended, cited, and read as
- * evidence later, so it gets the stronger model on every plan that sells one.
- */
-const RESEARCH_MODEL_BY_PLAN: Record<PlanKey, string> = {
-  free: "claude-haiku",
-  pro: "claude-sonnet",
-  desk: "claude-sonnet",
-  teams: "claude-sonnet",
-};
 
 /** Model id to the name a person reads. Shared by chat and research: the ids are the same. */
 const MODEL_LABELS: Record<string, string> = {
@@ -231,14 +188,6 @@ export function canonicalPlan(value: string | null | undefined): PlanKey {
   return legacy[normalised] ?? "free";
 }
 
-export function isCanonicalPlan(value: unknown): value is PlanKey {
-  return typeof value === "string" && (CANONICAL_PLANS as readonly string[]).includes(value);
-}
-
-export function isFeatureKey(value: unknown): value is FeatureKey {
-  return typeof value === "string" && (FEATURE_KEYS as readonly string[]).includes(value);
-}
-
 export function isBooleanFeature(feature: FeatureKey): boolean {
   return (BOOLEAN_FEATURES as readonly string[]).includes(feature);
 }
@@ -265,19 +214,6 @@ export function featureUnit(feature: FeatureKey): string {
 
 export function featureNote(feature: FeatureKey): string {
   return FEATURE_NOTES[feature];
-}
-
-export function featurePeriod(feature: FeatureKey): FeaturePeriod {
-  return FEATURE_PERIODS[feature];
-}
-
-export function chatModelForPlan(value: string | null | undefined): string {
-  return CHAT_MODEL_BY_PLAN[canonicalPlan(value)];
-}
-
-/** Which model this plan's Deep Research runs on, which is not always its chat model. */
-export function researchModelForPlan(value: string | null | undefined): string {
-  return RESEARCH_MODEL_BY_PLAN[canonicalPlan(value)];
 }
 
 export function modelLabel(model: string | null | undefined): string {

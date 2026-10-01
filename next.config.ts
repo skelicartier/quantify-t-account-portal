@@ -81,10 +81,6 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
       },
       {
-        source: "/admin/:path*",
-        headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
-      },
-      {
         source: "/auth/:path*",
         headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
       },

@@ -59,35 +59,9 @@ const ROUTES = [
   "/account/activity",
   "/account/notifications",
   "/account/data",
-  "/admin",
-  "/admin/users",
-  "/admin/users/9d3f5b71-4c6e-4a8b-9c0d-1e3f5a7b9c33",
-  "/admin/subscriptions",
-  "/admin/audit",
-  "/admin/reports",
-  "/admin/support",
-  "/admin/support/sup_0000000000000000aaaa",
-  "/admin/notifications",
-  "/admin/email",
-  "/admin/configuration",
-  "/admin/secrets",
-  "/admin/credentials",
-  "/admin/releases",
-  "/admin/roles",
-  "/admin/access",
 ] as const;
 
-const LIGHT_ROUTES = [
-  "/account",
-  "/account/security",
-  "/account/subscription",
-  "/admin",
-  "/admin/users",
-  "/admin/users/9d3f5b71-4c6e-4a8b-9c0d-1e3f5a7b9c33",
-  "/admin/subscriptions",
-  "/admin/audit",
-  "/login",
-] as const;
+const LIGHT_ROUTES = ["/account", "/account/security", "/account/subscription", "/login"] as const;
 
 function slugFor(route: string) {
   return route.replace(/^\//u, "").replace(/[^a-z0-9]+/giu, "-") || "root";
@@ -163,16 +137,6 @@ async function main() {
       console.log("  ✓ mobile menu open");
     }
     if (viewport.name === "desktop") {
-      // Live search: type, wait for the result set to change in place, capture.
-      await page.goto(`${BASE}/admin/users`, { waitUntil: "networkidle" });
-      await page.getByRole("searchbox", { name: "Search" }).fill("priya");
-      await page.waitForURL(/q=priya/u, { timeout: 15_000 });
-      await page.getByRole("table", { name: "Accounts" }).getByText("Priya Natarajan").waitFor();
-      await page.screenshot({ path: join(OUT, "admin-users-search-desktop.png"), fullPage: true });
-      const result = await check(page, "/admin/users?q=priya @desktop");
-      problems += result.serious + (result.overflow > 1 ? 1 : 0);
-      console.log("  ✓ /admin/users live search");
-
       // The desktop handoff end to end: begin, the connect page showing the code and
       // device, Connect, and the app's poll answered with a session — no loopback.
       const begun = await beginHandoff();
@@ -262,11 +226,21 @@ async function main() {
   await page.screenshot({ path: join(OUT, "login-desktop-handoff.png"), fullPage: true });
   console.log("  ✓ /connect/desktop signed out → /login with the handoff");
 
-  // A plain account holder must see the forbidden state, not an error page.
-  await signIn(page, "user@example.test");
-  await page.goto(`${BASE}/admin`, { waitUntil: "networkidle" });
-  await page.screenshot({ path: join(OUT, "admin-forbidden-desktop.png"), fullPage: true });
-  console.log("  ✓ /admin as plain user");
+  // The product's administration is run from HQ: /admin is no page here, for staff as
+  // much as for anyone, and nothing in the console links there.
+  await signIn(page, "owner@example.test");
+  const admin = await page.goto(`${BASE}/admin`, { waitUntil: "networkidle" });
+  if (admin?.status() === 404) {
+    console.log("  ✓ /admin is not a console page, even for staff");
+  } else {
+    problems += 1;
+    console.log(`  ✗ /admin answered ${admin?.status()} for staff, not 404`);
+  }
+  await page.goto(`${BASE}/account`, { waitUntil: "networkidle" });
+  if ((await page.locator('a[href^="/admin"]').count()) > 0) {
+    problems += 1;
+    console.log("  ✗ the console links to /admin");
+  }
   await context.close();
 
   await browser.close();

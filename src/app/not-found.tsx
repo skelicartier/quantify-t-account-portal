@@ -18,8 +18,8 @@ export default function NotFound() {
             We couldn&apos;t find that page
           </h1>
           <p className="auth__desc">
-            The link may be out of date, or the page may have moved. Your account and admin pages
-            are still where they were.
+            The link may be out of date, or the page may have moved. Your account pages are still
+            where they were.
           </p>
         </div>
         <div className="auth-form">
