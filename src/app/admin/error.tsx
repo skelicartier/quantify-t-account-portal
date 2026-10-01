@@ -13,7 +13,6 @@ export default function AdminError({
 }) {
   return (
     <div className="page-state">
-      <p className="eyebrow">Administration</p>
       <h1 id="admin-error-heading">This administration view could not load</h1>
       <div className="page-content">
         <Callout tone="danger" title="No administrative data was shown">

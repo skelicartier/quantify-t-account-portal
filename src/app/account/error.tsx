@@ -22,7 +22,6 @@ export default function AccountError({
 }) {
   return (
     <div className="page-state">
-      <p className="eyebrow">Account</p>
       <h1 id="account-error-heading">We could not refresh this account view</h1>
       <div className="page-content">
         <Callout tone="danger" title="Nothing was changed">

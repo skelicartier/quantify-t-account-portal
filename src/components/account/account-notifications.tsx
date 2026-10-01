@@ -176,7 +176,6 @@ export function AccountNotifications({ notifications, receiptState, action, now 
           <section className="section" aria-label="Notification history">
             <div className="section__header">
               <div>
-                <p className="eyebrow">History</p>
                 <h2>Recent activity</h2>
               </div>
             </div>

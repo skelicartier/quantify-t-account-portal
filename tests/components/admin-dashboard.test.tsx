@@ -121,7 +121,9 @@ describe("AdminDashboard", () => {
     expect(screen.getByText("42")).toBeVisible();
     expect(screen.getByText("Active sessions")).toBeVisible();
     expect(screen.getByText("Desktop sessions")).toBeVisible();
-    expect(screen.getByText("Manage roles")).toBeVisible();
+    // The permissions sit behind their count; each is named, never shown as a raw capability.
+    expect(screen.getByText(/^\d+ permissions?$/)).toBeVisible();
+    expect(screen.getByText("Manage roles")).toBeInTheDocument();
     expect(screen.queryByText("roles:write")).not.toBeInTheDocument();
     expect(screen.getByText("Differences need review")).toBeVisible();
     const table = screen.getByRole("table");

@@ -17,20 +17,17 @@ type AdminGateProps = {
 
 function GateCard({
   id,
-  eyebrow,
   title,
   body,
   actions,
 }: {
   id: string;
-  eyebrow: string;
   title: string;
   body: string;
   actions: ReactNode;
 }) {
   return (
     <section className="card page-state" aria-labelledby={id}>
-      <p className="eyebrow">{eyebrow}</p>
       <h2 id={id}>{title}</h2>
       <p className="card__desc">{body}</p>
       <div className="page-state__actions">{actions}</div>
@@ -50,7 +47,6 @@ export function AdminGate({ access, section, children }: AdminGateProps) {
       return (
         <GateCard
           id="admin-gate-forbidden"
-          eyebrow="Access"
           title="This account is not authorized for administration"
           body="Your account is active, but it doesn't include administration access. If you expected it, ask an owner to update your role."
           actions={<ButtonLink href="/account">Return to account</ButtonLink>}
@@ -60,7 +56,6 @@ export function AdminGate({ access, section, children }: AdminGateProps) {
       return (
         <GateCard
           id="admin-gate-mfa"
-          eyebrow="Additional verification"
           title="A verified second factor is required"
           body="Owner, Admin and Support roles must confirm a second factor before privileged views open."
           actions={
@@ -74,7 +69,6 @@ export function AdminGate({ access, section, children }: AdminGateProps) {
       return (
         <GateCard
           id="admin-gate-capability"
-          eyebrow="Permissions"
           title={`${section} is not available`}
           body={`Your role doesn't include ${access.capability ? capabilityLabel(access.capability).toLowerCase() : "this permission"}. Ask an owner to grant it.`}
           actions={<ButtonLink href="/admin">Return to dashboard</ButtonLink>}
@@ -84,7 +78,6 @@ export function AdminGate({ access, section, children }: AdminGateProps) {
       return (
         <GateCard
           id="admin-gate-not-found"
-          eyebrow="Not found"
           title="No account record was found"
           body="The account may have been removed, or the link may be out of date."
           actions={<ButtonLink href="/admin/users">Return to users</ButtonLink>}

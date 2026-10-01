@@ -1976,7 +1976,8 @@ const server = createServer(async (request, response) => {
     max_attempts: 3,
     next_attempt_at: status === "ready" ? "" : iso(-5),
     last_error: "",
-    row_count: status === "ready" ? 1204 : 0,
+    // Within the service's ceiling (REPORT_MAX_ROWS = 1000): a report never carries more.
+    row_count: status === "ready" ? 846 : 0,
     download: {
       available: status === "ready",
       private: true,

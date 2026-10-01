@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 
 import { logout, setConsoleTheme } from "@/app/account/actions";
-import { AdminNavigation } from "@/components/admin/admin-navigation";
 import { ConsoleShell } from "@/components/shell/console-shell";
 import type { ShellIdentity } from "@/components/shell/shell-types";
 import { getAdminEntry } from "@/lib/admin/access";
+import { getCurrentAccount } from "@/lib/dal/account";
+import { DEV_PERSONAS, devAutologinPersona } from "@/lib/auth/dev-bypass";
 import { readConsoleTheme } from "@/lib/dal/theme";
 
 function initialsFor(email: string): string {
@@ -15,16 +16,25 @@ function initialsFor(email: string): string {
 }
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  // The pages keep the hard gates; the layout only needs enough to draw the frame.
-  const [entry, theme] = await Promise.all([getAdminEntry(), readConsoleTheme()]);
+  // The pages keep the hard gates; the layout only needs enough to draw the frame. The
+  // account is read too, so the rail names the person the way the account pages do; a
+  // failed read falls back to the address.
+  const [entry, theme, account] = await Promise.all([
+    getAdminEntry(),
+    readConsoleTheme(),
+    getCurrentAccount().catch(() => null),
+  ]);
   const identity: ShellIdentity = entry
     ? {
         email: entry.me.user.email,
-        displayName: entry.me.user.email.split("@")[0] ?? entry.me.user.email,
-        initials: initialsFor(entry.me.user.email),
+        displayName:
+          account?.displayName || (entry.me.user.email.split("@")[0] ?? entry.me.user.email),
+        initials: account?.initials || initialsFor(entry.me.user.email),
+        plan: account?.profileState === "ready" ? account.subscriptionTier : null,
         role: entry.me.role.effective,
         environment: entry.me.environment,
         canEnterAdmin: entry.canEnterAdmin,
+        devPersonas: devAutologinPersona() ? DEV_PERSONAS : undefined,
       }
     : {
         email: null,
@@ -39,7 +49,6 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     <ConsoleShell
       section="admin"
       identity={identity}
-      nav={<AdminNavigation />}
       signOutAction={logout}
       theme={theme}
       themeAction={setConsoleTheme}

@@ -63,7 +63,6 @@ function UsersAnalytics({ metrics }: { metrics: AccountApiAdminMetrics }) {
         <section className="section" aria-labelledby="admin-users-analytics-heading">
           <div className="section__header">
             <div>
-              <p className="eyebrow">Analytics</p>
               <h2 id="admin-users-analytics-heading">Last {series.days} days</h2>
               <p className="section__desc">
                 Daily counts in UTC; the whole window is aggregated in the database.
@@ -158,7 +157,6 @@ export function AdminUsers({ access, now }: AdminUsersProps) {
             <section className="section" aria-labelledby="admin-users-table-heading">
               <div className="section__header">
                 <div>
-                  <p className="eyebrow">Directory</p>
                   <h2 id="admin-users-table-heading">Accounts</h2>
                   {typeof total === "number" && (
                     <p className="section__desc">

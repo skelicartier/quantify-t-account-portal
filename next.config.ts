@@ -52,6 +52,8 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   poweredByHeader: false,
   reactStrictMode: true,
+  // The dev badge sat over the rail's identity in every review screenshot.
+  devIndicators: false,
   async headers() {
     return [
       {

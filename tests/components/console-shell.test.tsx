@@ -1,8 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { AccountNavigation } from "@/components/account/account-navigation";
-import { AdminNavigation } from "@/components/admin/admin-navigation";
 import { ConsoleShell } from "@/components/shell/console-shell";
 import { MobileNavToggle } from "@/components/shell/mobile-nav-toggle";
 
@@ -32,39 +30,40 @@ describe("ConsoleShell", () => {
     document.documentElement.removeAttribute("data-nav-open");
   });
 
-  it("renders the account frame with one navigation landmark and one sign-out", () => {
+  it("renders one frame: the account's sections, staff administration, and one sign-out", () => {
     render(
-      <ConsoleShell
-        section="account"
-        identity={identity}
-        nav={<AccountNavigation />}
-        signOutAction={signOut}
-      >
+      <ConsoleShell section="account" identity={identity} signOutAction={signOut}>
         <p>Page body</p>
       </ConsoleShell>,
     );
 
     expect(screen.getByRole("navigation", { name: "Account sections" })).toBeVisible();
-    // Exactly two landmarks: the section navigation and the footer's legal links.
-    expect(screen.getAllByRole("navigation")).toHaveLength(2);
+    // Staff get administration in the same rail; there is no separate console to switch to.
+    expect(screen.getByRole("navigation", { name: "Administration sections" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("href", "/admin/users");
+    // The rail's two groups and the context bar's breadcrumb; no footer.
+    expect(screen.getAllByRole("navigation")).toHaveLength(3);
+    expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
     expect(screen.getByText("Page body")).toBeVisible();
     expect(screen.getByText("Avery Stone")).toBeVisible();
-    expect(screen.getByText("user@example.com")).toBeVisible();
     // "professional" is a legacy tier that resolves to the Desk plan.
-    expect(screen.getByText("Desk plan")).toBeVisible();
-    expect(screen.getAllByRole("button", { name: "Sign out" })).toHaveLength(1);
-    expect(screen.getByRole("link", { name: /admin console/i })).toHaveAttribute("href", "/admin");
-    expect(screen.getByRole("contentinfo")).toHaveTextContent("QUANTIFY TERMINAL");
+    expect(screen.getByText("Owner · Desk plan")).toBeVisible();
+    // The address and sign-out live in the identity menu.
+    expect(screen.getByText("user@example.com")).toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem", { name: "Sign out" })).toHaveLength(1);
+    // The wordmark heads the rail, and the phone bar where the rail is an overlay.
+    for (const brand of screen.getAllByRole("link", { name: /quantify terminal, your account/i })) {
+      expect(brand).toHaveAttribute("href", "/account");
+    }
   });
 
-  it("renders the admin frame with the role and environment badges", () => {
+  it("marks the current administration page and names a non-production environment", () => {
     navigation.pathname = "/admin/users/abc";
     render(
       <ConsoleShell
         section="admin"
-        identity={identity}
-        nav={<AdminNavigation />}
+        identity={{ ...identity, environment: "staging" }}
         signOutAction={signOut}
       >
         <p>Admin body</p>
@@ -73,10 +72,12 @@ describe("ConsoleShell", () => {
 
     expect(screen.getByRole("navigation", { name: "Administration sections" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByText("Owner")).toBeVisible();
-    expect(screen.getByText("Production")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/account");
-    expect(screen.queryByRole("link", { name: /admin console/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Owner · Desk plan · staging")).toBeVisible();
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(crumbs).getByRole("link", { name: "Administration" })).toHaveAttribute(
+      "href",
+      "/admin",
+    );
   });
 
   it("flips the theme optimistically and persists the choice through the action", async () => {
@@ -86,7 +87,6 @@ describe("ConsoleShell", () => {
       <ConsoleShell
         section="account"
         identity={identity}
-        nav={<AccountNavigation />}
         signOutAction={signOut}
         theme="dark"
         themeAction={themeAction}
@@ -112,20 +112,22 @@ describe("ConsoleShell", () => {
     await waitFor(() => expect(shell).toHaveAttribute("data-theme", "dark"));
   });
 
-  it("hides the admin switch when the backend does not admit the caller", () => {
+  it("shows no administration to an account the backend does not admit", () => {
     render(
       <ConsoleShell
         section="account"
         identity={{ ...identity, canEnterAdmin: false, role: null }}
-        nav={<AccountNavigation />}
         signOutAction={signOut}
       >
         <p>Body</p>
       </ConsoleShell>,
     );
 
-    expect(screen.queryByRole("link", { name: /admin console/i })).not.toBeInTheDocument();
-    expect(screen.queryByText("Owner")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", { name: "Administration sections" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(screen.getByText("Desk plan")).toBeVisible();
   });
 });
 

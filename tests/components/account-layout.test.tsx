@@ -59,18 +59,21 @@ describe("AccountLayout", () => {
 
     expect(accountMocks.requireCurrentAccount).toHaveBeenCalledOnce();
     expect(screen.getByRole("navigation", { name: "Account sections" })).toBeVisible();
-    expect(screen.getByText("user@example.com")).toBeVisible();
+    // The address sits in the identity menu, behind the name.
+    expect(screen.getByText("user@example.com")).toBeInTheDocument();
     expect(screen.getByText("Avery Stone")).toBeVisible();
     expect(screen.getByText("Protected account content")).toBeVisible();
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
-    const signOut = screen.getByRole("button", { name: "Sign out" });
+    const signOut = screen.getByRole("menuitem", { name: "Sign out" });
     expect(signOut).toHaveAttribute("type", "submit");
     expect(signOut.closest("form")).not.toBeNull();
-    expect(screen.getAllByRole("button", { name: "Sign out" })).toHaveLength(1);
-    expect(screen.queryByRole("link", { name: /admin console/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem", { name: "Sign out" })).toHaveLength(1);
+    expect(
+      screen.queryByRole("navigation", { name: "Administration sections" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("offers the admin console only when the backend admits the caller", async () => {
+  it("offers administration only when the backend admits the caller", async () => {
     accountMocks.getAdminEntry.mockResolvedValue({
       canEnterAdmin: true,
       me: {
@@ -82,8 +85,10 @@ describe("AccountLayout", () => {
 
     render(await AccountLayout({ children: <p>Protected</p> }));
 
-    expect(screen.getByRole("link", { name: /admin console/i })).toHaveAttribute("href", "/admin");
-    expect(screen.getByText("Owner")).toBeVisible();
+    const admin = screen.getByRole("navigation", { name: "Administration sections" });
+    expect(admin).toBeVisible();
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/admin");
+    expect(screen.getByText("Owner · Desk plan")).toBeVisible();
   });
 
   it("does not construct protected content when the account guard redirects", async () => {

@@ -1,141 +1,234 @@
-import { PageHeader } from "@/components/shell/page-header";
+import { ArrowRight } from "lucide-react";
+import Link from "next/link";
+
 import { Callout } from "@/components/ui/callout";
-import { Card, LinkCard } from "@/components/ui/card";
-import { KeyValue, KeyValueRow } from "@/components/ui/key-value";
+import { DataTable } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
+import {
+  Properties,
+  Property,
+  RecordGrid,
+  RecordHeader,
+  RecordSection,
+} from "@/components/ui/record-shell";
 import { ShortId } from "@/components/ui/short-id";
-import { Stat, StatGrid } from "@/components/ui/stat";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Timestamp } from "@/components/ui/timestamp";
-import type { AccountOverviewDto } from "@/lib/dto/account";
 import { planLabel } from "@/lib/admin/plan-catalogue";
+import { roleLabel } from "@/lib/admin/role-labels";
+import type { AccountOverviewDto } from "@/lib/dto/account";
+import type { AccountActivityEventDto, AccountSessionDto } from "@/lib/dto/session";
+import { formatLabel } from "@/lib/format";
 
 type AccountOverviewProps = {
   account: AccountOverviewDto;
-  canEnterAdmin?: boolean;
+  /** Signed-in sessions, newest first; null when they could not be read. */
+  sessions?: AccountSessionDto[] | null | undefined;
+  /** Security events, newest first; null when they could not be read. */
+  events?: AccountActivityEventDto[] | null | undefined;
+  /** The effective role, for staff; plain customers have none to show. */
+  role?: string | null | undefined;
   now?: number | undefined;
 };
 
-export function AccountOverview({ account, canEnterAdmin = false, now }: AccountOverviewProps) {
+type Need = { key: string; title: string; detail: string; href: string };
+
+/** What this account is waiting on its owner for, most important first. */
+function needsFor(account: AccountOverviewDto): Need[] {
+  const needs: Need[] = [];
+  if (!account.emailConfirmed) {
+    needs.push({
+      key: "email",
+      title: "Confirm your sign-in email",
+      detail: "Until it is confirmed, password resets and security alerts cannot reach you.",
+      href: "/account/security",
+    });
+  }
+  if (account.profileState === "missing") {
+    needs.push({
+      key: "profile",
+      title: "Finish your profile",
+      detail: "Your name, country and markets set what the desktop terminal opens on.",
+      href: "/account/profile",
+    });
+  }
+  return needs;
+}
+
+/**
+ * The account's briefing, not a grid of links to the rail's own sections: who it is and
+ * how it stands, anything that needs its owner, where it is signed in now, and what
+ * happened lately. Every list is one click from its full page.
+ */
+export function AccountOverview({ account, sessions, events, role, now }: AccountOverviewProps) {
+  const needs = needsFor(account);
+  const ready = account.profileState === "ready";
+  const live = sessions?.filter((session) => session.status === "active") ?? null;
+  const recent = events?.slice(0, 6) ?? null;
   return (
     <>
-      <PageHeader
-        eyebrow="Account"
-        title="Account overview"
-        titleId="account-overview-heading"
-        description="Your identity, plan, and recent access at a glance."
+      <RecordHeader
+        title={account.displayName}
+        status={<StatusPill value={account.status} />}
+        readouts={[
+          {
+            label: "Plan",
+            // A failed profile read is not "Free": say nothing rather than the wrong plan.
+            value: ready ? planLabel(account.subscriptionTier) : "Unavailable",
+          },
+          {
+            label: "Last sign-in",
+            value: <Timestamp value={account.lastSignInAt} now={now} fallback="Never" />,
+          },
+          {
+            label: "Signed in now",
+            value: live === null ? "—" : String(live.length),
+          },
+        ]}
       />
 
-      <div className="page-content">
-        {account.profileState !== "ready" && (
-          <Callout role="status" tone="attention" title="Profile details are unavailable right now">
-            {account.profileState === "missing"
-              ? "Your sign-in is verified, but your profile hasn't been set up yet. You can still manage security and sessions."
-              : "Your sign-in is verified, but profile details couldn't be loaded. Refresh in a moment; nothing about your account has changed."}
-          </Callout>
+      {account.profileState !== "ready" && (
+        <Callout role="status" tone="attention" title="Profile details are unavailable right now">
+          {account.profileState === "missing"
+            ? "Your sign-in is verified, but your profile hasn't been set up yet. You can still manage security and sessions."
+            : "Your sign-in is verified, but profile details couldn't be loaded. Refresh in a moment; nothing about your account has changed."}
+        </Callout>
+      )}
+
+      <RecordGrid
+        side={
+          <Properties title="Account">
+            <Property label="Sign-in email">{account.email ?? "Unavailable"}</Property>
+            <Property label="Email">
+              <StatusPill
+                value={account.emailConfirmed ? "verified" : "unverified"}
+                label={account.emailConfirmed ? "Confirmed" : "Not confirmed"}
+              />
+            </Property>
+            <Property label="Plan">
+              {ready ? planLabel(account.subscriptionTier) : "Unavailable"}
+            </Property>
+            {role && role !== "user" && <Property label="Role">{roleLabel(role)}</Property>}
+            <Property label="Member since">
+              <Timestamp value={account.memberSince} mode="date" />
+            </Property>
+            <Property label="Account ID" mono>
+              <ShortId value={account.userId} full />
+            </Property>
+          </Properties>
+        }
+      >
+        {needs.length > 0 && (
+          <RecordSection id="needs" title="Needs you">
+            <ul className="need-list">
+              {needs.map((need) => (
+                <li key={need.key}>
+                  <Link className="need-list__row" href={need.href}>
+                    <span>
+                      <span className="need-list__title">{need.title}</span>
+                      <span className="need-list__detail">{need.detail}</span>
+                    </span>
+                    <ArrowRight size={15} strokeWidth={1.8} aria-hidden="true" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </RecordSection>
         )}
 
-        <div className="overview">
-          <Card important>
-            <div className="overview__identity">
-              <span className="avatar avatar--large" aria-hidden="true">
-                {account.initials}
-              </span>
-              <div>
-                <p className="eyebrow">Account holder</p>
-                <h2 className="overview__name">{account.displayName}</h2>
-                <p className="overview__email">{account.email ?? "Email unavailable"}</p>
-              </div>
-            </div>
-            <KeyValue columns={2} className="card__body">
-              <KeyValueRow label="Account ID">
-                <ShortId value={account.userId} full />
-              </KeyValueRow>
-              <KeyValueRow label="Member since">
-                <Timestamp value={account.memberSince} mode="date" />
-              </KeyValueRow>
-            </KeyValue>
-          </Card>
-
-          <StatGrid columns={2} label="Account standing">
-            <Stat label="Status" value={<StatusPill value={account.status} />} text />
-            {/* Not asserted when the profile could not be read. `canonicalPlan` resolves
-                anything it does not recognise — including the empty string a failed read
-                leaves behind — to "free", so this stat printed "Free" with full confidence
-                directly beneath the callout saying the details were unavailable. Telling a
-                Desk customer they are on Free is worse than telling them nothing. */}
-            <Stat
-              label="Plan"
-              value={
-                account.profileState === "ready" ? (
-                  planLabel(account.subscriptionTier)
-                ) : (
-                  <span className="quiet">Unavailable</span>
-                )
-              }
-              text
-            />
-            <Stat
-              label="Last sign-in"
-              value={<Timestamp value={account.lastSignInAt} now={now} />}
-              text
-            />
-            <Stat
-              label="Sign-in email"
-              value={
-                <StatusPill
-                  value={account.emailConfirmed ? "verified" : "unverified"}
-                  label={account.emailConfirmed ? "Verified" : "Not verified"}
+        <RecordSection
+          id="signed-in"
+          title="Signed in now"
+          actions={
+            <Link className="text-link" href="/account/sessions">
+              All sessions
+            </Link>
+          }
+        >
+          {live === null ? (
+            <p className="muted">Sessions could not be read just now.</p>
+          ) : (
+            <DataTable
+              caption="Signed in now"
+              columns={[
+                { key: "device", label: "Device" },
+                { key: "last-seen", label: "Last seen" },
+                { key: "signed-in", label: "Signed in" },
+              ]}
+              isEmpty={live.length === 0}
+              empty={
+                <EmptyState
+                  title="Nowhere else right now."
+                  description="The desktop terminal and this console appear here while they are signed in."
                 />
               }
-              text
-            />
-          </StatGrid>
-        </div>
+            >
+              {live.slice(0, 5).map((session) => (
+                <tr key={session.id}>
+                  <td>
+                    <span className="data-table__primary">
+                      {session.deviceName ?? formatLabel(session.source)}
+                    </span>
+                    <span className="data-table__secondary">{formatLabel(session.source)}</span>
+                  </td>
+                  <td>
+                    <Timestamp value={session.lastSeenAt} now={now} />
+                  </td>
+                  <td>
+                    <Timestamp value={session.createdAt} now={now} />
+                  </td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+        </RecordSection>
 
-        <section className="section" aria-labelledby="account-manage-heading">
-          <div className="section__header">
-            <div>
-              <p className="eyebrow">Manage</p>
-              <h2 id="account-manage-heading">Everything about your account</h2>
-            </div>
-          </div>
-          <div className="card-grid">
-            <LinkCard
-              href="/account/profile"
-              title="Edit profile"
-              description="Name, phone and country shared with your terminal."
-            />
-            <LinkCard
-              href="/account/subscription"
-              title="Subscription"
-              description="Your plan, what it includes and what you have used."
-            />
-            <LinkCard
-              href="/account/preferences"
-              title="Preferences"
-              description="Timezone, currency and notification choices."
-            />
-            <LinkCard
-              href="/account/sessions"
-              title="Sessions"
-              description="Devices and apps currently signed in."
-            />
-            <LinkCard
-              href="/account/activity"
-              title="Activity"
-              description="Sign-in and security events on this account."
-            />
-            {canEnterAdmin && (
-              <LinkCard
-                href="/admin"
-                eyebrow="Administration"
-                title="Admin console"
-                description="People, roles, audit and platform status."
-              />
-            )}
-          </div>
-        </section>
-      </div>
+        <RecordSection
+          id="recent"
+          title="Recent activity"
+          actions={
+            <Link className="text-link" href="/account/activity">
+              All activity
+            </Link>
+          }
+        >
+          {recent === null ? (
+            <p className="muted">Activity could not be read just now.</p>
+          ) : (
+            <DataTable
+              caption="Recent activity"
+              columns={[
+                { key: "when", label: "When" },
+                { key: "event", label: "Event" },
+                { key: "outcome", label: "Outcome" },
+                { key: "surface", label: "From" },
+              ]}
+              isEmpty={recent.length === 0}
+              empty={
+                <EmptyState
+                  title="Nothing recorded yet."
+                  description="Sign-ins, password changes and session events appear here."
+                />
+              }
+            >
+              {recent.map((event) => (
+                <tr key={event.id}>
+                  <td>
+                    <Timestamp value={event.occurredAt} now={now} />
+                  </td>
+                  <td>
+                    <span className="data-table__primary">{formatLabel(event.eventType)}</span>
+                  </td>
+                  <td>
+                    <StatusPill value={event.outcome} />
+                  </td>
+                  <td>{formatLabel(event.source)}</td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+        </RecordSection>
+      </RecordGrid>
     </>
   );
 }

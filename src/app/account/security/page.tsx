@@ -51,7 +51,6 @@ export default async function SecurityPage({
 
         <div className="settings-row">
           <div className="settings-row__intro">
-            <p className="eyebrow">Password</p>
             <h2 id="security-password-heading">Change password</h2>
             <p>Updating your password signs out your other sessions on this account.</p>
           </div>
@@ -60,7 +59,6 @@ export default async function SecurityPage({
 
         <div className="settings-row">
           <div className="settings-row__intro">
-            <p className="eyebrow">Email</p>
             <h2 id="security-email-heading">Change verified email</h2>
             <p>
               Your sign-in address only changes after the confirmation links from both the current
@@ -72,7 +70,6 @@ export default async function SecurityPage({
 
         <div className="settings-row">
           <div className="settings-row__intro">
-            <p className="eyebrow">Two-factor authentication</p>
             <h2 id="security-mfa-heading">Authenticator app</h2>
             <p>
               What you see here is what sign-in enforces: the status comes from your verified
@@ -91,7 +88,6 @@ export default async function SecurityPage({
 
         <div className="settings-row">
           <div className="settings-row__intro">
-            <p className="eyebrow">If you lose access</p>
             <h2 id="security-recovery-heading">Recovery guidance</h2>
           </div>
           <Callout title="Keep these in mind">

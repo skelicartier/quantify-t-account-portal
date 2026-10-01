@@ -21,7 +21,6 @@ export default async function PreferencesPage() {
       <div className="page-content">
         <div className="settings-row">
           <div className="settings-row__intro">
-            <p className="eyebrow">Defaults</p>
             <h2 id="preference-details-heading">Locale and notifications</h2>
             <p>
               Saves are checked against the version you loaded, so an older tab can never overwrite

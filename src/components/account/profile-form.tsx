@@ -29,13 +29,11 @@ type ProfileFormProps = {
  * content, and the reader gets a heading where they actually need one.
  */
 function Group({
-  eyebrow,
   title,
   description,
   headingId,
   children,
 }: {
-  eyebrow: string;
   title: string;
   description: string;
   headingId: string;
@@ -44,7 +42,6 @@ function Group({
   return (
     <section className="settings-row" aria-labelledby={headingId}>
       <div className="settings-row__intro">
-        <p className="eyebrow">{eyebrow}</p>
         <h2 id={headingId}>{title}</h2>
         <p>{description}</p>
       </div>
@@ -67,7 +64,6 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
         </Callout>
       )}
       <Group
-        eyebrow="Contact details"
         title="Who you are"
         description="Saved to your account and visible in the desktop terminal after its next sync."
         headingId="profile-details-heading"
@@ -141,7 +137,6 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
       </Group>
 
       <Group
-        eyebrow="About you"
         title="What you do"
         description="All optional. None of it changes what you can do — it changes what the terminal assumes when it has to guess."
         headingId="profile-about-heading"
@@ -248,7 +243,6 @@ export function ProfileForm({ profile, action }: ProfileFormProps) {
       </Group>
 
       <Group
-        eyebrow="What you follow"
         title="Markets you care about"
         description="These shape the desktop's tab order, its Pulse universe and what a fresh watchlist starts with. You answered them once during setup — this is where you change your mind."
         headingId="profile-focus-heading"

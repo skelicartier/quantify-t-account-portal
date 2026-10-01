@@ -102,7 +102,7 @@ export function AdminDashboard({ access, now }: AdminDashboardProps) {
                   label="Flagged events"
                   value={formatNumber(flaggedEvents)}
                   tone={flaggedEvents > 0 ? "danger" : "default"}
-                  hint="Failed or blocked in the last 24h"
+                  hint="Failed or blocked, 24h"
                 />
                 <Stat label="Expired sessions" value={formatNumber(metrics.sessions.expired)} />
                 <Stat label="Revoked sessions" value={formatNumber(metrics.sessions.revoked)} />
@@ -151,8 +151,8 @@ export function AdminDashboard({ access, now }: AdminDashboardProps) {
           )}
 
           <div className="card-grid card-grid--2">
-            <Card eyebrow="Your access" title={me.user.email} titleId="admin-access-heading">
-              <div className="identity__badges">
+            <Card title="Your access" titleId="admin-access-heading" description={me.user.email}>
+              <div className="access-badges">
                 <RoleBadge role={me.role.effective} />
                 <EnvBadge environment={me.environment} />
                 <StatusPill
@@ -161,18 +161,24 @@ export function AdminDashboard({ access, now }: AdminDashboardProps) {
                   label={mismatchLabel(me.role.mismatch)}
                 />
               </div>
-              <ul className="chip-list" aria-label="Granted permissions" style={{ marginTop: 16 }}>
-                {me.capabilities.map((capability) => (
-                  <li className="chip" key={capability}>
-                    {capabilityLabel(capability)}
-                  </li>
-                ))}
-              </ul>
+              {/* The permissions behind a count, not twenty-two chips: the role says what they
+                  are; the list is there to check one. */}
+              <details className="disclosure">
+                <summary>
+                  {me.capabilities.length}{" "}
+                  {me.capabilities.length === 1 ? "permission" : "permissions"}
+                </summary>
+                <ul className="capability-list" aria-label="Granted permissions">
+                  {me.capabilities.map((capability) => (
+                    <li key={capability}>{capabilityLabel(capability)}</li>
+                  ))}
+                </ul>
+              </details>
             </Card>
 
             <Card
-              eyebrow="Role integrity"
-              title={roleReportStatus(roleReport)}
+              title="Role integrity"
+              description={roleReportStatus(roleReport)}
               titleId="admin-role-integrity-heading"
               important={Boolean(roleReport) && !roleReport?.legacy_retirement_ready}
               actions={

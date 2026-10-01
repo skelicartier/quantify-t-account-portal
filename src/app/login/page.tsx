@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { login, verifyLoginChallenge } from "@/app/login/actions";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 import { Callout } from "@/components/ui/callout";
 import { isDesktopConnectNextPath } from "@/lib/auth/desktop-connect";
+import { devAutologinPersona } from "@/lib/auth/dev-bypass";
 import { sanitizeNextPath } from "@/lib/auth/login";
 import { turnstileSiteKey as resolveTurnstileSiteKey } from "@/lib/auth/turnstile";
 
@@ -18,6 +20,7 @@ type LoginPageProps = {
   searchParams: Promise<{
     next?: string | string[];
     notice?: string | string[];
+    form?: string | string[];
   }>;
 };
 
@@ -42,6 +45,10 @@ const NOTICES: Record<string, { tone: "neutral" | "success" | "attention"; text:
     tone: "success",
     text: "Your password was updated. Sign in with the new password.",
   },
+  "dev-unavailable": {
+    tone: "attention",
+    text: "The demo sign-in could not reach the local mock. Start it with npm run mock:api, or sign in below.",
+  },
   "mfa-required": {
     tone: "neutral",
     text: "This account requires an authenticator code. Sign in with your password to continue to the code step.",
@@ -54,6 +61,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const noticeKey = Array.isArray(parameters.notice) ? parameters.notice[0] : parameters.notice;
   const nextPath = sanitizeNextPath(requestedPath);
   const notice = noticeKey ? NOTICES[noticeKey] : undefined;
+  // Development only: the demo skips this page (the form stays at `/login?form=1`).
+  if (devAutologinPersona() && !noticeKey && !parameters.form) {
+    redirect(`/dev/signin?next=${encodeURIComponent(nextPath)}`);
+  }
   // The desktop app sent the visitor here; the handoff rides along into sign-up too.
   const returnsToDesktop = isDesktopConnectNextPath(nextPath);
   // Rendered only when the challenge is fully configured — both the site key AND the secret

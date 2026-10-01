@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 type CardProps = {
+  /** Kept for callers; not drawn — the console has no dash-labels over titles. */
   eyebrow?: ReactNode;
   title?: ReactNode;
   titleAs?: "h2" | "h3" | undefined;
@@ -34,7 +35,6 @@ function cardClass({
 }
 
 export function Card({
-  eyebrow,
   title,
   titleAs: TitleTag = "h3",
   titleId,
@@ -51,7 +51,6 @@ export function Card({
       className={cardClass({ important, danger, soft, className })}
       aria-labelledby={titleId}
     >
-      {eyebrow && <p className="eyebrow card__eyebrow">{eyebrow}</p>}
       {title && (
         <TitleTag className="card__title" id={titleId}>
           {title}
@@ -66,16 +65,16 @@ export function Card({
 
 type LinkCardProps = {
   href: string;
+  /** Kept for callers; not drawn — the console has no dash-labels over titles. */
   eyebrow?: ReactNode;
   title: ReactNode;
   description?: ReactNode;
 };
 
 /** A whole-card link; the arrow is decorative, the title is the accessible name. */
-export function LinkCard({ href, eyebrow, title, description }: LinkCardProps) {
+export function LinkCard({ href, title, description }: LinkCardProps) {
   return (
     <Link className="card card--interactive" href={href}>
-      {eyebrow && <span className="eyebrow card__eyebrow">{eyebrow}</span>}
       <span className="card__title">{title}</span>
       {description && <span className="card__desc">{description}</span>}
       <ArrowRight className="card__arrow" size={18} aria-hidden="true" />
@@ -86,6 +85,7 @@ export function LinkCard({ href, eyebrow, title, description }: LinkCardProps) {
 type SectionProps = {
   id: string;
   title: ReactNode;
+  /** Kept for callers; not drawn — the console has no dash-labels over titles. */
   eyebrow?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
@@ -94,15 +94,7 @@ type SectionProps = {
 };
 
 /** A titled region: the `<h2>` and everything it introduces share one `<section>`. */
-export function Section({
-  id,
-  title,
-  eyebrow,
-  description,
-  actions,
-  className,
-  children,
-}: SectionProps) {
+export function Section({ id, title, description, actions, className, children }: SectionProps) {
   const headingId = `${id}-heading`;
   return (
     <section
@@ -111,7 +103,6 @@ export function Section({
     >
       <div className="section__header">
         <div>
-          {eyebrow && <p className="eyebrow">{eyebrow}</p>}
           <h2 id={headingId}>{title}</h2>
           {description && <p className="section__desc">{description}</p>}
         </div>

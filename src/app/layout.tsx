@@ -6,7 +6,7 @@ import { readConsoleTheme } from "@/lib/dal/theme";
 
 import "./globals.css";
 
-// Both faces ship with the app (variable WOFF2, SIL OFL — see src/app/fonts), so the
+// The faces ship with the app (WOFF2, SIL OFL — see src/app/fonts), so the
 // build never depends on Google Fonts and the strict `font-src 'self'` CSP holds.
 const spaceGrotesk = localFont({
   src: "./fonts/space-grotesk-latin-wght.woff2",
@@ -21,6 +21,17 @@ const jetbrainsMono = localFont({
   display: "swap",
   variable: "--font-jetbrains-mono",
   adjustFontFallback: false,
+});
+
+// The wordmark's face ("quantify terminal." at the top of every screen), 600 and the
+// 700 full stop. Preloaded: the rail and the sign-in pages draw it on every page.
+const poppins = localFont({
+  src: [
+    { path: "./fonts/poppins-latin-600.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/poppins-latin-700.woff2", weight: "700", style: "normal" },
+  ],
+  display: "swap",
+  variable: "--font-wordmark",
 });
 
 export const metadata: Metadata = {
@@ -51,7 +62,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${jetbrainsMono.variable}`}
+      className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} ${poppins.variable}`}
       data-theme={theme}
     >
       <body>

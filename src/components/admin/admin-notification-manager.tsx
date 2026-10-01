@@ -118,7 +118,7 @@ function NotificationEditor({
     <form action={formAction} className="card card--important">
       <div className="section__header">
         <div>
-          <p className="eyebrow">{note.id ? "Editing" : "Draft"}</p>
+          <p className="quiet">{note.id ? "Editing" : "Draft"}</p>
           <h2>{note.id ? "Edit notification" : "New notification"}</h2>
         </div>
         <Button
