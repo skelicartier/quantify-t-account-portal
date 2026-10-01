@@ -1221,6 +1221,300 @@ function publicPortfolioView(row: MockPortfolio) {
   return view;
 }
 
+// ---- overnight ---------------------------------------------------------------------
+//
+// The morning briefs the desktop files (schema 1, the desktop's own rendering). The owner
+// has three mornings — a busy one, one where documents landed and every belief held, and a
+// quiet one — so every state of the page can be seen; everyone else has none.
+
+function overnightDay(daysAgo: number): string {
+  return new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10);
+}
+
+function overnightAt(date: string, time: string): string {
+  return `${date}T${time}Z`;
+}
+
+function overnightBrief(daysAgo: number, shape: "busy" | "held" | "quiet") {
+  const date = overnightDay(daysAgo);
+  const previous = overnightDay(daysAgo + 1);
+  const documents = [
+    {
+      issuer: "Orbital Freight",
+      form: "8-K",
+      title: "Results of operations and financial condition",
+      filed: overnightAt(previous, "20:01:00"),
+      url: "https://www.sec.gov/Archives/orbital-freight-8k.htm",
+      why: "1 belief read a figure it changed and holds: Revenue grows at least 12% a year (FY2026Q3: 14.10%)",
+      held: ["Revenue grows at least 12% a year (FY2026Q3: 14.10%)"],
+    },
+    {
+      issuer: "Meridian Health",
+      form: "10-Q",
+      title: "Quarterly report",
+      filed: "",
+      url: "",
+      why: "no assumption reads a figure this document changed",
+      held: [],
+    },
+  ];
+  const items =
+    shape !== "busy"
+      ? []
+      : [
+          {
+            rank: 1,
+            stage: "active",
+            verdict: "BREACHED",
+            why: "0.512 is below 0.55",
+            ticker: "NRTH",
+            name: "Northvale Systems",
+            weight: "4.2%",
+            reach: "8.7%",
+            belief: {
+              text: "Enterprise mix stays at or above 55% of revenue through FY27",
+              rule: "QT.MODEL.MIX >= 0.55",
+              recorded: "2026-03-14T00:00:00Z",
+              horizon: "2027-12-31T00:00:00Z",
+              version: 2,
+            },
+            lines: {
+              belief:
+                "Enterprise mix stays at or above 55% of revenue through FY27  (recorded 2026-03-14 · v2)",
+              landed: `0.512, FY2026Q3, ${previous} 21:05, sec_edgar`,
+              hits: "Row 34 Enterprise mix 0.55 → 0.512  →  through 412 cells  →  Row 141 Fair value per share 100.00 → 94.00",
+              cost: "Fair value per share: -1.8% if it recovers · -6.0% if it holds",
+              unbreak:
+                "Enterprise mix +1.2% per quarter for 3 quarters to reach 0.55 by 2027-06-30  ·  trailing average -0.4% over 6 quarters",
+              precedent: [
+                "8 matches in 2016-09-19 to 2026-09-19",
+                "the variable kept going in 6 of 8; it moved again within two periods in 4 of 8",
+                "  t+1: min -7.0% · p25 -5.3% · median -3.5% · p75 -1.7% · max -0.0%",
+                "  t+20: min -19.0% · p25 -12.0% · median -5.0% · p75 +2.0% · max +9.0%",
+              ],
+            },
+            landed: {
+              value: "0.512",
+              period: "FY2026Q3",
+              judged: "",
+              judged_period: "",
+              published: overnightAt(previous, "21:05:00"),
+              effective: "",
+              kind: "filing",
+              source: "sec_edgar",
+              url: "https://www.sec.gov/Archives/northvale-10q.htm",
+            },
+            chain: {
+              cells: 414,
+              rows: [
+                {
+                  row: "34",
+                  label: "Enterprise mix",
+                  period: "FY2026Q3",
+                  before: "0.55",
+                  after: "0.512",
+                  change: "-6.9%",
+                  landed: true,
+                },
+                {
+                  row: "88",
+                  label: "Enterprise gross margin",
+                  period: "FY2027",
+                  before: "0.71",
+                  after: "0.69",
+                  change: "-2.8%",
+                  landed: false,
+                },
+                {
+                  row: "141",
+                  label: "Fair value per share",
+                  period: "FY2026Q3",
+                  before: "100.00",
+                  after: "94.00",
+                  change: "-6.0%",
+                  landed: false,
+                },
+              ],
+            },
+            scenarios: [
+              {
+                name: "recovers",
+                target: "0.55",
+                output: "Fair value per share",
+                change: "-1.8%",
+                note: "",
+              },
+              {
+                name: "holds",
+                target: "0.512",
+                output: "Fair value per share",
+                change: "-6.0%",
+                note: "",
+              },
+            ],
+            unbreak: {
+              needed: "+1.2%",
+              trailing: "-0.4%",
+              cadence: "quarter",
+              periods: 3,
+              observed: 6,
+              note: "",
+            },
+            precedent: {
+              n: 8,
+              thin: false,
+              window: "2016-09-19 to 2026-09-19",
+              spreads: [
+                {
+                  horizon: "t+1",
+                  n: 8,
+                  min: "-7.0%",
+                  p25: "-5.3%",
+                  median: "-3.5%",
+                  p75: "-1.7%",
+                  max: "-0.0%",
+                  clusters: "",
+                },
+                {
+                  horizon: "t+20",
+                  n: 8,
+                  min: "-19.0%",
+                  p25: "-12.0%",
+                  median: "-5.0%",
+                  p75: "+2.0%",
+                  max: "+9.0%",
+                  clusters: "3 between -19.0% and -11.0%, 5 between -3.0% and +9.0%",
+                },
+              ],
+              cases: [],
+            },
+            notes: ["The quarter is judged against an annual belief; the year closes in December."],
+            actions: ["hold", "trim", "exit", "revise_belief"],
+          },
+          {
+            rank: 2,
+            stage: "research",
+            verdict: "APPROACHING",
+            why: "9.1 days, closing on 8 within two quarters",
+            ticker: "HLX",
+            name: "Halcyon Logistics",
+            weight: "3.1%",
+            reach: "",
+            belief: {
+              text: "Days sales outstanding stays under 8 days",
+              rule: "QT.MODEL.DSO < 8",
+              recorded: "2026-05-02T00:00:00Z",
+              horizon: "",
+              version: 0,
+            },
+            lines: {
+              belief: "Days sales outstanding stays under 8 days  (recorded 2026-05-02)",
+              landed: `9, FY2026Q3, ${previous} 22:30, company_ir`,
+              hits: "—  no model is committed for this name",
+              cost: "—  no model is committed for this name",
+              unbreak: "—",
+              precedent: ["—  no corpus was searched"],
+            },
+            landed: {
+              value: "9",
+              period: "FY2026Q3",
+              judged: "",
+              judged_period: "",
+              published: overnightAt(previous, "22:30:00"),
+              effective: "",
+              kind: "",
+              source: "company_ir",
+              url: "",
+            },
+            chain: { cells: 0, rows: [] },
+            scenarios: [],
+            unbreak: null,
+            precedent: null,
+            notes: [],
+            actions: ["hold", "trim", "exit", "revise_belief"],
+          },
+        ];
+  const shown = shape === "quiet" ? [] : documents;
+  const held = shown.reduce((total, row) => total + row.held.length, 0);
+  const seen = shown.length + items.length;
+  const count =
+    seen === 0
+      ? "0 documents touched this book. Nothing moved an assumption."
+      : items.length > 0
+        ? `${seen} documents touched this book overnight. ${items.length} moved an assumption. ${held} belief read what it changed and holds.`
+        : `${seen} documents touched this book. ${held} belief read what it changed and holds; nothing moved.`;
+  return {
+    schema_version: 1,
+    date,
+    generated_at: overnightAt(date, "06:14:00"),
+    since: overnightAt(overnightDay(daysAgo + 3), "06:14:00"),
+    count_line: count,
+    documents_seen: seen,
+    documents_moving: items.length,
+    beliefs_held: held,
+    items,
+    documents: shown,
+    blind_spots: {
+      teaser: "4 facts arrived on 1 variable you hold no belief about.",
+      counts: {
+        unbelieved_variables: 1,
+        unthresholded_assumptions: 0,
+        stale_beliefs: 1,
+        no_thesis: 0,
+      },
+      total: 2,
+      rows_total: 2,
+      rows: [
+        {
+          section: "unbelieved_variables",
+          label: "Northvale Systems",
+          weight: "4.2%",
+          variable: "Capital expenditure",
+          text: "Capital expenditure: 4 facts arrived and no belief reads it",
+          arrivals: 4,
+          last_seen: overnightAt(previous, "21:05:00"),
+        },
+        {
+          section: "stale_beliefs",
+          label: "Halcyon Logistics",
+          weight: "3.1%",
+          variable: "",
+          text: "Recorded 400 days ago and not revised since",
+          arrivals: 0,
+          last_seen: "",
+        },
+      ],
+    },
+    attributions: ["Filings: SEC EDGAR"],
+    notes: ["Precedent is read over the last 10 years."],
+  };
+}
+
+type MockOvernight = {
+  user_id: string;
+  received_at: string;
+  brief: ReturnType<typeof overnightBrief>;
+};
+
+const overnightBriefs: MockOvernight[] = [
+  { user_id: OWNER_ID, received_at: iso(60 * 3), brief: overnightBrief(0, "busy") },
+  { user_id: OWNER_ID, received_at: iso(60 * 27), brief: overnightBrief(1, "held") },
+  { user_id: OWNER_ID, received_at: iso(60 * 51), brief: overnightBrief(2, "quiet") },
+];
+
+function overnightSummary(row: MockOvernight) {
+  return {
+    date: row.brief.date,
+    generated_at: row.brief.generated_at,
+    received_at: row.received_at,
+    count_line: row.brief.count_line,
+    documents_seen: row.brief.documents_seen,
+    documents_moving: row.brief.documents_moving,
+    beliefs_held: row.brief.beliefs_held,
+    blind_spots_total: row.brief.blind_spots ? row.brief.blind_spots.total : null,
+  };
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://127.0.0.1:${PORT}`);
   const route = url.pathname.replace(/^\/api\/v1\/?/u, "").replace(/\/+$/u, "");
@@ -2498,6 +2792,47 @@ const server = createServer(async (request, response) => {
       return ok(response, { ok: true, message: "Connected.", connection: publicBrokerView(row) });
     }
     return fail(response, 404, "not_found", `No route for ${method} ${route}.`);
+  }
+
+  // ---- overnight -------------------------------------------------------------------
+  if (route === "me/overnight" && method === "GET") {
+    const mine = overnightBriefs
+      .filter((row) => row.user_id === userId)
+      .sort((a, b) => b.brief.date.localeCompare(a.brief.date))
+      .slice(0, 30);
+    return ok(response, { mornings: mine.map(overnightSummary), keep: 30 });
+  }
+  const overnightRead = /^me\/overnight\/(\d{4}-\d{2}-\d{2})$/u.exec(route);
+  if (overnightRead && method === "GET") {
+    const row = overnightBriefs.find(
+      (candidate) => candidate.user_id === userId && candidate.brief.date === overnightRead[1],
+    );
+    if (!row) return fail(response, 404, "not_found", "No brief for that morning.");
+    return ok(response, { date: row.brief.date, received_at: row.received_at, brief: row.brief });
+  }
+  const overnightWrite = /^me\/overnight\/(\d{4}-\d{2}-\d{2})\/update$/u.exec(route);
+  if (overnightWrite && method === "POST") {
+    // The service checks every field; the mock checks what the page relies on and keeps the
+    // same thirty-morning ceiling.
+    const brief = json.brief as ReturnType<typeof overnightBrief> | undefined;
+    if (!brief || brief.schema_version !== 1 || brief.date !== overnightWrite[1]) {
+      return fail(response, 400, "malformed_request", "The brief's date and schema must match.");
+    }
+    const existing = overnightBriefs.findIndex(
+      (row) => row.user_id === userId && row.brief.date === brief.date,
+    );
+    const stored = { user_id: userId, received_at: iso(0), brief };
+    if (existing >= 0) overnightBriefs.splice(existing, 1, stored);
+    else overnightBriefs.push(stored);
+    const mine = overnightBriefs
+      .filter((row) => row.user_id === userId)
+      .sort((a, b) => b.brief.date.localeCompare(a.brief.date));
+    for (const old of mine.slice(30)) overnightBriefs.splice(overnightBriefs.indexOf(old), 1);
+    return ok(response, {
+      date: brief.date,
+      received_at: stored.received_at,
+      stored_bytes: JSON.stringify(brief).length,
+    });
   }
 
   // ---- portfolios ------------------------------------------------------------------

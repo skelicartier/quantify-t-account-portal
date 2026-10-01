@@ -930,6 +930,285 @@ export async function deleteAccountApiPortfolio(
   );
 }
 
+// The OVERNIGHT morning briefs the desktop files in the account (schema 1). The terminal
+// formats every sentence and figure; these schemas mirror the service's own checks
+// (`account_api/overnight_routes.py`) so a document the page cannot draw is refused here
+// rather than rendered half. A source address is a link only when it is plain http(s).
+
+const overnightText = (max: number) => z.string().max(max);
+const overnightCount = z.number().int().min(0);
+const overnightLink = z
+  .string()
+  .max(500)
+  .refine((value) => value === "" || /^https?:\/\/[^/@\s]+(\/|$)/iu.test(value), {
+    message: "an http(s) address or empty",
+  });
+
+const overnightItemSchema = z
+  .object({
+    rank: z.number().int().min(1).max(99),
+    stage: z.enum(["idea", "research", "active", "closed", "rejected"]),
+    verdict: z.enum(["BREACHED", "APPROACHING", "READ-ACROSS"]),
+    why: overnightText(600),
+    ticker: overnightText(24),
+    name: overnightText(200),
+    weight: overnightText(24),
+    reach: overnightText(24),
+    belief: z
+      .object({
+        text: overnightText(1000),
+        rule: overnightText(300),
+        recorded: overnightText(40),
+        horizon: overnightText(40),
+        version: overnightCount,
+      })
+      .strict(),
+    lines: z
+      .object({
+        belief: overnightText(1200),
+        landed: overnightText(800),
+        hits: overnightText(1200),
+        cost: overnightText(800),
+        unbreak: overnightText(800),
+        precedent: z.array(overnightText(800)).max(40),
+      })
+      .strict(),
+    landed: z
+      .object({
+        value: overnightText(60),
+        period: overnightText(60),
+        judged: overnightText(60),
+        judged_period: overnightText(60),
+        published: overnightText(40),
+        effective: overnightText(40),
+        kind: overnightText(40),
+        source: overnightText(200),
+        url: overnightLink,
+      })
+      .strict()
+      .nullable(),
+    chain: z
+      .object({
+        cells: overnightCount,
+        rows: z
+          .array(
+            z
+              .object({
+                row: overnightText(20),
+                label: overnightText(200),
+                period: overnightText(40),
+                before: overnightText(60),
+                after: overnightText(60),
+                change: overnightText(24),
+                landed: z.boolean(),
+              })
+              .strict(),
+          )
+          .max(80),
+      })
+      .strict(),
+    scenarios: z
+      .array(
+        z
+          .object({
+            name: overnightText(40),
+            target: overnightText(60),
+            output: overnightText(200),
+            change: overnightText(24),
+            note: overnightText(400),
+          })
+          .strict(),
+      )
+      .max(2),
+    unbreak: z
+      .object({
+        needed: overnightText(24),
+        trailing: overnightText(24),
+        cadence: overnightText(20),
+        periods: overnightCount,
+        observed: overnightCount,
+        note: overnightText(800),
+      })
+      .strict()
+      .nullable(),
+    precedent: z
+      .object({
+        n: overnightCount,
+        thin: z.boolean(),
+        window: overnightText(60),
+        spreads: z
+          .array(
+            z
+              .object({
+                horizon: overnightText(10),
+                n: overnightCount,
+                min: overnightText(24),
+                p25: overnightText(24),
+                median: overnightText(24),
+                p75: overnightText(24),
+                max: overnightText(24),
+                clusters: overnightText(300),
+              })
+              .strict(),
+          )
+          .max(8),
+        cases: z
+          .array(
+            z
+              .object({
+                label: overnightText(200),
+                when: overnightText(40),
+                move: overnightText(24),
+              })
+              .strict(),
+          )
+          .max(30),
+      })
+      .strict()
+      .nullable(),
+    notes: z.array(overnightText(800)).max(20),
+    actions: z.array(overnightText(40)).max(8),
+  })
+  .strict();
+
+const overnightDocumentSchema = z
+  .object({
+    issuer: overnightText(200),
+    form: overnightText(40),
+    title: overnightText(400),
+    filed: overnightText(40),
+    url: overnightLink,
+    why: overnightText(2000),
+    held: z.array(overnightText(800)).max(40),
+  })
+  .strict();
+
+const overnightBlindSpotsSchema = z
+  .object({
+    teaser: overnightText(300),
+    counts: z
+      .object({
+        unbelieved_variables: overnightCount,
+        unthresholded_assumptions: overnightCount,
+        stale_beliefs: overnightCount,
+        no_thesis: overnightCount,
+      })
+      .strict(),
+    total: overnightCount,
+    rows_total: overnightCount,
+    rows: z
+      .array(
+        z
+          .object({
+            section: z.enum([
+              "unbelieved_variables",
+              "unthresholded_assumptions",
+              "stale_beliefs",
+              "no_thesis",
+            ]),
+            label: overnightText(200),
+            weight: overnightText(24),
+            variable: overnightText(200),
+            text: overnightText(800),
+            arrivals: overnightCount,
+            last_seen: overnightText(40),
+          })
+          .strict(),
+      )
+      .max(150),
+  })
+  .strict();
+
+export const overnightBriefSchema = z
+  .object({
+    schema_version: z.literal(1),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    generated_at: overnightText(40),
+    since: overnightText(40),
+    count_line: overnightText(400),
+    documents_seen: overnightCount,
+    documents_moving: overnightCount,
+    beliefs_held: overnightCount,
+    items: z.array(overnightItemSchema).max(12),
+    documents: z.array(overnightDocumentSchema).max(60),
+    blind_spots: overnightBlindSpotsSchema.nullable(),
+    attributions: z.array(overnightText(400)).max(20),
+    notes: z.array(overnightText(800)).max(20),
+  })
+  .strict();
+
+export type OvernightBrief = z.infer<typeof overnightBriefSchema>;
+export type OvernightItem = z.infer<typeof overnightItemSchema>;
+export type OvernightDocument = z.infer<typeof overnightDocumentSchema>;
+export type OvernightBlindSpots = z.infer<typeof overnightBlindSpotsSchema>;
+
+const overnightMorningSchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    generated_at: z.string().max(64).nullable(),
+    received_at: z.string().max(64).nullable(),
+    count_line: overnightText(400),
+    documents_seen: overnightCount,
+    documents_moving: overnightCount,
+    beliefs_held: overnightCount,
+    blind_spots_total: overnightCount.nullable(),
+  })
+  .strict();
+
+export type OvernightMorning = z.infer<typeof overnightMorningSchema>;
+
+export const accountApiOvernightSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    mornings: z.array(overnightMorningSchema).max(60),
+    keep: z.number().int().positive(),
+  })
+  .strict();
+
+export type AccountApiOvernight = z.infer<typeof accountApiOvernightSchema>;
+
+export const accountApiOvernightBriefSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    received_at: z.string().max(64).nullable(),
+    brief: overnightBriefSchema,
+  })
+  .strict();
+
+export type AccountApiOvernightBrief = z.infer<typeof accountApiOvernightBriefSchema>;
+
+/** The account's mornings, newest first, without their documents. */
+export async function fetchAccountApiOvernight(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiOvernight> {
+  const payload = await fetchAccountApiJson("me/overnight", accessToken, options);
+  return parseAccountApiPayload(accountApiOvernightSchema, payload, "me/overnight", "GET");
+}
+
+/** One morning's brief. A 404 means the account has none for that day. */
+export async function fetchAccountApiOvernightBrief(
+  accessToken: string,
+  date: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiOvernightBrief> {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)) throw new AccountApiUnavailableError();
+  const payload = await fetchAccountApiJson(
+    `me/overnight/${encodeURIComponent(date)}`,
+    accessToken,
+    options,
+  );
+  return parseAccountApiPayload(
+    accountApiOvernightBriefSchema,
+    payload,
+    "me/overnight/{brief_date}",
+    "GET",
+  );
+}
+
 // ------------------------------------------------------------------ broker connections
 //
 // The service never returns a credential, so neither does anything here. Each schema is

@@ -49,6 +49,10 @@ const ROUTES = [
   "/signup",
   "/forgot-password",
   "/account",
+  "/account/overnight",
+  "/account/overnight?doc=1",
+  "/account/overnight?tab=blind-spots",
+  "/account/overnight?tab=mornings",
   "/account/profile",
   "/account/subscription",
   "/account/preferences",
@@ -61,7 +65,13 @@ const ROUTES = [
   "/account/data",
 ] as const;
 
-const LIGHT_ROUTES = ["/account", "/account/security", "/account/subscription", "/login"] as const;
+const LIGHT_ROUTES = [
+  "/account",
+  "/account/overnight",
+  "/account/security",
+  "/account/subscription",
+  "/login",
+] as const;
 
 function slugFor(route: string) {
   return route.replace(/^\//u, "").replace(/[^a-z0-9]+/giu, "-") || "root";

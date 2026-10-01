@@ -8,6 +8,7 @@ import {
   MonitorSmartphone,
   ShieldCheck,
   SlidersHorizontal,
+  Sunrise,
   UserRound,
   Wallet,
   type LucideIcon,
@@ -23,6 +24,7 @@ export type NavLink = {
 
 export const ACCOUNT_LINKS: readonly NavLink[] = [
   { href: "/account", label: "Overview", icon: LayoutDashboard },
+  { href: "/account/overnight", label: "Overnight", icon: Sunrise },
   { href: "/account/profile", label: "Profile", icon: UserRound },
   { href: "/account/subscription", label: "Subscription", icon: CreditCard },
   { href: "/account/preferences", label: "Preferences", icon: SlidersHorizontal },

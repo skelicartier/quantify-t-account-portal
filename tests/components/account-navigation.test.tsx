@@ -12,6 +12,7 @@ vi.mock("next/navigation", () => ({
 
 const LINKS = [
   { href: "/account", name: "Overview" },
+  { href: "/account/overnight", name: "Overnight" },
   { href: "/account/profile", name: "Profile" },
   { href: "/account/subscription", name: "Subscription" },
   { href: "/account/preferences", name: "Preferences" },

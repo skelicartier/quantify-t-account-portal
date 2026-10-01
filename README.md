@@ -74,6 +74,8 @@ npm run check:console-ui                           # screenshots → test-result
 
 The console shares quantifyterminal.com's palette: the signed-in shell defaults to the dark theme and offers a per-device dark/light switch in the sidebar (stored in the `qt-console-theme` cookie by the `setConsoleTheme` Server Action). The sign-in, sign-up and recovery pages are always dark. Space Grotesk (headings) and JetBrains Mono (identifiers, timestamps, micro labels) are shipped with the app from `src/app/fonts/` under the SIL Open Font License, so no request ever leaves for a font CDN and the `font-src 'self'` policy holds. The favicon is the marketing site's.
 
+`/account/overnight` shows the OVERNIGHT morning brief the terminal files in the account each morning (`me/overnight`, `me/overnight/{date}`): what landed on the book overnight, ranked, each item opening on the six blocks the terminal and the email print (your belief, what landed, where it hits, what it costs, to be right, precedent); the documents that were read and held; the blind spots; and the last 30 mornings. Every sentence and figure is the terminal's own text — the page lays it out and computes nothing — and decisions (hold, trim, exit, revise) stay in the terminal.
+
 ## Deployment
 
 See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the protected Vercel preview/staging procedure, environment allow-list, rollback boundary, and cloud no-mutation rules. The checked-in `prebuild` gate rejects every Vercel production build until the final reviewed release task removes that lock.
