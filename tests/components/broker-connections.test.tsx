@@ -8,11 +8,13 @@ import {
   type BrokerActionState,
   type BrokerConnection,
 } from "@/lib/account/broker-input";
+import { INITIAL_KILL_SWITCH_STATE, type KillSwitchActionState } from "@/lib/account/kill-switch";
 
 const NOW = Date.parse("2026-09-13T12:00:00Z");
 
 /** A no-op server action, so the form can render without reaching anything. */
 const noop = async (): Promise<BrokerActionState> => INITIAL_BROKER_ACTION_STATE;
+const noopKillSwitch = async (): Promise<KillSwitchActionState> => INITIAL_KILL_SWITCH_STATE;
 
 /**
  * One connection, exactly as `BrokerConnection` declares it.
@@ -34,6 +36,9 @@ function connection(overrides: Partial<BrokerConnection> = {}): BrokerConnection
     last_test_at: "2026-09-13T11:00:00Z",
     last_test_success: true,
     trading_enabled: true,
+    trading_halted: false,
+    halted_at: null,
+    halt_reason: null,
     last_error: "",
     created_at: "2026-09-13T10:00:00Z",
     updated_at: "2026-09-13T11:00:00Z",
@@ -45,10 +50,16 @@ function renderPage(connections: readonly BrokerConnection[] = []) {
   return render(
     <BrokerConnections
       connections={connections}
+      tradingHalted={false}
+      haltedAt={null}
+      authorisations={{ status: "ready", items: [] }}
       now={NOW}
       connect={noop}
       test={noop}
       disconnect={noop}
+      killSwitch={noopKillSwitch}
+      resume={noop}
+      revoke={noop}
     />,
   );
 }
@@ -170,5 +181,93 @@ describe("BrokerConnections", () => {
 
     expect(screen.getByText("No broker connected")).toBeVisible();
     expect(screen.queryByRole("table", { name: "Broker connections" })).not.toBeInTheDocument();
+  });
+
+  describe("the kill switch on each connection", () => {
+    it("marks a halted connection and offers to resume it, not to call it ready", () => {
+      renderPage([connection({ trading_halted: true, trading_enabled: false })]);
+
+      const row = screen.getByRole("row", { name: /Paper desk/iu });
+      expect(row).toHaveTextContent("Halted");
+      expect(row).toHaveTextContent("Switched off by the kill switch");
+      expect(row).not.toHaveTextContent("Ready");
+      expect(within(row).getByRole("button", { name: "Resume" })).toBeInTheDocument();
+    });
+
+    it("says since when and why a connection was switched off", () => {
+      renderPage([
+        connection({
+          trading_halted: true,
+          trading_enabled: false,
+          halted_at: "2026-09-13T11:30:00Z",
+          halt_reason: "account deletion",
+        }),
+      ]);
+
+      const row = screen.getByRole("row", { name: /Paper desk/iu });
+      expect(row).toHaveTextContent(/Switched off by the kill switch on/u);
+      expect(row).toHaveTextContent("Reason: Account deletion");
+    });
+
+    it("offers no resume on a connection the kill switch has not touched", () => {
+      renderPage([connection()]);
+
+      expect(
+        within(screen.getByRole("row", { name: /Paper desk/iu })).queryByRole("button", {
+          name: "Resume",
+        }),
+      ).toBeNull();
+    });
+
+    it("puts the kill switch and the standing authorisations on the page", () => {
+      renderPage([connection()]);
+
+      expect(screen.getByRole("heading", { name: "Kill switch" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Standing authorisations" })).toBeInTheDocument();
+    });
+  });
+
+  describe("an account not yet admitted", () => {
+    function renderHeld(hold: "pending" | "declined") {
+      return render(
+        <BrokerConnections
+          connections={[connection({ trading_halted: true, trading_enabled: false })]}
+          hold={hold}
+          tradingHalted
+          haltedAt="2026-09-13T11:30:00Z"
+          authorisations={{ status: "ready", items: [] }}
+          now={NOW}
+          connect={noop}
+          test={noop}
+          disconnect={noop}
+          killSwitch={noopKillSwitch}
+          resume={noop}
+          revoke={noop}
+        />,
+      );
+    }
+
+    it("keeps every act that takes risk away and none that adds it", () => {
+      renderHeld("pending");
+
+      const row = screen.getByRole("row", { name: /Paper desk/iu });
+      expect(within(row).getByRole("button", { name: "Remove" })).toBeInTheDocument();
+      expect(within(row).queryByRole("button", { name: "Test" })).toBeNull();
+      expect(within(row).queryByRole("button", { name: "Resume" })).toBeNull();
+      expect(screen.getByRole("button", { name: /Cancel working orders again/u })).toBeEnabled();
+      expect(screen.queryByRole("button", { name: "Lift the account's halt" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Connect broker" })).toBeNull();
+      expect(
+        screen.getByText("Connecting a broker opens once your application is approved"),
+      ).toBeInTheDocument();
+    });
+
+    it("says a declined account cannot connect, rather than that it will soon", () => {
+      renderHeld("declined");
+
+      expect(
+        screen.getByText("Connecting a broker is not available on this account"),
+      ).toBeInTheDocument();
+    });
   });
 });

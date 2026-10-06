@@ -53,4 +53,35 @@ describe("SignupForm", () => {
     expect(submitted?.get(CHALLENGE_FIELD_NAME)).toBe("turnstile-test-response");
     expect(await screen.findByRole("status")).toHaveTextContent("check your email");
   });
+
+  it("says the new account is an application under review when the service says so", async () => {
+    const user = userEvent.setup();
+    const action = vi.fn<SignupAction>().mockResolvedValue({
+      status: "accepted",
+      message: "Account created! Check your email to confirm your address.",
+      access: "pending",
+      fieldErrors: {
+        fullName: [],
+        email: [],
+        password: [],
+        passwordConfirmation: [],
+        legalConsent: [],
+        challenge: [],
+      },
+    });
+    render(<SignupForm action={action} turnstileSiteKey="turnstile-public-key" />);
+
+    await user.type(screen.getByRole("textbox", { name: /email address/i }), "a@example.com");
+    await user.type(screen.getByLabelText(/^password$/i), "twelve-character-password");
+    await user.type(screen.getByLabelText(/confirm password/i), "twelve-character-password");
+    await user.click(
+      screen.getByRole("checkbox", { name: /terms of service and privacy policy/i }),
+    );
+    await user.click(screen.getByRole("button", { name: /create account/i }));
+
+    const review = await screen.findByText("Application under review");
+    expect(review.closest(".callout")).toHaveTextContent(
+      "Your application is being reviewed. We will email you as soon as it has been decided.",
+    );
+  });
 });

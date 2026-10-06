@@ -7,6 +7,7 @@ import {
   DESKTOP_CONNECT_RETURN_MAX_AGE_SECONDS,
   desktopConnectNextPath,
 } from "@/lib/auth/desktop-connect";
+import { accessHoldOf, normaliseAccessStatus } from "@/lib/account/access";
 import { createSignupConsentMetadata } from "@/lib/auth/consent";
 import { parseSignupFormData, type SignupActionState } from "@/lib/auth/signup";
 import { rateLimitMessage, rateLimitWaitSeconds } from "@/lib/auth/rate-limit";
@@ -135,7 +136,10 @@ export async function signup(
       return existingAccountState(result.error) ?? SERVICE_ERROR_STATE;
     }
     if (returnTo) await rememberDesktopConnectReturn(returnTo);
-    return ACCEPTED_SIGNUP_STATE;
+    // A new account is an application. Said at once, so nobody confirms their address and
+    // then wonders why the desktop app will not sign in.
+    const hold = accessHoldOf(normaliseAccessStatus(result.data?.user?.access_status));
+    return hold ? { ...ACCEPTED_SIGNUP_STATE, access: hold } : ACCEPTED_SIGNUP_STATE;
   } catch (e) {
     const wait = rateLimitWaitSeconds(e);
     if (wait !== null) return rateLimitedState(wait);

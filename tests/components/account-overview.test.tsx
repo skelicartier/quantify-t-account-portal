@@ -15,6 +15,7 @@ const account: AccountOverviewDto = {
   lastSignInAt: "2026-09-01T10:00:00.000Z",
   emailConfirmed: true,
   profileState: "ready",
+  accessStatus: "approved",
 };
 
 const session = (

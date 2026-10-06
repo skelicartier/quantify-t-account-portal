@@ -66,6 +66,31 @@ describe("signup Server Action", () => {
     expect(JSON.stringify(result)).not.toContain("turnstile-response");
   });
 
+  it("says a new account is an application when the service says it is pending", async () => {
+    const signUp = vi.fn().mockResolvedValue({
+      data: { user: { id: "new-user", access_status: "pending" }, session: null },
+      error: null,
+    });
+    mocks.createServerAzureClient.mockResolvedValue({ signUp });
+
+    const result = await signup(INITIAL_SIGNUP_STATE, signupFormData());
+
+    expect(result).toMatchObject({ status: "accepted", access: "pending" });
+  });
+
+  it("adds nothing for a service that sends no status", async () => {
+    const signUp = vi.fn().mockResolvedValue({
+      data: { user: { id: "new-user" }, session: null },
+      error: null,
+    });
+    mocks.createServerAzureClient.mockResolvedValue({ signUp });
+
+    const result = await signup(INITIAL_SIGNUP_STATE, signupFormData());
+
+    expect(result.status).toBe("accepted");
+    expect(result).not.toHaveProperty("access");
+  });
+
   it("says so when the address already has an account, and whether a new link went out", async () => {
     const signUp = vi.fn().mockResolvedValue({
       data: null,

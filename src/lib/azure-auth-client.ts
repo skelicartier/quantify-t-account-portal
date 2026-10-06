@@ -24,6 +24,12 @@ export interface AuthUser {
   last_name: string;
   is_active: boolean;
   email_confirmed: boolean;
+  /**
+   * Access is by application: `pending` until somebody decides, then `approved` or
+   * `declined`. Sent by sign-up, sign-in and `auth/user`; absent from a service that predates
+   * it, which the console reads as "nothing to say" rather than as a decision.
+   */
+  access_status?: string;
   role: string;
   profile: Record<string, unknown> | null;
 }

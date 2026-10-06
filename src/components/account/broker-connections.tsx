@@ -7,6 +7,12 @@ import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
+import {
+  KillSwitchPanel,
+  ResumeControl,
+  StandingAuthorisations,
+  type ConnectionNames,
+} from "@/components/account/broker-trading-controls";
 import { Checkbox, Field, Input, Select } from "@/components/ui/field";
 import { LocalTime } from "@/components/ui/local-time";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -18,16 +24,38 @@ import {
   connectionReadiness,
   type BrokerActionState,
   type BrokerConnection,
+  type StandingAuthorisationsView,
 } from "@/lib/account/broker-input";
+import { haltReasonText, type KillSwitchActionState } from "@/lib/account/kill-switch";
+import type { AccessHold } from "@/lib/account/access";
 
 type BrokerAction = (state: BrokerActionState, formData: FormData) => Promise<BrokerActionState>;
+type KillSwitchAction = (
+  state: KillSwitchActionState,
+  formData: FormData,
+) => Promise<KillSwitchActionState>;
 
 type Props = {
   connections: readonly BrokerConnection[];
+  /**
+   * The account has not been admitted. It still sees its connections and keeps every act that
+   * takes risk away — the kill switch, removing a connection, revoking an authorisation — but
+   * connecting, testing and resuming are the product, which the API refuses it.
+   */
+  hold?: AccessHold | null;
+  /** The account-level kill switch, as `me/brokers` reports it. */
+  tradingHalted: boolean;
+  haltedAt: string | null;
+  /** Why the account was halted; null unless it is. */
+  haltReason?: string | null;
+  authorisations: StandingAuthorisationsView;
   now: number;
   connect: BrokerAction;
   test: BrokerAction;
   disconnect: BrokerAction;
+  killSwitch: KillSwitchAction;
+  resume: BrokerAction;
+  revoke: BrokerAction;
 };
 
 function Result({ state }: { state: BrokerActionState }) {
@@ -218,9 +246,36 @@ const COLUMNS = [
   { key: "actions", label: "Actions" },
 ] as const;
 
-export function BrokerConnections({ connections, now, connect, test, disconnect }: Props) {
+export function BrokerConnections({
+  connections,
+  hold = null,
+  tradingHalted,
+  haltedAt,
+  haltReason = null,
+  authorisations,
+  now,
+  connect,
+  test,
+  disconnect,
+  killSwitch,
+  resume,
+  revoke,
+}: Props) {
+  const names: ConnectionNames = Object.fromEntries(
+    connections.map((connection) => [connection.id, connection.name]),
+  );
   return (
     <div className="board">
+      <KillSwitchPanel
+        tradingHalted={tradingHalted}
+        haltedAt={haltedAt}
+        haltReason={haltReason}
+        names={names}
+        killSwitch={killSwitch}
+        resume={resume}
+        held={hold !== null}
+      />
+
       <Card
         eyebrow="Connected brokers"
         title="Your brokerage connections"
@@ -235,7 +290,11 @@ export function BrokerConnections({ connections, now, connect, test, disconnect 
           empty={
             <EmptyState
               title="No broker connected"
-              description="Connect one below to place orders from the terminal."
+              description={
+                hold === null
+                  ? "Connect one below to place orders from the terminal."
+                  : "Nothing is connected, so nothing on this account can trade."
+              }
             />
           }
         >
@@ -271,11 +330,31 @@ export function BrokerConnections({ connections, now, connect, test, disconnect 
                   />
                 </td>
                 <td>
-                  <StatusPill
-                    value={readiness.ready ? "enabled" : "disabled"}
-                    tone={readiness.ready ? "live" : "attention"}
-                    label={readiness.ready ? "Ready" : "Needs a test"}
-                  />
+                  {connection.trading_halted ? (
+                    <StatusPill value="halted" tone="danger" label="Halted" />
+                  ) : (
+                    <StatusPill
+                      value={readiness.ready ? "enabled" : "disabled"}
+                      tone={readiness.ready ? "live" : "attention"}
+                      label={readiness.ready ? "Ready" : "Needs a test"}
+                    />
+                  )}
+                  {connection.trading_halted && (
+                    <span className="data-table__secondary">
+                      Switched off by the kill switch
+                      {connection.halted_at ? (
+                        <>
+                          {" "}
+                          on <LocalTime value={connection.halted_at} />
+                        </>
+                      ) : null}
+                    </span>
+                  )}
+                  {connection.trading_halted && haltReasonText(connection.halt_reason) && (
+                    <span className="data-table__secondary">
+                      Reason: {haltReasonText(connection.halt_reason)}
+                    </span>
+                  )}
                   {connection.last_test_at ? (
                     <span className="data-table__secondary">
                       <LocalTime value={connection.last_test_at} />
@@ -288,7 +367,16 @@ export function BrokerConnections({ connections, now, connect, test, disconnect 
                   )}
                 </td>
                 <td className="data-table__actions">
-                  <TestButton connection={connection} test={test} />
+                  {hold === null && (
+                    <ResumeControl
+                      scope="connection"
+                      connectionId={connection.id}
+                      connectionName={connection.name}
+                      resume={resume}
+                      available={connection.trading_halted}
+                    />
+                  )}
+                  {hold === null && <TestButton connection={connection} test={test} />}
                   <DisconnectForm connection={connection} disconnect={disconnect} />
                 </td>
               </tr>
@@ -297,14 +385,31 @@ export function BrokerConnections({ connections, now, connect, test, disconnect 
         </DataTable>
       </Card>
 
-      <Card
-        eyebrow="Add a broker"
-        title="Connect a brokerage account"
-        titleId="broker-connect-heading"
-        description="Only brokers the service has a working adapter for can be connected. Storing a key the product cannot use would be risk with no benefit."
-      >
-        <ConnectForm connect={connect} />
-      </Card>
+      <StandingAuthorisations view={authorisations} names={names} revoke={revoke} />
+
+      {hold === null ? (
+        <Card
+          eyebrow="Add a broker"
+          title="Connect a brokerage account"
+          titleId="broker-connect-heading"
+          description="Only brokers the service has a working adapter for can be connected. Storing a key the product cannot use would be risk with no benefit."
+        >
+          <ConnectForm connect={connect} />
+        </Card>
+      ) : (
+        <Callout
+          tone={hold === "declined" ? "danger" : "attention"}
+          role="status"
+          title={
+            hold === "pending"
+              ? "Connecting a broker opens once your application is approved"
+              : "Connecting a broker is not available on this account"
+          }
+        >
+          The kill switch, removing a connection and revoking an authorisation stay available
+          whatever the state of your application.
+        </Callout>
+      )}
     </div>
   );
 }

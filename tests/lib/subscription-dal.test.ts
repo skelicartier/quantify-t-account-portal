@@ -15,6 +15,7 @@ const account: AccountOverviewDto = {
   lastSignInAt: "2026-09-12T09:00:00Z",
   emailConfirmed: true,
   profileState: "ready",
+  accessStatus: "approved",
 };
 
 const entitlements: AccountApiEntitlements = {
@@ -141,6 +142,23 @@ describe("requireCurrentSubscription", () => {
 
     await expect(dal.requireCurrentSubscription()).rejects.toMatchObject({
       name: "AccountApiUnavailableError",
+    });
+  });
+
+  it("answers a held account with its hold, not with an outage", async () => {
+    const { AccountApiRequestError } = await import("@/lib/admin/account-api");
+    const { dal } = await loadHarness({
+      entitlementsError: new AccountApiRequestError({
+        status: 403,
+        code: "access_pending",
+        message: "provider detail",
+        correlationId: null,
+      }),
+    });
+
+    await expect(dal.requireCurrentSubscription()).rejects.toMatchObject({
+      name: "AccountAccessHeldError",
+      hold: "pending",
     });
   });
 });

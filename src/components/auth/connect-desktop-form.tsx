@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { KeyValue, KeyValueRow } from "@/components/ui/key-value";
 import { Timestamp } from "@/components/ui/timestamp";
+import { ACCESS_TITLES } from "@/lib/account/access";
 import type { AccountApiHandoff } from "@/lib/admin/account-api";
 import {
   INITIAL_DESKTOP_CONNECT_STATE,
@@ -53,6 +54,25 @@ export function ConnectDesktopForm({
         <p className="auth__fine">
           The app showed code <span className="auth__code-inline">{state.userCode}</span>. If it is
           still waiting after a moment, choose Sign in with browser again.
+        </p>
+      </div>
+    );
+  }
+
+  if (state.status === "access") {
+    return (
+      <div className="auth-form">
+        <Callout
+          tone={state.access === "declined" ? "danger" : "attention"}
+          role="alert"
+          title={ACCESS_TITLES[state.access]}
+        >
+          {state.message}
+        </Callout>
+        <p className="auth__fine">
+          {state.access === "pending"
+            ? "The desktop app was not connected. Once your application is approved, choose Sign in with browser in the app again."
+            : "The desktop app was not connected."}
         </p>
       </div>
     );

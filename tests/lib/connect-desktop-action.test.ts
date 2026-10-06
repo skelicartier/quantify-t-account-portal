@@ -140,4 +140,36 @@ describe("connectDesktop", () => {
     expect(JSON.stringify([refused, failed])).not.toContain("Sensitive provider detail");
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
+
+  it("shows the access sentence when the account has not been admitted, not a generic refusal", async () => {
+    mocks.approveAccountApiHandoff.mockRejectedValueOnce(
+      new AccountApiRequestError({
+        status: 403,
+        code: "access_pending",
+        message: "Sensitive provider detail",
+        correlationId: null,
+      }),
+    );
+    const pending = await connectDesktop(INITIAL_DESKTOP_CONNECT_STATE, handoffForm());
+    mocks.approveAccountApiHandoff.mockRejectedValueOnce(
+      new AccountApiRequestError({
+        status: 403,
+        code: "access_declined",
+        message: "Sensitive provider detail",
+        correlationId: null,
+      }),
+    );
+    const declined = await connectDesktop(INITIAL_DESKTOP_CONNECT_STATE, handoffForm());
+
+    expect(pending).toEqual({
+      status: "access",
+      access: "pending",
+      message:
+        "Your application is being reviewed. We will email you as soon as it has been decided.",
+    });
+    expect(declined).toMatchObject({ status: "access", access: "declined" });
+    expect(declined.message).toMatch(/export or delete your data/u);
+    expect(JSON.stringify([pending, declined])).not.toContain("Sensitive provider detail");
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
 });

@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 
+import { ACCESS_MESSAGES, accessRefusal } from "@/lib/account/access";
 import {
   AccountApiRequestError,
   approveAccountApiHandoff,
@@ -68,6 +69,11 @@ async function decide(formData: FormData, decision: Decision): Promise<DesktopCo
           : await denyAccountApiHandoff(accessToken, handoff.handoff, options);
     }
   } catch (error) {
+    // Access is by application: approving a desktop sign-in calls the service's admission
+    // check, and its refusal is the sentence this page shows as it stands. Read by code, so
+    // no other refusal's message can reach the page.
+    const hold = accessRefusal(error);
+    if (hold) return { status: "access", message: ACCESS_MESSAGES[hold], access: hold };
     if (error instanceof AccountApiRequestError && error.status === 401) {
       signedOut = true;
     } else if (error instanceof AccountApiRequestError && error.status === 403) {

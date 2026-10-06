@@ -10,6 +10,8 @@ import {
   SUBSCRIPTION_CHANGED_EVENT,
   type AccountApiEntitlements,
 } from "@/lib/admin/account-api";
+import { accessRefusal } from "@/lib/account/access";
+import { AccountAccessHeldError } from "@/lib/dal/access";
 import { getCurrentActivityEvents, requireCurrentAccount } from "@/lib/dal/account";
 import type { AccountOverviewDto } from "@/lib/dto/account";
 import type { AccountActivityEventDto } from "@/lib/dto/session";
@@ -53,6 +55,9 @@ export async function requireCurrentSubscription(): Promise<AccountSubscriptionV
     if (error instanceof AccountApiRequestError && error.status === 401) {
       redirect(SIGN_IN_DESTINATION);
     }
+    // A held account has no plan to read yet; that is the access message, not an outage.
+    const hold = accessRefusal(error);
+    if (hold) throw new AccountAccessHeldError(hold);
     throw new AccountApiUnavailableError();
   }
 

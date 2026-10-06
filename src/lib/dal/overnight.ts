@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
+import { accessRefusal, type AccessHold } from "@/lib/account/access";
 import {
   AccountApiRequestError,
   AccountApiUnavailableError,
@@ -23,7 +24,10 @@ import { createServerAzureClient } from "@/lib/supabase/server";
  * different: one is an old link, the other is an outage, and the page says which.
  */
 export type OvernightView =
-  { status: "ready"; mornings: OvernightMorning[]; keep: number } | { status: "unavailable" };
+  | { status: "ready"; mornings: OvernightMorning[]; keep: number }
+  | { status: "unavailable" }
+  // A held account (pending or declined): the API refuses the read, the page says why.
+  | { status: "access"; access: AccessHold };
 
 export type OvernightBriefView =
   | { status: "ready"; brief: OvernightBrief; receivedAt: string | null }
@@ -42,6 +46,8 @@ export const getOvernightMornings = cache(async (): Promise<OvernightView> => {
     const data = await fetchAccountApiOvernight(accessToken);
     return { status: "ready", mornings: data.mornings, keep: data.keep };
   } catch (error) {
+    const hold = accessRefusal(error);
+    if (hold) return { status: "access", access: hold };
     if (error instanceof AccountApiRequestError || error instanceof AccountApiUnavailableError) {
       return { status: "unavailable" };
     }

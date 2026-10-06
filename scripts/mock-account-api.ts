@@ -7,6 +7,13 @@
  * Sign in with any password as one of:
  *   owner@example.test · admin@example.test · support@example.test · user@example.test
  *
+ * Access is by application, as on the service: two more accounts sign in but are held back
+ * from the product by the access gate —
+ *   applicant@example.test (pending) · declined@example.test (declined)
+ *
+ * Step-up (`auth/step-up`) accepts any password except MOCK_WRONG_PASSWORD ("wrong-password"),
+ * which answers as a wrong password does, and counts against the sign-in limit.
+ *
  * Every payload mirrors the shapes the portal's zod schemas accept (they are the same
  * fixtures the unit tests validate), so a page that renders here renders in production.
  */
@@ -23,6 +30,8 @@ const DEGRADED = new Set(
 );
 
 type Persona = "owner" | "admin" | "support" | "user";
+/** `app_profiles.access_status` (migration 0077). Every account before 0077 was approved. */
+type MockAccess = "pending" | "approved" | "declined";
 
 const CAPABILITIES: Record<Persona, string[]> = {
   owner: [
@@ -89,6 +98,7 @@ const PEOPLE = [
     role: "owner" as Persona,
     tier: "professional",
     active: true,
+    access: "approved" as MockAccess,
   },
   {
     id: "8b2d4e61-1c3a-4f5b-8d9e-2a4c6b8d0f11",
@@ -98,6 +108,7 @@ const PEOPLE = [
     role: "admin" as Persona,
     tier: "professional",
     active: true,
+    access: "approved" as MockAccess,
   },
   {
     id: "5c1e7a93-2b4d-4e6f-9a1b-3c5d7e9f0a22",
@@ -107,6 +118,7 @@ const PEOPLE = [
     role: "support" as Persona,
     tier: "free",
     active: true,
+    access: "approved" as MockAccess,
   },
   {
     id: "9d3f5b71-4c6e-4a8b-9c0d-1e3f5a7b9c33",
@@ -116,6 +128,7 @@ const PEOPLE = [
     role: "user" as Persona,
     tier: "free",
     active: true,
+    access: "approved" as MockAccess,
   },
   {
     id: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c55",
@@ -125,6 +138,7 @@ const PEOPLE = [
     role: "user" as Persona,
     tier: "professional",
     active: true,
+    access: "approved" as MockAccess,
   },
   {
     id: "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d66",
@@ -134,6 +148,29 @@ const PEOPLE = [
     role: "user" as Persona,
     tier: "free",
     active: false,
+    access: "approved" as MockAccess,
+  },
+  // Applied, not yet decided: signs in to the console, reads its state, exports and deletes,
+  // and is refused everything else with `access_pending`.
+  {
+    id: "3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e77",
+    email: "applicant@example.test",
+    first: "Noor",
+    last: "Haddad",
+    role: "user" as Persona,
+    tier: "free",
+    active: true,
+    access: "pending" as MockAccess,
+  },
+  {
+    id: "4d5e6f7a-8b9c-4dae-9f10-3b4c5d6e7f88",
+    email: "declined@example.test",
+    first: "Ravi",
+    last: "Menon",
+    role: "user" as Persona,
+    tier: "free",
+    active: true,
+    access: "declined" as MockAccess,
   },
 ];
 
@@ -286,6 +323,7 @@ function profile(userId: string) {
     created_at: iso(60 * 24 * 90),
     last_login_at: iso(37),
     updated_at: iso(60 * 5),
+    access_status: p.access,
   };
 }
 
@@ -689,6 +727,143 @@ function ok(response: ServerResponse, payload: Record<string, unknown>, status =
   send(response, status, { ok: true, correlation_id: correlation(), ...payload });
 }
 
+// ---- access by application -------------------------------------------------------
+//
+// The service's `access.enforce`, in the mock: a pending or declined account reaches only the
+// routes in `access.OPEN_ROUTES`, and every other authenticated route answers `access_pending`
+// or `access_declined` with the sentence the console shows. `tests/lib/route-parity.test.ts`
+// holds MOCK_OPEN_ROUTES against the service's list, so the two cannot drift: a mock that let
+// an applicant read more than the service does would certify a page production refuses.
+
+const ACCESS_PENDING_MESSAGE =
+  "Your application is being reviewed. We will email you as soon as it has been decided.";
+const ACCESS_DECLINED_MESSAGE =
+  "Your application was not approved. You can still sign in to the console to export or delete your data.";
+
+/** `config.PUBLISHED_DOCUMENT_VERSIONS`: the terms and privacy versions a signup may accept. */
+const PUBLISHED_DOCUMENT_VERSIONS: readonly string[] = ["2026-06-09"];
+
+const MOCK_OPEN_ROUTES: readonly string[] = [
+  // Safety-reducing: reachable whatever the access state. Stopping trading, revoking an
+  // authorisation and removing a credential only ever take risk away.
+  "me/brokers/kill-switch",
+  "me/brokers/authorisations/{authorisation_id}/revoke",
+  "me/brokers/{connection_id}/delete",
+  "me/brokers",
+  "me/brokers/authorisations",
+  // The console's own.
+  "me",
+  "sessions",
+  "sessions/register",
+  "sessions/heartbeat",
+  "sessions/end",
+  "sessions/revoke",
+  "activity",
+  "notifications",
+  "notifications/state",
+  "notifications/receipts",
+  "account/lifecycle",
+  "account/exports/request",
+  "account/exports/{export_id}/download",
+  "account/deletion/request",
+  "account/deletion/cancel",
+  "support/conversations",
+  "support/conversations/open",
+  "support/conversations/{conversation_id}",
+  "support/conversations/{conversation_id}/reply",
+  "auth/handoff/{handoff_id}",
+  "auth/handoff/{handoff_id}/approve",
+  "auth/handoff/{handoff_id}/deny",
+];
+
+/** The `auth/*` routes outside the dispatcher's authenticated table: never access-gated. */
+const UNGATED_AUTH_ROUTES = new Set([
+  "auth/user",
+  "auth/user/profile",
+  "auth/user/profile/update",
+  "auth/user/role",
+  "auth/password/update",
+]);
+
+function templateMatches(template: string, route: string): boolean {
+  const want = template.split("/");
+  const have = route.split("/");
+  return (
+    want.length === have.length &&
+    want.every((segment, index) => segment.startsWith("{") || segment === have[index])
+  );
+}
+
+/** Answer `access_pending` / `access_declined` for an account that has not been admitted. */
+function refuseUnadmitted(response: ServerResponse, access: MockAccess): boolean {
+  if (access === "approved") return false;
+  if (access === "declined") {
+    fail(response, 403, "access_declined", ACCESS_DECLINED_MESSAGE, { access_status: "declined" });
+  } else {
+    fail(response, 403, "access_pending", ACCESS_PENDING_MESSAGE, { access_status: "pending" });
+  }
+  return true;
+}
+
+// ---- step-up ---------------------------------------------------------------------
+//
+// `auth/step-up`: the password again, for a grant bound to this session (the bearer token
+// here) and one purpose. `confirm` lasts ten minutes, is bound to one connection and is good
+// for five confirmations; `arm` and `resume` last five minutes and are spent on first use.
+
+const MOCK_WRONG_PASSWORD = process.env.MOCK_WRONG_PASSWORD ?? "wrong-password";
+const STEP_UP_PURPOSES: Record<string, { seconds: number; maxUses: number; words: string }> = {
+  confirm: { seconds: 600, maxUses: 5, words: "to confirm a live order" },
+  arm: { seconds: 300, maxUses: 1, words: "to arm a standing authorisation" },
+  resume: { seconds: 300, maxUses: 1, words: "to turn trading back on" },
+};
+type MockGrant = {
+  userId: string;
+  session: string;
+  purpose: string;
+  /** Set for a confirm grant: the one connection it confirms orders on. */
+  connectionId: string;
+  expiresAtMs: number;
+  maxUses: number;
+  uses: number;
+};
+const stepUpGrants = new Map<string, MockGrant>();
+
+/**
+ * `step_up.require`: refuse unless `grant` is live for this session, purpose and connection
+ * with a use left. `consume` spends one use; checking first without spending is how the
+ * service avoids costing the person their password entry on a refusal unrelated to it.
+ */
+function requireStepUp(
+  response: ServerResponse,
+  userId: string,
+  session: string,
+  grant: unknown,
+  purpose: string,
+  consume: boolean,
+  connectionId = "",
+): boolean {
+  const rule = STEP_UP_PURPOSES[purpose]!;
+  const entry = typeof grant === "string" ? stepUpGrants.get(grant.trim()) : undefined;
+  if (
+    !entry ||
+    entry.userId !== userId ||
+    entry.session !== session ||
+    entry.purpose !== purpose ||
+    entry.uses >= entry.maxUses ||
+    (entry.connectionId !== "" && entry.connectionId !== connectionId.trim().toLowerCase()) ||
+    entry.expiresAtMs <= Date.now()
+  ) {
+    fail(response, 403, "step_up_required", "Enter your password again to do this.", {
+      step_up: `enter your password again ${rule.words}`,
+      purpose,
+    });
+    return false;
+  }
+  if (consume) entry.uses += 1;
+  return true;
+}
+
 // ---- managed credentials ---------------------------------------------------------
 //
 // A mirror of the service's catalogue, with fabricated fingerprints only. No value is
@@ -915,6 +1090,8 @@ function authUser(userId: string) {
     last_name: p.last,
     is_active: p.active,
     email_confirmed: true,
+    // What the console reads to say "Your application is being reviewed" (`_user_dto`).
+    access_status: p.access,
     role: p.role,
     profile: null,
   };
@@ -1146,6 +1323,8 @@ type MockBrokerConnection = {
   last_test_at: string | null;
   last_test_success: boolean;
   trading_enabled: boolean;
+  /** Switched off by the kill switch and not yet resumed (0079). Never sent as such. */
+  halted_at: string | null;
   last_error: string;
   created_at: string;
   updated_at: string;
@@ -1153,11 +1332,247 @@ type MockBrokerConnection = {
 
 const brokerConnections: MockBrokerConnection[] = [];
 
-/** The only shape of a connection the mock returns — an allowlist, like `public_view`. */
+/**
+ * The only shape of a connection the mock returns — an allowlist, like `public_view`, which
+ * sends `trading_halted` (whether `halted_at` is set) and `halted_at` itself. The halt's
+ * reason is added only by the list (`list_connections`), as on the service.
+ */
 function publicBrokerView(row: MockBrokerConnection) {
   const { user_id: _owner, ...view } = row;
   void _owner;
-  return view;
+  return { ...view, trading_halted: Boolean(row.halted_at) };
+}
+
+// ---- the live-order gates ----------------------------------------------------------
+//
+// The account-level kill switch, what each broker would cancel, and the standing
+// authorisations an automated order runs under — the state behind `me/brokers/kill-switch`,
+// `me/brokers/trading/resume` and `me/brokers/authorisations*`, shaped as `broker_routes`
+// shapes it.
+//
+//   MOCK_BROKER_SWEEP=unreachable   # every broker unreachable when the kill switch sweeps
+
+//   MOCK_RESUME_CONFLICT=1          # answer every resume as if the kill switch was pressed
+//                                   # while it was testing the broker
+
+const tradingStates = new Map<
+  string,
+  { halted: boolean; haltedAt: string | null; haltReason: string; generation: number }
+>();
+
+function tradingState(userId: string) {
+  let state = tradingStates.get(userId);
+  if (!state) {
+    state = { halted: false, haltedAt: null, haltReason: "", generation: 0 };
+    tradingStates.set(userId, state);
+  }
+  return state;
+}
+
+/** Working orders at a connection's broker. A passed test seeds two, so a sweep has work. */
+type MockWorkingOrder = {
+  broker_order_id: string;
+  client_order_id: string;
+  symbol: string;
+  status: string;
+  cancellable: boolean;
+};
+const workingOrders = new Map<string, MockWorkingOrder[]>();
+
+function seedWorkingOrders(connectionId: string) {
+  if (workingOrders.has(connectionId)) return;
+  workingOrders.set(connectionId, [
+    {
+      broker_order_id: `ord-${randomUUID().slice(0, 8)}`,
+      client_order_id: `qt-${randomUUID().slice(0, 12)}`,
+      symbol: "AAPL",
+      status: "new",
+      cancellable: true,
+    },
+    {
+      broker_order_id: `ord-${randomUUID().slice(0, 8)}`,
+      client_order_id: `qt-${randomUUID().slice(0, 12)}`,
+      symbol: "MSFT",
+      status: "pending_cancel",
+      cancellable: false,
+    },
+  ]);
+}
+
+type MockAuthorisation = {
+  id: string;
+  user_id: string;
+  connection_id: string;
+  account_reference: string;
+  broker: string;
+  strategy: string;
+  max_order_value: number;
+  max_orders: number;
+  used_orders: number;
+  expires_at: string;
+  created_at: string;
+  revoked_at: string | null;
+  revoke_reason: string;
+};
+const standingAuthorisations: MockAuthorisation[] = [];
+
+/** `_authorisation_view`, with its state worked out the same way and in the same order. */
+function authorisationView(row: MockAuthorisation) {
+  let state: "active" | "expired" | "used" | "revoked" = "active";
+  if (row.revoked_at) state = "revoked";
+  else if (Date.parse(row.expires_at) <= Date.now()) state = "expired";
+  else if (row.used_orders >= row.max_orders) state = "used";
+  return {
+    id: row.id,
+    connection_id: row.connection_id,
+    account: row.account_reference,
+    broker: row.broker,
+    strategy: row.strategy,
+    max_order_value: row.max_order_value,
+    max_orders: row.max_orders,
+    used_orders: row.used_orders,
+    remaining: Math.max(0, row.max_orders - row.used_orders),
+    expires_at: row.expires_at,
+    created_at: row.created_at,
+    revoked_at: row.revoked_at,
+    revoke_reason: row.revoke_reason.slice(0, 200),
+    state,
+  };
+}
+
+/** Kill-switch answers by account and Idempotency-Key, so a retried press replays. */
+const killSwitchReplays = new Map<string, Record<string, unknown>>();
+
+const SAFE_TOKEN = /^[A-Za-z0-9._:-]{8,128}$/u;
+/** `broker_routes.ORDER_ALLOWED_FIELDS`. */
+const ORDER_FIELDS: readonly string[] = [
+  "connection_id",
+  "client_order_id",
+  "symbol",
+  "side",
+  "quantity",
+  "order_type",
+  "limit_price",
+  "stop_price",
+  "time_in_force",
+  "product",
+  "estimated_value",
+  "confirmation",
+  "standing_authorisation_id",
+];
+const DEFAULT_MAX_ORDER_VALUE = 25_000;
+const DEFAULT_MAX_ORDERS_PER_DAY = 50;
+const MALFORMED = "The request body or parameters are malformed.";
+
+function unknownFields(body: Record<string, unknown>, allowed: readonly string[]): string {
+  return Object.keys(body)
+    .filter((key) => !allowed.includes(key))
+    .sort()
+    .join(", ");
+}
+
+/** `typed_confirmation_phrase`: SIDE QUANTITY SYMBOL, as a person would type it. */
+function typedPhrase(side: string, quantity: number, symbol: string): string {
+  const amount = quantity.toFixed(6).replace(/0+$/u, "").replace(/\.$/u, "") || "0";
+  return `${side.trim().toUpperCase()} ${amount} ${symbol.trim().toUpperCase()}`;
+}
+
+function normalisedText(value: unknown): string {
+  return String(value ?? "")
+    .split(/\s+/u)
+    .filter(Boolean)
+    .join(" ")
+    .toUpperCase();
+}
+
+/** `broker_adapters.validate_order`, answered as the confirm step answers its refusals. */
+function validatedOrder(body: Record<string, unknown>):
+  | { error: string }
+  | {
+      symbol: string;
+      side: string;
+      orderType: string;
+      quantity: number;
+      limitPrice: number;
+      stopPrice: number;
+      timeInForce: string;
+    } {
+  const symbol = String(body.symbol ?? "")
+    .trim()
+    .toUpperCase();
+  const side = String(body.side ?? "")
+    .trim()
+    .toLowerCase();
+  const orderType = String(body.order_type ?? "market")
+    .trim()
+    .toLowerCase()
+    .replace(/ /gu, "_");
+  const quantity = Number(body.quantity ?? 0);
+  const limitPrice = Number(body.limit_price ?? 0);
+  const stopPrice = Number(body.stop_price ?? 0);
+  const timeInForce = String(body.time_in_force ?? "day")
+    .trim()
+    .toLowerCase();
+  if (!symbol || symbol.length > 40) return { error: "An order needs a symbol." };
+  if (side !== "buy" && side !== "sell") return { error: "An order side must be buy or sell." };
+  if (!["market", "limit", "stop", "stop_limit"].includes(orderType)) {
+    return { error: "Order type must be market, limit, stop or stop_limit." };
+  }
+  if (!(quantity > 0)) return { error: "An order quantity must be greater than zero." };
+  if ((orderType === "limit" || orderType === "stop_limit") && !(limitPrice > 0)) {
+    return { error: "A limit order needs a limit price." };
+  }
+  if ((orderType === "stop" || orderType === "stop_limit") && !(stopPrice > 0)) {
+    return { error: "A stop order needs a stop price." };
+  }
+  if (!["day", "gtc", "ioc", "fok", "opg", "cls"].includes(timeInForce)) {
+    return { error: "Unsupported time in force." };
+  }
+  return { symbol, side, orderType, quantity, limitPrice, stopPrice, timeInForce };
+}
+
+/**
+ * `_order_value` for a live order: the broker's price plus a slippage buffer, or the stated
+ * limit. The mock's broker quotes every symbol at 100 unless MOCK_BROKER_PRICE=none, which
+ * exercises the refusals for an order that cannot be valued.
+ */
+function liveOrderValue(
+  checked: { orderType: string; quantity: number; limitPrice: number; stopPrice: number },
+  declared: number | null,
+  standing: boolean,
+): { value: number } | { refusal: string } {
+  const known = process.env.MOCK_BROKER_PRICE === "none" ? null : 100;
+  let stated: number | null = null;
+  if (
+    (checked.orderType === "limit" || checked.orderType === "stop_limit") &&
+    checked.limitPrice > 0
+  ) {
+    stated = checked.limitPrice;
+  }
+  if (
+    (checked.orderType === "stop" || checked.orderType === "stop_limit") &&
+    checked.stopPrice > 0
+  ) {
+    stated = Math.max(stated ?? 0, checked.stopPrice);
+  }
+  if (standing && known === null) {
+    return {
+      refusal:
+        "an automated order needs the broker's current price to be valued, and none could be obtained (the market may be shut or the last trade stale); nothing was sent",
+    };
+  }
+  if (known !== null) {
+    let value = checked.quantity * Math.max(stated ?? 0, known * 1.05);
+    if (declared !== null && stated === null) value = Math.max(value, declared);
+    return { value };
+  }
+  if (stated !== null && (checked.orderType === "limit" || checked.orderType === "stop_limit")) {
+    return { value: checked.quantity * stated };
+  }
+  return {
+    refusal:
+      "the broker's price could not be obtained, so a market or stop order cannot be valued; send a limit order",
+  };
 }
 
 /**
@@ -1515,6 +1930,132 @@ function overnightSummary(row: MockOvernight) {
   };
 }
 
+// ---- account lifecycle ------------------------------------------------------------
+//
+// Deletion requests per account, with the revision the service checks every write against.
+// The erasure statement is `erasure.ERASURE_STATEMENT`, word for word: the confirmation shows
+// it as it stands, so a paraphrase here would certify copy production never sends.
+
+//   MOCK_DELETION_HOLD=1   # a pending deletion shows as the worker holds it while brokers
+//                          # confirm their cancels: blocked, waiting, still cancellable
+
+type MockDeletionRequest = {
+  id: string;
+  status: "pending" | "blocked" | "cancelled";
+  requested_at: string;
+  scheduled_delete_at: string;
+  cancelled_at: string;
+  completed_at: string;
+  cooling_off_seconds: number;
+  can_cancel: boolean;
+  legal_hold: boolean;
+  hold_reason: string;
+  cleanup: Record<string, string>;
+  attempts: number;
+  max_attempts: number;
+  next_attempt_at: string;
+  last_error: string;
+  /** `lifecycle.deletion_hold`: set only while the erasure waits for a broker. */
+  hold: { code: string; next_check_at: string; held_until: string } | null;
+  offline_desktop_cache_note: "not-remotely-deletable";
+};
+
+const DELETION_COOLING_OFF_SECONDS = 14 * 24 * 60 * 60;
+
+const ERASURE_STATEMENT = {
+  erased:
+    "When the cooling-off period ends, every record this service holds about you is erased " +
+    "and cannot be recovered: your account and profile, preferences and synced settings, " +
+    "sessions and sign-in history (with the IP addresses and devices recorded), broker " +
+    "connections, orders and authorisations (trading is switched off and every working " +
+    "order is asked to cancel first), portfolios, watchlists, alerts, chats, morning briefs, " +
+    "plan and usage, notices addressed to you and your support conversations.",
+  kept: [
+    "A record that an erasure happened: a one-way hash of the account id, when, and how many " +
+      "records went. It holds no account id, email address or name.",
+    "Support conversations sent from your email address before you verified it, because " +
+      "nothing shows they were yours.",
+    "Records in Quantify Terminal's staff systems (sales, support desk, billing). The erasure " +
+      "asks our privacy desk to erase them; invoices and other records the law requires us to " +
+      "keep are kept for as long as it requires.",
+  ],
+} as const;
+
+const lifecycles = new Map<string, { revision: string; requests: MockDeletionRequest[] }>();
+
+/** `lifecycle.active_deletion_request`: the one request still on its way to an erasure. */
+function activeDeletion(requests: MockDeletionRequest[]): MockDeletionRequest | null {
+  return requests.find((item) => item.status === "pending" || item.status === "blocked") ?? null;
+}
+
+/**
+ * The deletion worker's broker hold (`BROKER_HOLD_MESSAGE`): the kill switch ran, a broker has
+ * not confirmed every cancel, so the erasure waits and is retried in fifteen minutes. A hold
+ * leaves the request cancellable until its scheduled date.
+ */
+function applyBrokerHold(requests: MockDeletionRequest[]) {
+  if (process.env.MOCK_DELETION_HOLD !== "1") return;
+  for (const item of requests) {
+    if (item.status !== "pending") continue;
+    item.status = "blocked";
+    item.cleanup.brokers = "held";
+    item.last_error = "waiting for the broker to confirm cancellation";
+    item.next_attempt_at = new Date(Date.now() + 15 * 60_000)
+      .toISOString()
+      .replace(/\.\d{3}Z$/u, "Z");
+    // `BROKER_HOLD_MAX_HOURS` after the scheduled date, the erasure goes ahead regardless.
+    item.hold = {
+      code: "broker_cancellation",
+      next_check_at: item.next_attempt_at,
+      held_until: new Date(Date.parse(item.scheduled_delete_at) + 72 * 3_600_000)
+        .toISOString()
+        .replace(/\.\d{3}Z$/u, "Z"),
+    };
+  }
+}
+
+function lifecycleOf(userId: string) {
+  let entry = lifecycles.get(userId);
+  if (!entry) {
+    entry = { revision: "rev-lifecycle-2", requests: [] };
+    lifecycles.set(userId, entry);
+  }
+  return entry;
+}
+
+function newDeletionRequest(): MockDeletionRequest {
+  return {
+    id: randomUUID(),
+    status: "pending",
+    requested_at: iso(0),
+    scheduled_delete_at: new Date(Date.now() + DELETION_COOLING_OFF_SECONDS * 1000)
+      .toISOString()
+      .replace(/\.\d{3}Z$/u, "Z"),
+    cancelled_at: "",
+    completed_at: "",
+    cooling_off_seconds: DELETION_COOLING_OFF_SECONDS,
+    can_cancel: true,
+    legal_hold: false,
+    hold_reason: "",
+    // `lifecycle.ACCOUNT_CLEANUP_STEPS`, every one of them, in the service's sorted order.
+    cleanup: {
+      audit_tombstone: "pending",
+      auth: "pending",
+      azure: "pending",
+      brokers: "pending",
+      documents: "pending",
+      sessions: "pending",
+      storage: "pending",
+    },
+    attempts: 0,
+    max_attempts: 3,
+    next_attempt_at: "",
+    last_error: "",
+    hold: null,
+    offline_desktop_cache_note: "not-remotely-deletable",
+  };
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://127.0.0.1:${PORT}`);
   const route = url.pathname.replace(/^\/api\/v1\/?/u, "").replace(/\/+$/u, "");
@@ -1597,14 +2138,58 @@ const server = createServer(async (request, response) => {
         },
       );
     }
+    // `_require_consent`: a signup names the published terms and privacy versions the person
+    // accepted, or it is refused before any account exists.
+    const consent =
+      json.consent && typeof json.consent === "object"
+        ? (json.consent as Record<string, unknown>)
+        : null;
+    if (!consent) {
+      return fail(
+        response,
+        400,
+        "malformed_request",
+        "The request body or parameters are malformed.",
+        {
+          consent: "terms_version and privacy_version are required",
+        },
+      );
+    }
+    const problems: Record<string, string> = {};
+    for (const field of ["terms_version", "privacy_version"]) {
+      const value = consent[field];
+      if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u.test(value.trim())) {
+        problems[field] = "required: the published version the person accepted";
+      } else if (!PUBLISHED_DOCUMENT_VERSIONS.includes(value.trim())) {
+        problems[field] = "not a published version; reload the page and accept the current one";
+      }
+    }
+    if (Object.keys(problems).length > 0) {
+      return fail(
+        response,
+        400,
+        "malformed_request",
+        "The request body or parameters are malformed.",
+        {
+          consent: problems,
+        },
+      );
+    }
+    // A new account is an application: pending until somebody decides, and its token says so.
+    const token = `mock-user-${randomUUID()}`;
     return ok(response, {
       user: {
         id: randomUUID(),
         email,
         first_name: String(json.first_name ?? ""),
+        last_name: String(json.last_name ?? ""),
+        is_active: true,
         email_confirmed: false,
+        access_status: "pending",
+        role: "user",
+        profile: null,
       },
-      session: null,
+      session: { access_token: token, refresh_token: `refresh-${token}`, expires_in: 3600 },
     });
   }
   if (route === "auth/handoff/begin") {
@@ -1666,6 +2251,19 @@ const server = createServer(async (request, response) => {
   if (!userId) return fail(response, 401, "unauthenticated", "A bearer token is required.");
   const persona = roles[userId] ?? "user";
   const me = person(userId);
+  const sessionToken = String(request.headers.authorization ?? "")
+    .slice(7)
+    .trim();
+
+  // `access.enforce`: everything in the authenticated table but the open routes is refused to
+  // an account that has not been admitted.
+  if (
+    !UNGATED_AUTH_ROUTES.has(route) &&
+    !MOCK_OPEN_ROUTES.some((template) => templateMatches(template, route)) &&
+    refuseUnadmitted(response, me.access)
+  ) {
+    return;
+  }
 
   const handoffMatch = route.match(
     /^auth\/handoff\/([A-Za-z0-9_-]{32,128})(?:\/(approve|deny))?$/u,
@@ -1683,6 +2281,8 @@ const server = createServer(async (request, response) => {
       return fail(response, 409, "revision_conflict", "That request is no longer pending.", {
         handoff: entry.status,
       });
+    // `access.require_admitted`: an account not yet admitted cannot approve a desktop sign-in.
+    if (decision === "approve" && refuseUnadmitted(response, me.access)) return;
     if (decision === "approve") {
       entry.status = "approved";
       entry.userId = userId;
@@ -1701,11 +2301,122 @@ const server = createServer(async (request, response) => {
     return ok(response, { profile: { user_id: userId, profile_version: 5, updated_at: iso(0) } });
   }
   if (route === "auth/password/update") return ok(response, {});
+  if (route === "auth/step-up" && method === "POST") {
+    const unknown = Object.keys(json)
+      .filter((key) => !["password", "purpose", "connection_id"].includes(key))
+      .sort();
+    if (unknown.length > 0) {
+      return fail(
+        response,
+        400,
+        "malformed_request",
+        "The request body or parameters are malformed.",
+        {
+          unknown_fields: unknown.join(", "),
+        },
+      );
+    }
+    const purpose = String(json.purpose ?? "")
+      .trim()
+      .toLowerCase();
+    if (!STEP_UP_PURPOSES[purpose]) {
+      return fail(
+        response,
+        400,
+        "malformed_request",
+        "The request body or parameters are malformed.",
+        {
+          purpose: Object.keys(STEP_UP_PURPOSES).sort(),
+        },
+      );
+    }
+    const password = json.password;
+    if (typeof password !== "string" || !password) {
+      return fail(
+        response,
+        400,
+        "malformed_request",
+        "The request body or parameters are malformed.",
+        {
+          password: "required",
+        },
+      );
+    }
+    // A confirm grant is for one connection, named here and checked to be this account's.
+    const connectionId = String(json.connection_id ?? "")
+      .trim()
+      .toLowerCase();
+    if (purpose === "confirm") {
+      if (!connectionId) {
+        return fail(
+          response,
+          400,
+          "malformed_request",
+          "The request body or parameters are malformed.",
+          {
+            connection_id: "required: a confirm grant is for one connection",
+          },
+        );
+      }
+      if (!brokerConnections.some((row) => row.id === connectionId && row.user_id === userId)) {
+        return fail(response, 404, "not_found", "No such route.", { connection: "unknown" });
+      }
+    } else if (connectionId) {
+      return fail(
+        response,
+        400,
+        "malformed_request",
+        "The request body or parameters are malformed.",
+        {
+          connection_id: "only a confirm grant is for one connection",
+        },
+      );
+    }
+    // The sign-in bucket, keyed by the address: step-up is not a way around the sign-in limit.
+    const bucketKey = me.email.toLowerCase();
+    const nowMs = Date.now();
+    const wait = loginWaitSeconds(bucketKey, nowMs);
+    if (wait > 0) {
+      return fail(response, 429, "rate_limited", "Too many attempts. Wait before trying again.", {
+        retry_after_seconds: wait,
+      });
+    }
+    if (password === MOCK_WRONG_PASSWORD) {
+      recordLoginFailure(bucketKey, nowMs);
+      return fail(response, 401, "unauthenticated", "A bearer token is required.", {
+        reason: "invalid credentials",
+      });
+    }
+    loginAttempts.delete(bucketKey);
+    const rule = STEP_UP_PURPOSES[purpose]!;
+    const grant = randomBytes(32).toString("base64url");
+    const expiresAtMs = nowMs + rule.seconds * 1000;
+    stepUpGrants.set(grant, {
+      userId,
+      session: sessionToken,
+      purpose,
+      connectionId,
+      expiresAtMs,
+      maxUses: rule.maxUses,
+      uses: 0,
+    });
+    return ok(response, {
+      step_up: {
+        grant,
+        purpose,
+        expires_at: new Date(expiresAtMs).toISOString().replace(/\.\d{3}Z$/u, "Z"),
+        single_use: rule.maxUses === 1,
+        max_uses: rule.maxUses,
+        connection_id: connectionId || null,
+      },
+    });
+  }
 
   // ---- self ---------------------------------------------------------------------
   if (route === "me") {
     return ok(response, {
-      user: { user_id: me.id, email: me.email, is_active: me.active },
+      // The access status the gate reads, so the console learns it from the summary it loads.
+      user: { user_id: me.id, email: me.email, is_active: me.active, access_status: me.access },
       role: roleProjection(me.id),
       capabilities: CAPABILITIES[persona],
       environment: "production",
@@ -1818,8 +2529,10 @@ const server = createServer(async (request, response) => {
     });
   }
   if (route === "account/lifecycle") {
+    const lifecycle = lifecycleOf(userId);
+    applyBrokerHold(lifecycle.requests);
     return ok(response, {
-      revision: "rev-lifecycle-2",
+      revision: lifecycle.revision,
       generated_at: iso(0),
       export_queue: { job_limit: 50, returned: 1, per_user_limit: 3 },
       exports: [
@@ -1853,15 +2566,124 @@ const server = createServer(async (request, response) => {
           },
         },
       ],
-      deletion: { active: null, requests: [] },
+      deletion: {
+        active: activeDeletion(lifecycle.requests),
+        requests: lifecycle.requests,
+      },
     });
   }
-  if (
-    route === "account/exports/request" ||
-    route === "account/deletion/request" ||
-    route === "account/deletion/cancel"
-  ) {
+  if (route === "account/exports/request") {
     return fail(response, 409, "revision_conflict", "This page changed. Reload and try again.");
+  }
+  // Account deletion, with the service's checks in its order: known fields, the revision
+  // read, one live request at a time, the typed phrase. The answer carries the erasure
+  // statement, which is what the console's confirmation shows.
+  if (
+    (route === "account/deletion/request" && method === "POST") ||
+    (route === "account/deletion/cancel" && method === "POST")
+  ) {
+    const cancelling = route === "account/deletion/cancel";
+    const allowed = cancelling
+      ? ["expected_revision", "request_id", "confirmation"]
+      : ["expected_revision", "confirmation"];
+    const unknown = Object.keys(json).filter((key) => !allowed.includes(key));
+    if (unknown.length > 0) {
+      return fail(
+        response,
+        400,
+        "malformed_request",
+        "The request body or parameters are malformed.",
+        {
+          unknown_fields: unknown.sort(),
+        },
+      );
+    }
+    if (typeof json.expected_revision !== "string") {
+      return fail(
+        response,
+        400,
+        "malformed_request",
+        "The request body or parameters are malformed.",
+        {
+          expected_revision: "required",
+        },
+      );
+    }
+    const lifecycle = lifecycleOf(userId);
+    if (json.expected_revision !== lifecycle.revision) {
+      return fail(
+        response,
+        409,
+        "revision_conflict",
+        "That document changed after it was read. Refresh and retry.",
+        {
+          revision: lifecycle.revision,
+        },
+      );
+    }
+    const active = activeDeletion(lifecycle.requests);
+    const phrase = cancelling ? "KEEP MY ACCOUNT" : "DELETE MY ACCOUNT";
+    if (cancelling) {
+      if (
+        !active ||
+        active.id !==
+          String(json.request_id ?? "")
+            .trim()
+            .toLowerCase()
+      ) {
+        return fail(
+          response,
+          409,
+          "account_deletion_not_pending",
+          "No cancellable account deletion request is pending.",
+        );
+      }
+    } else if (active) {
+      return fail(
+        response,
+        409,
+        "account_deletion_pending",
+        "An account deletion request is already pending.",
+      );
+    }
+    if (String(json.confirmation ?? "").trim() !== phrase) {
+      return fail(
+        response,
+        400,
+        "malformed_request",
+        "The request body or parameters are malformed.",
+        {
+          confirmation: `type '${phrase}'`,
+        },
+      );
+    }
+    let deletion: MockDeletionRequest;
+    if (cancelling && active) {
+      active.status = "cancelled";
+      active.cancelled_at = iso(0);
+      active.can_cancel = false;
+      active.hold = null;
+      deletion = active;
+    } else {
+      deletion = newDeletionRequest();
+      lifecycle.requests.unshift(deletion);
+    }
+    lifecycle.revision = `rev-lifecycle-${randomUUID().slice(0, 8)}`;
+    return ok(
+      response,
+      {
+        revision: lifecycle.revision,
+        deletion,
+        event: {
+          id: randomUUID(),
+          event_type: cancelling ? "account.deletion_cancelled" : "account.deletion_requested",
+        },
+        replayed: false,
+        legacy_mirrored: true,
+        erasure: { erased: ERASURE_STATEMENT.erased, kept: [...ERASURE_STATEMENT.kept] },
+      },
+      cancelling ? 200 : 201,
+    );
   }
 
   // ---- admin --------------------------------------------------------------------
@@ -2721,16 +3543,26 @@ const server = createServer(async (request, response) => {
   // is — the same property the real store has, so a page that renders against this renders
   // against production.
   if (route === "me/brokers" && method === "GET") {
+    const halted = tradingState(userId).halted;
+    const haltReason = tradingState(userId).haltReason.split(/\s+/u).filter(Boolean).join(" ");
     return ok(response, {
       // user_id is stripped, not filtered out afterwards: the real route returns
       // `broker_vault.public_view`, which is an allowlist, and the console's schema is
       // `.strict()` — so a mock that returns one extra field fails the parse exactly the way
       // production would. That is the point of keeping the shapes identical.
+      // Each connection the kill switch switched off carries the halt that did it, even after
+      // the account's halt lifts; the account's own reason is null unless it is halted.
       connections: brokerConnections
         .filter((row) => row.user_id === userId)
-        .map((row) => publicBrokerView(row)),
+        .map((row) => {
+          const view = publicBrokerView(row);
+          return { ...view, halt_reason: view.trading_halted ? haltReason || null : null };
+        }),
       implemented_brokers: ["alpaca", "upstox"],
       encryption_configured: process.env.MOCK_BROKER_ENCRYPTION !== "unconfigured",
+      trading_halted: halted,
+      halted_at: halted ? tradingState(userId).haltedAt : null,
+      halt_reason: halted ? haltReason || null : null,
     });
   }
   // Deliberately `me/brokers/create`, matching the service's route table. An earlier version
@@ -2758,12 +3590,645 @@ const server = createServer(async (request, response) => {
       // A new connection cannot trade until it has been tested, which is what the service
       // does: `record_broker_test_result` is what turns this on.
       trading_enabled: false,
+      halted_at: null as string | null,
       last_error: "",
       created_at: iso(0),
       updated_at: iso(0),
     };
     brokerConnections.unshift(created);
     return ok(response, { connection: publicBrokerView(created) });
+  }
+  // ---- the live-order gates ----------------------------------------------------------
+  //
+  // Before the `me/brokers/{connection_id}` shapes below, as `broker_routes.route_target` is
+  // checked first on the service: `kill-switch`, `trading` and `authorisations` would
+  // otherwise read as connection ids.
+  if (route === "me/brokers/kill-switch" && method === "POST") {
+    // The halt comes first and the body is never a reason to refuse: no step-up, no key
+    // required. A key that is sent is honoured, and a retried press replays the first answer.
+    const now = iso(0);
+    const state = tradingState(userId);
+    const alreadyHalted = state.halted;
+    // Every press is the person's latest word; a resume already testing a broker must not
+    // undo it, which the service tells apart by this count.
+    state.generation += 1;
+    // Every press records its own reason, even an empty one (`halt_broker_trading`).
+    state.haltReason = String(json.reason ?? "")
+      .split(/\s+/u)
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, 200);
+    if (!alreadyHalted) {
+      state.halted = true;
+      state.haltedAt = now;
+    }
+    const mine = brokerConnections.filter((row) => row.user_id === userId);
+    let switchedOff = 0;
+    for (const row of mine) {
+      if (row.trading_enabled) switchedOff += 1;
+      row.trading_enabled = false;
+      row.halted_at = row.halted_at ?? now;
+    }
+    let revoked = 0;
+    for (const row of standingAuthorisations) {
+      if (row.user_id === userId && !row.revoked_at) {
+        row.revoked_at = now;
+        row.revoke_reason = "kill switch";
+        revoked += 1;
+      }
+    }
+    const key = String(request.headers["idempotency-key"] ?? "").trim();
+    const replayKey = SAFE_TOKEN.test(key) ? `${userId}|${key}` : "";
+    const replay = replayKey ? killSwitchReplays.get(replayKey) : undefined;
+    if (replay) return ok(response, { ...replay, trading_halted: true, replayed: true });
+
+    let cancelled = 0;
+    let complete = true;
+    const connections = mine.map((row) => {
+      const cancels: Array<Record<string, unknown>> = [];
+      const record = (order: Partial<MockWorkingOrder>, outcome: string, message: string) =>
+        cancels.push({
+          connection_id: row.id,
+          broker_order_id: order.broker_order_id ?? "",
+          client_order_id: order.client_order_id ?? "",
+          symbol: order.symbol ?? "",
+          outcome,
+          broker_status: order.status ?? "",
+          broker_message: message.slice(0, 400),
+          requested_at: now,
+          recorded: true,
+        });
+      if (process.env.MOCK_BROKER_SWEEP === "unreachable") {
+        record({}, "unreachable", "Working orders could not be listed: the broker did not answer.");
+        complete = false;
+        return {
+          connection_id: row.id,
+          broker: row.broker,
+          paper: row.paper,
+          trading_enabled: false,
+          working_orders: 0,
+          cancels,
+          record_failures: [],
+          complete: false,
+          in_flight: [],
+        };
+      }
+      const working = workingOrders.get(row.id) ?? [];
+      const workingCount = working.length;
+      for (const order of [...working]) {
+        if (!order.cancellable) {
+          record(order, "already_cancelling", "The broker is already cancelling this order.");
+          continue;
+        }
+        record(order, "cancel_requested", "");
+        working.splice(working.indexOf(order), 1);
+        cancelled += 1;
+      }
+      return {
+        connection_id: row.id,
+        broker: row.broker,
+        paper: row.paper,
+        trading_enabled: false,
+        working_orders: workingCount,
+        cancels,
+        record_failures: [],
+        complete: true,
+        in_flight: [],
+      };
+    });
+    const payload = {
+      trading_halted: true,
+      halted_at: state.haltedAt,
+      already_halted: alreadyHalted,
+      connections_switched_off: switchedOff,
+      authorisations_revoked: revoked,
+      cancelled,
+      in_flight: 0,
+      in_flight_known: true,
+      complete,
+      connections,
+    };
+    if (replayKey) killSwitchReplays.set(replayKey, payload);
+    return ok(response, payload);
+  }
+  if (route === "me/brokers/trading/resume" && method === "POST") {
+    const unknown = unknownFields(json, ["connection_id", "scope", "step_up"]);
+    if (unknown)
+      return fail(response, 400, "malformed_request", MALFORMED, { unknown_fields: unknown });
+    const scope = String(json.scope ?? "connection")
+      .trim()
+      .toLowerCase();
+    if (scope !== "connection" && scope !== "account") {
+      return fail(response, 400, "malformed_request", MALFORMED, {
+        scope: ["connection", "account"],
+      });
+    }
+    const connectionId = String(json.connection_id ?? "").trim();
+    if (scope === "connection" && !connectionId) {
+      return fail(response, 400, "malformed_request", MALFORMED, { connection_id: "required" });
+    }
+    // Checked before the broker is called, spent only when trading actually comes back.
+    if (!requireStepUp(response, userId, sessionToken, json.step_up, "resume", false)) return;
+    const state = tradingState(userId);
+    const mine = brokerConnections.filter((row) => row.user_id === userId);
+    // A kill-switch press made while this resume runs is the person's latest word: nothing is
+    // turned back on, and the answer says so (`_resume_conflict`).
+    const conflict = () =>
+      ok(response, {
+        resumed: false,
+        reason: "kill_switch_pressed_during_resume",
+        scope,
+        trading_halted: true,
+        message:
+          "The kill switch was pressed during the resume, so trading stays off. Resume again when you are ready.",
+      });
+    if (scope === "account") {
+      requireStepUp(response, userId, sessionToken, json.step_up, "resume", true);
+      if (process.env.MOCK_RESUME_CONFLICT === "1") return conflict();
+      state.halted = false;
+      state.haltedAt = null;
+      return ok(response, {
+        resumed: true,
+        reason: null,
+        scope: "account",
+        trading_halted: false,
+        connections_still_halted: mine.filter((row) => row.halted_at).length,
+      });
+    }
+    const row = mine.find((item) => item.id === connectionId);
+    if (!row) return fail(response, 404, "not_found", "No such route.", { connection: "unknown" });
+    // The test is made now, at the broker; a failure leaves the connection off and spends
+    // nothing. MOCK_BROKER_TEST=reject exercises it.
+    row.last_test_at = iso(0);
+    if (process.env.MOCK_BROKER_TEST === "reject") {
+      row.last_test_success = false;
+      row.trading_enabled = false;
+      row.last_error = "The broker rejected these credentials.";
+      // The grant is not spent: the person can try again without the password.
+      return ok(response, {
+        resumed: false,
+        reason: "broker_test_failed",
+        scope,
+        message: row.last_error,
+        trading_halted: state.halted,
+      });
+    }
+    row.last_test_success = true;
+    row.last_error = "";
+    requireStepUp(response, userId, sessionToken, json.step_up, "resume", true);
+    if (process.env.MOCK_RESUME_CONFLICT === "1") return conflict();
+    row.halted_at = null;
+    row.trading_enabled = true;
+    const still = mine.filter((item) => item.halted_at).length;
+    if (still === 0) {
+      state.halted = false;
+      state.haltedAt = null;
+    }
+    return ok(response, {
+      resumed: true,
+      reason: null,
+      scope: "connection",
+      message: "Connected.",
+      trading_halted: state.halted,
+      connections_still_halted: still,
+      connection: publicBrokerView(row),
+    });
+  }
+  if (route === "me/brokers/authorisations" && method === "GET") {
+    return ok(response, {
+      authorisations: standingAuthorisations
+        .filter((row) => row.user_id === userId)
+        .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at))
+        .slice(0, 50)
+        .map(authorisationView),
+    });
+  }
+  if (route === "me/brokers/authorisations/create" && method === "POST") {
+    const unknown = unknownFields(json, [
+      "connection_id",
+      "account",
+      "strategy",
+      "max_order_value",
+      "max_orders",
+      "expires_at",
+      "typed_confirmation",
+      "step_up",
+    ]);
+    if (unknown)
+      return fail(response, 400, "malformed_request", MALFORMED, { unknown_fields: unknown });
+    if (tradingState(userId).halted) {
+      return fail(
+        response,
+        423,
+        "trading_halted",
+        "Trading is switched off for this account. Turn it back on after a fresh connection test before placing an order.",
+        { trading: "switched off for this account" },
+      );
+    }
+    if (!requireStepUp(response, userId, sessionToken, json.step_up, "arm", false)) return;
+    const row = brokerConnections.find(
+      (item) => item.id === String(json.connection_id ?? "").trim() && item.user_id === userId,
+    );
+    if (!row) return fail(response, 404, "not_found", "No such route.", { connection: "unknown" });
+    if (row.paper) {
+      return fail(response, 400, "malformed_request", MALFORMED, {
+        connection: "a paper connection needs no authorisation",
+      });
+    }
+    if (row.halted_at) {
+      return fail(
+        response,
+        423,
+        "trading_halted",
+        "Trading is switched off for this account. Turn it back on after a fresh connection test before placing an order.",
+        { connection: "switched off by the kill switch; resume this connection" },
+      );
+    }
+    if (!row.trading_enabled || !row.last_test_success) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          connection: row.trading_enabled
+            ? "test this connection before placing an order"
+            : "trading is switched off for this connection",
+        },
+      );
+    }
+    const strategy = String(json.strategy ?? "")
+      .split(/\s+/u)
+      .filter(Boolean)
+      .join(" ");
+    if (!strategy || strategy.length > 120) {
+      return fail(response, 400, "malformed_request", MALFORMED, {
+        strategy: "required, at most 120 characters",
+      });
+    }
+    if (!row.account_reference || String(json.account ?? "").trim() !== row.account_reference) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          account: "name the account this connection trades in",
+        },
+      );
+    }
+    if (normalisedText(json.typed_confirmation) !== `AUTHORISE ${strategy}`.toUpperCase()) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          typed_confirmation:
+            "does not match; type the authorisation phrase for this strategy to arm it",
+        },
+      );
+    }
+    const ceiling = Number(json.max_order_value);
+    if (json.max_order_value === undefined || json.max_order_value === null || !(ceiling > 0)) {
+      return fail(response, 400, "malformed_request", MALFORMED, { max_order_value: "required" });
+    }
+    if (ceiling > DEFAULT_MAX_ORDER_VALUE) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          max_order_value: `above this connection's per-order limit of ${DEFAULT_MAX_ORDER_VALUE}`,
+        },
+      );
+    }
+    const maxOrders = json.max_orders;
+    if (typeof maxOrders !== "number" || !Number.isInteger(maxOrders) || maxOrders < 1) {
+      return fail(response, 400, "malformed_request", MALFORMED, {
+        max_orders: "expected a whole number of at least 1",
+      });
+    }
+    if (maxOrders > DEFAULT_MAX_ORDERS_PER_DAY) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          max_orders: `above this connection's ${DEFAULT_MAX_ORDERS_PER_DAY} orders a day`,
+        },
+      );
+    }
+    const rawExpiry = String(json.expires_at ?? "").trim();
+    const expiresMs = Date.parse(rawExpiry);
+    if (Number.isNaN(expiresMs)) {
+      return fail(response, 400, "malformed_request", MALFORMED, {
+        expires_at: "expected an ISO 8601 instant",
+      });
+    }
+    if (!/(Z|[+-]\d{2}:?\d{2})$/u.test(rawExpiry)) {
+      return fail(response, 400, "malformed_request", MALFORMED, {
+        expires_at: "needs a time zone",
+      });
+    }
+    if (expiresMs <= Date.now()) {
+      return fail(response, 400, "malformed_request", MALFORMED, {
+        expires_at: "has already passed",
+      });
+    }
+    if (expiresMs > Date.now() + 24 * 3_600_000) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          expires_at: "an authorisation ends within 24 hours",
+        },
+      );
+    }
+    requireStepUp(response, userId, sessionToken, json.step_up, "arm", true);
+    const created: MockAuthorisation = {
+      id: randomUUID(),
+      user_id: userId,
+      connection_id: row.id,
+      account_reference: row.account_reference,
+      broker: row.broker,
+      strategy,
+      max_order_value: ceiling,
+      max_orders: maxOrders,
+      used_orders: 0,
+      expires_at: new Date(expiresMs).toISOString().replace(/\.\d{3}Z$/u, "Z"),
+      created_at: iso(0),
+      revoked_at: null,
+      revoke_reason: "",
+    };
+    standingAuthorisations.unshift(created);
+    return ok(response, { authorisation: authorisationView(created) });
+  }
+  const authorisationRevokeMatch = route.match(/^me\/brokers\/authorisations\/([^/]+)\/revoke$/u);
+  if (authorisationRevokeMatch && method === "POST") {
+    const unknown = unknownFields(json, ["reason"]);
+    if (unknown)
+      return fail(response, 400, "malformed_request", MALFORMED, { unknown_fields: unknown });
+    const row = standingAuthorisations.find(
+      (item) => item.id === authorisationRevokeMatch[1] && item.user_id === userId,
+    );
+    if (!row)
+      return fail(response, 404, "not_found", "No such route.", { authorisation: "unknown" });
+    // Revoking one already revoked changes nothing.
+    if (!row.revoked_at) {
+      row.revoked_at = iso(0);
+      row.revoke_reason =
+        String(json.reason ?? "")
+          .split(/\s+/u)
+          .filter(Boolean)
+          .join(" ")
+          .slice(0, 200) || "revoked by the account holder";
+    }
+    return ok(response, { authorisation: authorisationView(row) });
+  }
+  if (route === "me/brokers/orders/preview" && method === "POST") {
+    const unknown = unknownFields(json, ORDER_FIELDS);
+    if (unknown)
+      return fail(response, 400, "malformed_request", MALFORMED, { unknown_fields: unknown });
+    const row = brokerConnections.find(
+      (item) => item.id === String(json.connection_id ?? "").trim() && item.user_id === userId,
+    );
+    if (!row) return fail(response, 404, "not_found", "No such route.", { connection: "unknown" });
+    const checked = validatedOrder(json);
+    if ("error" in checked) {
+      return fail(response, 400, "malformed_request", MALFORMED, { order: checked.error });
+    }
+    const limitOrder = checked.orderType === "limit" || checked.orderType === "stop_limit";
+    const declared = Number(json.estimated_value);
+    const estimated = limitOrder
+      ? checked.limitPrice * checked.quantity
+      : json.estimated_value === undefined || json.estimated_value === null
+        ? null
+        : declared;
+    const halted = tradingState(userId).halted || Boolean(row.halted_at);
+    // No phrase and no token: a program read the phrase off this response and echoed it with
+    // nobody typing. It says a confirmation is needed, its form, and that a step-up is.
+    return ok(response, {
+      preview: {
+        connection_id: row.id,
+        broker: row.broker,
+        paper: row.paper,
+        symbol: checked.symbol,
+        side: checked.side,
+        quantity: checked.quantity,
+        time_in_force: checked.timeInForce,
+        product: "",
+        estimated_value: estimated,
+        valued_at_broker_price: !limitOrder,
+        max_order_value: DEFAULT_MAX_ORDER_VALUE,
+        within_limit: estimated !== null && estimated <= DEFAULT_MAX_ORDER_VALUE,
+        ready: !halted && row.trading_enabled && row.last_test_success,
+        trading_halted: halted,
+        account: row.account_reference,
+        confirmation_required: !row.paper,
+        typed_confirmation_format: row.paper ? null : "SIDE QUANTITY SYMBOL",
+        step_up_required: !row.paper,
+        typed_confirmation: null,
+        confirmation: null,
+      },
+    });
+  }
+  if (route === "me/brokers/orders/confirm" && method === "POST") {
+    const unknown = unknownFields(json, [
+      ...ORDER_FIELDS.filter((field) => field !== "confirmation"),
+      "account",
+      "typed_confirmation",
+      "strategy",
+      "step_up",
+    ]);
+    if (unknown)
+      return fail(response, 400, "malformed_request", MALFORMED, { unknown_fields: unknown });
+    const row = brokerConnections.find(
+      (item) => item.id === String(json.connection_id ?? "").trim() && item.user_id === userId,
+    );
+    if (!row) return fail(response, 404, "not_found", "No such route.", { connection: "unknown" });
+    if (row.paper) {
+      return fail(response, 400, "malformed_request", MALFORMED, {
+        connection: "a paper order needs no confirmation",
+      });
+    }
+    const haltedMessage =
+      "Trading is switched off for this account. Turn it back on after a fresh connection test before placing an order.";
+    if (tradingState(userId).halted) {
+      return fail(response, 423, "trading_halted", haltedMessage, {
+        trading: "switched off for this account",
+      });
+    }
+    const typed = json.typed_confirmation;
+    const standingId = String(json.standing_authorisation_id ?? "").trim();
+    const hasTyped = typed !== undefined && typed !== null && String(typed).trim() !== "";
+    if (hasTyped === Boolean(standingId)) {
+      return fail(response, 400, "malformed_request", MALFORMED, {
+        confirmation: "send either typed_confirmation or standing_authorisation_id, not both",
+      });
+    }
+    const checked = validatedOrder(json);
+    if ("error" in checked) {
+      return fail(response, 400, "malformed_request", MALFORMED, { order: checked.error });
+    }
+    const clientOrderId = String(json.client_order_id ?? "").trim();
+    if (!clientOrderId || clientOrderId.length > 80) {
+      return fail(response, 400, "malformed_request", MALFORMED, { client_order_id: "required" });
+    }
+    if (row.halted_at) {
+      return fail(response, 423, "trading_halted", haltedMessage, {
+        connection: "switched off by the kill switch; resume this connection",
+      });
+    }
+    if (!row.trading_enabled || !row.last_test_success) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          connection: row.trading_enabled
+            ? "test this connection before placing an order"
+            : "trading is switched off for this connection",
+        },
+      );
+    }
+    // Before anything is compared: without a step-up nothing about the order is worth saying.
+    // The grant is for this connection; one of its five uses is spent when the token is minted.
+    if (
+      hasTyped &&
+      !requireStepUp(response, userId, sessionToken, json.step_up, "confirm", false, row.id)
+    ) {
+      return;
+    }
+    const declared =
+      json.estimated_value === undefined || json.estimated_value === null
+        ? null
+        : Number(json.estimated_value);
+    const valued = liveOrderValue(checked, declared, !hasTyped);
+    if ("refusal" in valued) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          order: valued.refusal,
+        },
+      );
+    }
+    const estimated = valued.value;
+    if (estimated > DEFAULT_MAX_ORDER_VALUE) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          order: `above this connection's per-order limit of ${DEFAULT_MAX_ORDER_VALUE}`,
+        },
+      );
+    }
+    if (!row.account_reference) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          account: "test this connection so the account it trades in is known",
+        },
+      );
+    }
+    if (String(json.account ?? "").trim() !== row.account_reference) {
+      return fail(
+        response,
+        403,
+        "forbidden",
+        "This account is not permitted to perform that action.",
+        {
+          account:
+            "this confirmation names a different account from the one this connection trades in",
+        },
+      );
+    }
+    let basis = "typed";
+    if (hasTyped) {
+      if (normalisedText(typed) !== typedPhrase(checked.side, checked.quantity, checked.symbol)) {
+        return fail(
+          response,
+          403,
+          "forbidden",
+          "This account is not permitted to perform that action.",
+          {
+            typed_confirmation: "does not match this order; type its side, quantity and symbol",
+          },
+        );
+      }
+    } else {
+      const strategy = String(json.strategy ?? "").trim();
+      if (!strategy) {
+        return fail(response, 400, "malformed_request", MALFORMED, {
+          strategy: "required with a standing authorisation",
+        });
+      }
+      const authorisation = standingAuthorisations.find(
+        (item) => item.id === standingId && item.user_id === userId,
+      );
+      const view = authorisation ? authorisationView(authorisation) : null;
+      const reason = !authorisation
+        ? "No standing authorisation with that id is armed on this account."
+        : view?.state === "revoked"
+          ? `The standing authorisation ${standingId} was revoked.`
+          : view?.state === "expired"
+            ? `The standing authorisation ${standingId} has expired.`
+            : authorisation.connection_id !== row.id
+              ? `The standing authorisation ${standingId} is for another connection.`
+              : normalisedText(strategy) !== normalisedText(authorisation.strategy)
+                ? `The standing authorisation ${standingId} is for ${authorisation.strategy}, not ${strategy}.`
+                : estimated > authorisation.max_order_value
+                  ? `This order's value of ${estimated.toFixed(2)} is above the authorised ceiling of ${authorisation.max_order_value.toFixed(2)} an order.`
+                  : view?.state === "used"
+                    ? `The standing authorisation ${standingId} allowed ${authorisation.max_orders} orders, and all are used.`
+                    : "";
+      if (reason) {
+        return fail(
+          response,
+          403,
+          "forbidden",
+          "This account is not permitted to perform that action.",
+          {
+            standing_authorisation: reason,
+          },
+        );
+      }
+      basis = "standing";
+    }
+    if (basis === "typed") {
+      requireStepUp(response, userId, sessionToken, json.step_up, "confirm", true, row.id);
+    }
+    return ok(response, {
+      confirmed: {
+        // A fabricated token: the mock has no order route to spend it on.
+        confirmation: `mock-confirmation-${randomBytes(16).toString("base64url")}`,
+        basis,
+        account: row.account_reference,
+        connection_id: row.id,
+        client_order_id: clientOrderId,
+        standing_authorisation_id: standingId || null,
+        symbol: checked.symbol,
+        side: checked.side,
+        quantity: checked.quantity,
+        time_in_force: checked.timeInForce,
+        product: "",
+        estimated_value: estimated,
+        expires_at: new Date(Date.now() + 120_000).toISOString().replace(/\.\d{3}Z$/u, "Z"),
+      },
+    });
   }
   if (route.startsWith("me/brokers/") && method === "POST") {
     const [, , connectionId, action] = route.split("/");
@@ -2778,18 +4243,28 @@ const server = createServer(async (request, response) => {
     if (action === "test") {
       // MOCK_BROKER_TEST=reject exercises the "broker said no" branch, which is a
       // successful request with a negative answer rather than an error.
+      const halted = () => tradingState(userId).halted || Boolean(row.halted_at);
       if (process.env.MOCK_BROKER_TEST === "reject") {
         row.last_test_success = false;
         row.last_test_at = iso(0);
+        row.trading_enabled = false;
         row.last_error = "The broker rejected these credentials.";
-        return ok(response, { ok: false, message: row.last_error });
+        return ok(response, { ok: false, message: row.last_error, trading_halted: halted() });
       }
       row.last_test_success = true;
       row.last_test_at = iso(0);
-      row.trading_enabled = true;
+      // While the kill switch holds, a pass records the result and leaves trading off: turning
+      // it back on is `trading/resume`, with the password.
+      row.trading_enabled = !halted();
       row.last_error = "";
       row.account_reference = row.broker === "upstox" ? "UP1234" : "PA3XYZ";
-      return ok(response, { ok: true, message: "Connected.", connection: publicBrokerView(row) });
+      seedWorkingOrders(row.id);
+      return ok(response, {
+        ok: true,
+        message: "Connected.",
+        trading_halted: halted(),
+        connection: publicBrokerView(row),
+      });
     }
     return fail(response, 404, "not_found", `No route for ${method} ${route}.`);
   }

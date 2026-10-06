@@ -7,6 +7,7 @@ import { TurnstileField } from "@/components/auth/turnstile-field";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Field, Input, describedBy } from "@/components/ui/field";
+import { ACCESS_MESSAGES, ACCESS_TITLES } from "@/lib/account/access";
 import { LEGAL_CONSENT_FIELD_NAME, PRIVACY_URL, TERMS_URL } from "@/lib/auth/consent";
 import { INITIAL_SIGNUP_STATE, type SignupAction } from "@/lib/auth/signup";
 
@@ -26,6 +27,11 @@ export function SignupForm({ action, turnstileSiteKey, nextPath }: SignupFormPro
         <Callout tone="success" role="status" title="Almost there">
           {state.message}
         </Callout>
+        {state.access && (
+          <Callout tone="attention" role="status" title={ACCESS_TITLES[state.access]}>
+            {ACCESS_MESSAGES[state.access]}
+          </Callout>
+        )}
       </div>
     );
   }

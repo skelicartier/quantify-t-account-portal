@@ -16,7 +16,9 @@ import {
   ACCOUNT_DELETION_CANCEL_CONFIRMATION,
   ACCOUNT_DELETION_CONFIRMATION,
   ACCOUNT_EXPORT_CONFIRMATION,
+  DELETION_BROKER_HOLD_CODE,
   INITIAL_ACCOUNT_LIFECYCLE_STATE,
+  type AccountErasureSummary,
   type AccountLifecycleActionState,
 } from "@/lib/account/lifecycle-input";
 import type { AccountApiAccountLifecycle } from "@/lib/admin/account-api";
@@ -118,6 +120,104 @@ function PasswordConfirmationFields({
   );
 }
 
+/** A service note as a sentence: capitalised and full-stopped, never rewritten. */
+function sentence(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  const capitalised = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+  return /[.!?]$/u.test(capitalised) ? capitalised : `${capitalised}.`;
+}
+
+type DeletionRequest = AccountApiAccountLifecycle["deletion"]["requests"][number];
+
+/**
+ * Why a deletion that is due has not happened yet, said where the person is looking.
+ *
+ * The deletion worker stops trading and asks every broker to cancel every working order before
+ * it erases the credentials that could cancel anything; until each broker confirms, it holds
+ * the erasure (status `blocked`, `hold.code` `broker_cancellation`) and checks again. A hold is
+ * not a failure and costs the request none of its attempts, so it reads as waiting, not as an
+ * error. Branched on the service's code, never on the wording of `last_error`.
+ */
+function DeletionHold({ request }: { request: DeletionRequest }) {
+  const brokerHold = request.hold?.code === DELETION_BROKER_HOLD_CODE;
+  if (!brokerHold && request.status !== "blocked" && request.status !== "failed") return null;
+  const nextCheck = request.hold?.next_check_at || request.next_attempt_at;
+  return (
+    <Callout
+      tone={brokerHold ? "attention" : "danger"}
+      role="status"
+      title={brokerHold ? "Deletion is waiting for your brokers" : "Deletion has not completed"}
+    >
+      {brokerHold ? (
+        <p>
+          Trading on your account is switched off and every working order has been asked to cancel.
+          Your data is erased once each broker confirms its cancels; this is checked again
+          automatically, and you can still cancel the deletion until the scheduled date.
+        </p>
+      ) : (
+        <p>{request.last_error ? sentence(request.last_error) : "It will be tried again."}</p>
+      )}
+      {nextCheck && (
+        <p>
+          Next check <Timestamp value={nextCheck} mode="absolute" />.
+        </p>
+      )}
+      {brokerHold && request.hold?.held_until && (
+        <p>
+          If a broker has still not confirmed by{" "}
+          <Timestamp value={request.hold.held_until} mode="absolute" />, the erasure goes ahead
+          without that confirmation.
+        </p>
+      )}
+    </Callout>
+  );
+}
+
+/** One line under a history row's status: the hold by its code, or the service's error. */
+function deletionNote(item: DeletionRequest): string {
+  if (item.hold?.code === DELETION_BROKER_HOLD_CODE)
+    return "Waiting for brokers to confirm cancellation.";
+  if ((item.status === "blocked" || item.status === "failed") && item.last_error) {
+    return sentence(item.last_error);
+  }
+  return "";
+}
+
+/**
+ * The deletion request, confirmed: when the cooling-off period ends, what is erased and what
+ * is kept. The words are the Account API's, because the erasure is what makes them true.
+ */
+function DeletionConfirmation({
+  message,
+  erasure,
+}: {
+  message: string;
+  erasure: AccountErasureSummary | undefined;
+}) {
+  return (
+    <Callout tone="success" role="status" title="Deletion requested">
+      <p>{message}</p>
+      {erasure && (
+        <div className="erasure">
+          <h3 className="erasure__heading">What is erased</h3>
+          <p>{erasure.erased}</p>
+          {erasure.kept.length > 0 && (
+            <>
+              <h3 className="erasure__heading">What is kept</h3>
+              <ul className="erasure__kept">
+                {erasure.kept.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </Callout>
+  );
+}
+
 export function AccountDataControls({
   lifecycle,
   requestExportAction,
@@ -214,6 +314,11 @@ export function AccountDataControls({
         </Section>
 
         <Section id="account-deletion" title="Controlled deletion" eyebrow="Deletion">
+          {/* Outside the forms on purpose: once the request exists the page re-renders with
+              the cancel form in place of the request form, and the confirmation must stay. */}
+          {deleteState.status === "success" && (
+            <DeletionConfirmation message={deleteState.message} erasure={deleteState.erasure} />
+          )}
           <Card danger>
             {activeDeletion ? (
               <p className="card__desc">
@@ -227,6 +332,7 @@ export function AccountDataControls({
                 scheduled date; after that your data is removed and cannot be recovered.
               </p>
             )}
+            {activeDeletion && <DeletionHold request={activeDeletion} />}
             <div className="card__body">
               {activeDeletion?.can_cancel ? (
                 <form action={cancelFormAction} className="form">
@@ -259,7 +365,7 @@ export function AccountDataControls({
                       state={deleteState}
                     />
                   </div>
-                  <ActionMessage state={deleteState} />
+                  {deleteState.status === "error" && <ActionMessage state={deleteState} />}
                   <div className="form-actions">
                     <Button
                       variant="danger"
@@ -283,6 +389,9 @@ export function AccountDataControls({
                 <tr key={item.id}>
                   <td>
                     <StatusPill value={item.status} label={formatLabel(item.status)} />
+                    {deletionNote(item) && (
+                      <span className="data-table__secondary">{deletionNote(item)}</span>
+                    )}
                   </td>
                   <td>
                     <Timestamp value={item.requested_at} now={now} fallback="Pending" />

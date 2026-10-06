@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 
+import { AccessHoldPage } from "@/components/account/access-banner";
 import {
   AccountOvernight,
   OVERNIGHT_TABS,
   type OvernightTab,
 } from "@/components/account/account-overnight";
+import { getCurrentAccessHold } from "@/lib/dal/access";
 import { getOvernightBrief, getOvernightMornings } from "@/lib/dal/overnight";
 import { requestNow } from "@/lib/request-time";
 
@@ -24,7 +26,21 @@ export default async function OvernightPage({ searchParams }: { searchParams: Se
     ? (requestedTab as OvernightTab)
     : "today";
 
+  // The morning brief is the product; a held account reads its state instead of a refusal.
+  const hold = await getCurrentAccessHold();
+  if (hold) return <AccessHoldPage title="Overnight" titleId="overnight-heading" hold={hold} />;
+
   const view = await getOvernightMornings();
+  if (view.status === "access") {
+    return (
+      <AccessHoldPage
+        title="Overnight"
+        titleId="overnight-heading"
+        hold={view.access}
+        withMessage
+      />
+    );
+  }
   const requested = first(params.date);
   const latest = view.status === "ready" ? view.mornings[0]?.date : undefined;
   // A date the URL names is read as asked, so an old link says it is old rather than

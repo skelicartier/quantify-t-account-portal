@@ -1,16 +1,24 @@
 import type { ReactNode } from "react";
 
 import { logout, setConsoleTheme } from "@/app/account/actions";
+import { AccessBanner } from "@/components/account/access-banner";
 import { ConsoleShell } from "@/components/shell/console-shell";
 import { getAccountRole } from "@/lib/admin/access";
 import { DEV_PERSONAS, devAutologinPersona } from "@/lib/auth/dev-bypass";
+import { getCurrentAccessHold } from "@/lib/dal/access";
 import { requireCurrentAccount } from "@/lib/dal/account";
 import { readConsoleTheme } from "@/lib/dal/theme";
 
 export default async function AccountLayout({ children }: { children: ReactNode }) {
   const account = await requireCurrentAccount();
-  // Fails closed to null: the account pages never depend on the role read succeeding.
-  const [role, theme] = await Promise.all([getAccountRole(), readConsoleTheme()]);
+  // The role fails closed to null: the account pages never depend on it. The access hold is
+  // said above every page, because a pending or declined account signs in here to read its
+  // state and to export or delete its data; it too is null when it cannot be read.
+  const [role, theme, hold] = await Promise.all([
+    getAccountRole(),
+    readConsoleTheme(),
+    getCurrentAccessHold(),
+  ]);
 
   return (
     <ConsoleShell
@@ -26,6 +34,7 @@ export default async function AccountLayout({ children }: { children: ReactNode 
       signOutAction={logout}
       theme={theme}
       themeAction={setConsoleTheme}
+      notice={hold ? <AccessBanner hold={hold} /> : undefined}
     >
       {children}
     </ConsoleShell>

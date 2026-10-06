@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 
+import { normaliseAccessStatus, type AccessStatus } from "@/lib/account/access";
 import { heartbeatAccountApiSession } from "@/lib/account/session-lifecycle";
 import {
   AccountApiRequestError,
@@ -70,6 +71,23 @@ export const getAccountRole = cache(async (): Promise<string | null> => {
     const token = azure.getAccessToken()?.trim();
     if (!token) return null;
     return (await fetchAccountApiMe(token)).role.effective;
+  } catch {
+    return null;
+  }
+});
+
+/**
+ * The signed-in account's access status as `me` reports it — pending, approved or declined,
+ * read from the database the way the access gate reads it — from the same one `me` per
+ * request the role comes from. Null on every problem, and from a service whose `me` predates
+ * the field, so the caller can fall back rather than guess.
+ */
+export const getAccountAccessStatus = cache(async (): Promise<AccessStatus | null> => {
+  try {
+    const azure = await createServerAzureClient({ cookieWriteMode: "best-effort" });
+    const token = azure.getAccessToken()?.trim();
+    if (!token) return null;
+    return normaliseAccessStatus((await fetchAccountApiMe(token)).user.access_status);
   } catch {
     return null;
   }

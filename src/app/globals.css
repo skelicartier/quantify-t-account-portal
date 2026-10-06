@@ -963,6 +963,10 @@
     padding: 12px var(--content-gutter) 48px;
   }
 
+  .shell__notice {
+    margin-bottom: 12px;
+  }
+
   /* ---- the page bar -------------------------------------------------------------- */
   .pagebar {
     display: flex;
@@ -2557,6 +2561,155 @@
   .callout--compact {
     padding: 10px 12px;
     font-size: 12.5px;
+  }
+
+  /* A standing notice across the top of the work surface (the account's access state). */
+  .callout--banner {
+    max-width: none;
+  }
+
+  .callout__body > .access-open {
+    margin-top: 6px;
+  }
+
+  .access-open a {
+    color: var(--text);
+    text-decoration: underline;
+    text-decoration-color: var(--line-strong);
+    text-underline-offset: 3px;
+  }
+
+  .access-open a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  /* erasure — what an account deletion removes and keeps, in the service's words */
+  .erasure {
+    display: grid;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .erasure__heading {
+    margin: 4px 0 0;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .erasure__kept {
+    display: grid;
+    gap: 4px;
+    padding-left: 18px;
+    list-style: square;
+  }
+
+  /* dialog — a modal confirmation. Full border, never a side strip; the danger tone
+     changes the border and the title, the panel stays the console's own surface. */
+  .dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(3, 4, 4, 0.72);
+  }
+
+  .dialog {
+    display: grid;
+    gap: 14px;
+    width: min(520px, 100%);
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+    padding: 18px 20px 20px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel);
+    box-shadow: var(--lift-shadow);
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .dialog:focus {
+    outline: none;
+  }
+
+  .dialog--danger {
+    border-color: rgba(255, 101, 101, 0.55);
+  }
+
+  .dialog__title {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--font-heading);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  .dialog--danger .dialog__title {
+    color: var(--danger);
+  }
+
+  .dialog__body {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+  }
+
+  .dialog__body p,
+  .dialog__body ul {
+    margin: 0;
+  }
+
+  .dialog__body ul {
+    padding-left: 18px;
+    list-style: square;
+  }
+
+  .dialog__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  /* kill switch — the account-level halt and what the sweep found */
+  .kill-switch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+  }
+
+  .kill-switch__state {
+    display: grid;
+    gap: 4px;
+  }
+
+  .kill-switch__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .sweep {
+    display: grid;
+    gap: 12px;
+  }
+
+  .sweep__problems {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .sweep__problems li {
+    overflow-wrap: anywhere;
   }
 
   /* key-value */

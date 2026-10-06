@@ -56,6 +56,11 @@ export type SignupActionState = {
   message: string | null;
   /** Set with `status: "exists"`: whether the existing account is verified and whether a fresh link went out. */
   account?: { confirmed: boolean; confirmationResent: boolean };
+  /**
+   * Set with `status: "accepted"` when the new account is an application still to be decided
+   * (every new account is, while access is by application), so the page can say so.
+   */
+  access?: "pending" | "declined";
   fieldErrors: {
     fullName: string[];
     email: string[];

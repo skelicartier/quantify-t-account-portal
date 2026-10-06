@@ -25,6 +25,9 @@ export type DesktopConnectParams = {
 export type DesktopConnectActionState =
   | { status: "idle"; message: null }
   | { status: "error"; message: string }
+  // The account has not been admitted: the service's own sentence, said as the account's state
+  // rather than as a failure to retry.
+  | { status: "access"; message: string; access: "pending" | "declined" }
   | { status: "connected"; message: null; userCode: string }
   | { status: "cancelled"; message: null };
 

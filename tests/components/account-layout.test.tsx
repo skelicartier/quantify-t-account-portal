@@ -8,6 +8,7 @@ const accountMocks = vi.hoisted(() => ({
   requireCurrentAccount: vi.fn(),
   getAccountRole: vi.fn(),
   readConsoleTheme: vi.fn(async () => "dark" as const),
+  getCurrentAccessHold: vi.fn(),
 }));
 
 vi.mock("@/app/account/actions", () => ({
@@ -27,6 +28,10 @@ vi.mock("@/lib/admin/access", () => ({
   getAccountRole: accountMocks.getAccountRole,
 }));
 
+vi.mock("@/lib/dal/access", () => ({
+  getCurrentAccessHold: accountMocks.getCurrentAccessHold,
+}));
+
 vi.mock("next/navigation", () => ({
   usePathname: () => "/account",
   useSearchParams: () => new URLSearchParams(),
@@ -44,6 +49,7 @@ const account = {
   lastSignInAt: null,
   emailConfirmed: true,
   profileState: "ready",
+  accessStatus: "approved",
 };
 
 describe("AccountLayout", () => {
@@ -51,6 +57,7 @@ describe("AccountLayout", () => {
     vi.clearAllMocks();
     accountMocks.requireCurrentAccount.mockResolvedValue(account);
     accountMocks.getAccountRole.mockResolvedValue(null);
+    accountMocks.getCurrentAccessHold.mockResolvedValue(null);
   });
 
   it("guards the shell with the protected account lookup and renders sign out", async () => {
@@ -93,5 +100,43 @@ describe("AccountLayout", () => {
     );
     expect(accountMocks.requireCurrentAccount).toHaveBeenCalledOnce();
     expect(accountMocks.logout).not.toHaveBeenCalled();
+  });
+
+  it("says above every page that an application is under review", async () => {
+    accountMocks.getCurrentAccessHold.mockResolvedValue("pending");
+
+    render(await AccountLayout({ children: <p>Protected</p> }));
+
+    const banner = screen.getByText("Application under review").closest(".callout")!;
+    expect(banner).toHaveTextContent(
+      "Your application is being reviewed. We will email you as soon as it has been decided.",
+    );
+    expect(banner).toHaveAttribute("role", "status");
+    // Full border and tint in the hold's tone; never a coloured strip down one side.
+    expect(banner).toHaveClass("callout--attention", "callout--banner");
+    expect(screen.getByRole("link", { name: "Data export and deletion" })).toHaveAttribute(
+      "href",
+      "/account/data",
+    );
+  });
+
+  it("tells a declined account it can still export or delete its data", async () => {
+    accountMocks.getCurrentAccessHold.mockResolvedValue("declined");
+
+    render(await AccountLayout({ children: <p>Protected</p> }));
+
+    const banner = screen.getByText("Application not approved").closest(".callout")!;
+    expect(banner).toHaveTextContent(
+      "You can still sign in to the console to export or delete your data.",
+    );
+    expect(banner).toHaveClass("callout--danger");
+  });
+
+  it("shows no banner to an admitted account, or when the status could not be read", async () => {
+    render(await AccountLayout({ children: <p>Protected</p> }));
+
+    expect(accountMocks.getCurrentAccessHold).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Application under review")).toBeNull();
+    expect(screen.queryByText("Application not approved")).toBeNull();
   });
 });

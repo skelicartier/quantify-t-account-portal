@@ -1067,7 +1067,9 @@ export function analyzeAccountApi(sources: AccountApiSources): AccountApiEvidenc
     accountExportGenerationWorker:
       includesAll(modules.account_export_worker, [
         "def run_account_export_worker",
-        "artifact_worker_enabled",
+        // The export worker's own switch (QT_ACCOUNT_API_EXPORT_WORKER_ENABLED, on unless
+        // switched off), no longer the shared, off-by-default `artifact_worker_enabled`.
+        "export_worker_enabled",
         "require_account_export_encryption",
         "claim_account_export_generation_attempt",
         "finish_account_export_generation_attempt",

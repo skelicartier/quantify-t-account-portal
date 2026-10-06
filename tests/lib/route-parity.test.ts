@@ -71,6 +71,81 @@ async function serviceRoutes(): Promise<Map<string, string>> {
   return routes;
 }
 
+/**
+ * A concrete path for a route template, for testing a mock's regular expression against it.
+ * The samples are shaped like real values, because some mock patterns check shape: a date
+ * for a brief, a long url-safe token for a handoff id, a uuid for everything else.
+ */
+function sampleOf(template: string): string {
+  return template
+    .split("/")
+    .map((segment) => {
+      if (!segment.startsWith("{")) return segment;
+      if (segment.includes("date")) return "2026-10-01";
+      if (segment.includes("handoff")) return "A".repeat(43);
+      return "5c1f7b90-0a2e-4f3b-9d61-7c2a4e6b8d01";
+    })
+    .join("/");
+}
+
+/** The mock's exact guards: `route === "x" && method === "Y"`, in either order. */
+function exactGuards(mock: string): Array<{ path: string; method: string }> {
+  const guarded: Array<{ path: string; method: string }> = [];
+  for (const match of mock.matchAll(
+    /route === "([^"]+)"\s*&&\s*method === "(GET|POST|PUT|PATCH|DELETE)"/gu,
+  )) {
+    const [, path, method] = match;
+    if (path && method) guarded.push({ path, method });
+  }
+  for (const match of mock.matchAll(
+    /method === "(GET|POST|PUT|PATCH|DELETE)"\s*&&\s*route === "([^"]+)"/gu,
+  )) {
+    const [, method, path] = match;
+    if (path && method) guarded.push({ path, method });
+  }
+  return guarded;
+}
+
+/**
+ * The mock's pattern guards: a `const x = route.match(/.../u)` (or `/.../u.exec(route)`)
+ * followed by `if (x && method === "Y")`. These answer the templated routes — a revoke by id,
+ * a brief by date — which the exact-guard check above cannot see, and a templated route is
+ * just as able to be more permissive than the service.
+ */
+function patternGuards(mock: string): Array<{ name: string; pattern: RegExp; method: string }> {
+  const patterns = new Map<string, RegExp>();
+  for (const match of mock.matchAll(
+    /const (\w+) = route\.match\(\s*\/(.+?)\/([a-z]*)\s*,?\s*\)/gu,
+  )) {
+    const [, name, body, flags] = match;
+    if (name && body) patterns.set(name, new RegExp(body, flags));
+  }
+  for (const match of mock.matchAll(/const (\w+) = \/(.+?)\/([a-z]*)\.exec\(route\)/gu)) {
+    const [, name, body, flags] = match;
+    if (name && body) patterns.set(name, new RegExp(body, flags));
+  }
+  const guards: Array<{ name: string; pattern: RegExp; method: string }> = [];
+  for (const match of mock.matchAll(/\b(\w+) && method === "(GET|POST|PUT|PATCH|DELETE)"/gu)) {
+    const [, name, method] = match;
+    const pattern = name ? patterns.get(name) : undefined;
+    if (name && pattern && method) guards.push({ name, pattern, method });
+  }
+  return guards;
+}
+
+/** The string literals in one Python `frozenset({...})` assignment, comments dropped. */
+function pythonStringSet(source: string, name: string): string[] {
+  const start = source.indexOf(`${name}: frozenset[str] = frozenset(`);
+  if (start === -1) return [];
+  const end = source.indexOf("\n)", start);
+  const block = source
+    .slice(start, end)
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("#"))
+    .join("\n");
+  return [...block.matchAll(/"([^"]+)"/gu)].map((match) => match[1]!);
+}
+
 /** Turn `me/brokers/{connection_id}/test` into a matcher for a concrete path. */
 function toPattern(route: string): RegExp {
   const escaped = route
@@ -139,20 +214,7 @@ describe.skipIf(!packageAvailable)("route parity with the Account API", () => {
     const mock = await readFile(resolve("scripts/mock-account-api.ts"), "utf8");
 
     // The mock guards look like `if (route === "me/brokers" && method === "GET")`.
-    const guarded: Array<{ path: string; method: string }> = [];
-    // Both orders occur in the mock: `route === x && method === y` and the reverse.
-    for (const match of mock.matchAll(
-      /route === "([^"]+)"\s*&&\s*method === "(GET|POST|PUT|PATCH|DELETE)"/gu,
-    )) {
-      const [, path, method] = match;
-      if (path && method) guarded.push({ path, method });
-    }
-    for (const match of mock.matchAll(
-      /method === "(GET|POST|PUT|PATCH|DELETE)"\s*&&\s*route === "([^"]+)"/gu,
-    )) {
-      const [, method, path] = match;
-      if (path && method) guarded.push({ path, method });
-    }
+    const guarded = exactGuards(mock);
     expect(guarded.length).toBeGreaterThan(3);
 
     const looser = guarded.filter(({ path, method }) => {
@@ -168,5 +230,90 @@ describe.skipIf(!packageAvailable)("route parity with the Account API", () => {
       ),
       "the mock is more permissive than the service, which is how a broken call passes locally",
     ).toEqual([]);
+  });
+
+  it("never answers a method on a templated path the service refuses", async () => {
+    const routes = await serviceRoutes();
+    const mock = await readFile(resolve("scripts/mock-account-api.ts"), "utf8");
+    const guards = patternGuards(mock);
+    // The revoke-by-id and the brief-by-date guards at least; none found means the parser
+    // broke, not that the mock is clean.
+    expect(guards.map((guard) => guard.name)).toEqual(
+      expect.arrayContaining(["authorisationRevokeMatch", "overnightRead", "overnightWrite"]),
+    );
+
+    const looser: string[] = [];
+    for (const guard of guards) {
+      for (const [template, accepts] of routes) {
+        if (guard.pattern.test(sampleOf(template)) && accepts !== guard.method) {
+          looser.push(`mock answers ${guard.method} ${template}, service accepts ${accepts}`);
+        }
+      }
+    }
+    expect(looser, "a templated mock route is more permissive than the service").toEqual([]);
+  });
+
+  it("answers every live-order gate and step-up route at the service's path and method", async () => {
+    const routes = await serviceRoutes();
+    const mock = await readFile(resolve("scripts/mock-account-api.ts"), "utf8");
+    const brokerSource = await read("account_api/broker_routes.py");
+    const stepUpSource = await read("account_api/step_up.py");
+
+    // Every route `broker_routes` declares (kill switch, resume, confirm, the authorisations)
+    // and step-up, read from the service so a gate added later is covered without editing
+    // this list — plus the existing routes whose shapes the same change touched.
+    const declared = [
+      ...[...brokerSource.matchAll(/^[A-Z_]+_ROUTE\s*=\s*"([^"]+)"/gmu)].map((m) => m[1]!),
+      ...[...stepUpSource.matchAll(/^STEP_UP_ROUTE\s*=\s*"([^"]+)"/gmu)].map((m) => m[1]!),
+      "me/brokers",
+      "me/brokers/orders/preview",
+      "account/deletion/request",
+      "account/deletion/cancel",
+    ];
+    expect(declared).toEqual(
+      expect.arrayContaining([
+        "auth/step-up",
+        "me/brokers/kill-switch",
+        "me/brokers/trading/resume",
+        "me/brokers/authorisations/{authorisation_id}/revoke",
+      ]),
+    );
+
+    const exact = exactGuards(mock);
+    const patterns = patternGuards(mock);
+    const problems: string[] = [];
+    for (const template of declared) {
+      const accepts = routes.get(template);
+      if (!accepts) {
+        problems.push(`the service registers no ${template}`);
+        continue;
+      }
+      const answered = template.includes("{")
+        ? patterns.filter((guard) => guard.pattern.test(sampleOf(template))).map((g) => g.method)
+        : exact.filter((guard) => guard.path === template).map((guard) => guard.method);
+      if (answered.length === 0) problems.push(`the mock does not answer ${accepts} ${template}`);
+      for (const method of answered) {
+        if (method !== accepts)
+          problems.push(`mock answers ${method} ${template}, service ${accepts}`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it("holds an unadmitted account to the same open routes as the service's access gate", async () => {
+    const access = await read("account_api/access.py");
+    const mock = await readFile(resolve("scripts/mock-account-api.ts"), "utf8");
+
+    const service = pythonStringSet(access, "OPEN_ROUTES").sort();
+    // A parser that found nothing would make the comparison vacuous.
+    expect(service).toEqual(expect.arrayContaining(["me", "account/deletion/request"]));
+
+    const start = mock.indexOf("const MOCK_OPEN_ROUTES: readonly string[] = [");
+    const block = mock.slice(start, mock.indexOf("];", start));
+    const mocked = [...block.matchAll(/"([^"]+)"/gu)].map((match) => match[1]!).sort();
+
+    expect(mocked, "the mock's access gate must open exactly what the service's opens").toEqual(
+      service,
+    );
   });
 });

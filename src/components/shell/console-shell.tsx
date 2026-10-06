@@ -13,6 +13,8 @@ type ConsoleShellProps = {
   signOutAction: () => Promise<void>;
   theme?: ConsoleTheme | undefined;
   themeAction?: ((formData: FormData) => Promise<void>) | undefined;
+  /** A standing notice above every page — the account's access state while it is held. */
+  notice?: ReactNode;
   children: ReactNode;
 };
 
@@ -26,6 +28,7 @@ export function ConsoleShell({
   signOutAction,
   theme = DEFAULT_CONSOLE_THEME,
   themeAction,
+  notice,
   children,
 }: ConsoleShellProps) {
   return (
@@ -34,6 +37,7 @@ export function ConsoleShell({
       <div className="shell__body">
         <ContextBar />
         <main className="shell__main" id="main-content" tabIndex={-1}>
+          {notice && <div className="shell__notice">{notice}</div>}
           {children}
         </main>
       </div>

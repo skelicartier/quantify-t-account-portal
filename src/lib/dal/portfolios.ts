@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
+import { accessRefusal, type AccessHold } from "@/lib/account/access";
 import {
   AccountApiRequestError,
   AccountApiUnavailableError,
@@ -24,7 +25,10 @@ import { createServerAzureClient } from "@/lib/supabase/server";
  * Gating this would ask for a second factor to read a list of names.
  */
 export type PortfoliosView =
-  { status: "ready"; data: AccountApiPortfolios } | { status: "unavailable" };
+  | { status: "ready"; data: AccountApiPortfolios }
+  | { status: "unavailable" }
+  // A held account (pending or declined): the API refuses the read, the page says why.
+  | { status: "access"; access: AccessHold };
 
 export const getPortfolios = cache(async (): Promise<PortfoliosView> => {
   const azure = await createServerAzureClient();
@@ -34,6 +38,8 @@ export const getPortfolios = cache(async (): Promise<PortfoliosView> => {
   try {
     return { status: "ready", data: await fetchAccountApiPortfolios(accessToken) };
   } catch (error) {
+    const hold = accessRefusal(error);
+    if (hold) return { status: "access", access: hold };
     if (error instanceof AccountApiRequestError || error instanceof AccountApiUnavailableError) {
       return { status: "unavailable" };
     }

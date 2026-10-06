@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { normaliseAccessStatus, type AccessStatus } from "@/lib/account/access";
+
 export type AccountProfileState = "ready" | "missing" | "unavailable";
 export type AccountStatus = "active" | "inactive" | "unknown";
 
@@ -14,6 +16,12 @@ export type AccountOverviewDto = {
   lastSignInAt: string | null;
   emailConfirmed: boolean;
   profileState: AccountProfileState;
+  /**
+   * Access by application. `unknown` when neither the identity nor the profile said — an
+   * older service — which shows no banner: the API is the gate, and a console that guessed
+   * "pending" would lock out every admitted account against it.
+   */
+  accessStatus: AccessStatus | "unknown";
 };
 
 export type AccountIdentity = {
@@ -22,6 +30,7 @@ export type AccountIdentity = {
   created_at?: string | null;
   last_sign_in_at?: string | null;
   email_confirmed_at?: string | null;
+  access_status?: string | null;
 };
 
 const identitySchema = z.object({
@@ -30,6 +39,7 @@ const identitySchema = z.object({
   created_at: z.string().nullable().optional(),
   last_sign_in_at: z.string().nullable().optional(),
   email_confirmed_at: z.string().nullable().optional(),
+  access_status: z.string().nullable().optional(),
 });
 
 const profileSchema = z.object({
@@ -40,6 +50,7 @@ const profileSchema = z.object({
   subscription_tier: z.string().nullable().optional(),
   created_at: z.string().nullable().optional(),
   last_login_at: z.string().nullable().optional(),
+  access_status: z.string().nullable().optional(),
 });
 
 type MapAccountOverviewInput = {
@@ -100,5 +111,11 @@ export function mapAccountOverview({
     lastSignInAt: safeDate(safeIdentity.last_sign_in_at) ?? safeDate(safeProfile?.last_login_at),
     emailConfirmed: safeDate(safeIdentity.email_confirmed_at) !== null,
     profileState: resolvedProfileState,
+    // `auth/user` re-reads the profile row on every request, so its status is current; the
+    // profile's own copy is the same column, read a moment later, and stands in for it.
+    accessStatus:
+      normaliseAccessStatus(safeIdentity.access_status) ??
+      normaliseAccessStatus(safeProfile?.access_status) ??
+      "unknown",
   };
 }

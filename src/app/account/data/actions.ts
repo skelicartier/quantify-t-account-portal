@@ -168,7 +168,7 @@ export async function requestAccountDeletion(
     await requireSameOriginServerAction();
     const authorized = await authorizedLifecycleMutation(formData, ACCOUNT_DELETION_CONFIRMATION);
     if (!authorized.ok) return authorized.state;
-    await requestAccountApiAccountDeletion(
+    const result = await requestAccountApiAccountDeletion(
       authorized.session.accessToken,
       {
         expected_revision: authorized.revision,
@@ -177,12 +177,17 @@ export async function requestAccountDeletion(
       { idempotencyKey: `portal-${randomUUID()}` },
     );
     revalidatePath("/account/data");
-    return {
+    const accepted: AccountLifecycleActionState = {
       ...INITIAL_ACCOUNT_LIFECYCLE_STATE,
       status: "success",
       message:
         "Deletion request created. The cooling-off window is active and can be cancelled here before it ends.",
     };
+    // The service's own account of what the erasure removes and keeps, shown as it stands:
+    // it is the statement the erasure itself makes true, so the console does not paraphrase it.
+    return result.erasure
+      ? { ...accepted, erasure: { erased: result.erasure.erased, kept: [...result.erasure.kept] } }
+      : accepted;
   } catch (error) {
     if (error instanceof AccountApiUnavailableError) return SERVICE_ERROR;
     return mapAccountApiError(error);

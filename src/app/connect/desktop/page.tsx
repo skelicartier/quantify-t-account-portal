@@ -7,6 +7,12 @@ import { AuthShell } from "@/components/auth/auth-shell";
 import { ConnectDesktopForm } from "@/components/auth/connect-desktop-form";
 import { ButtonLink } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import {
+  ACCESS_MESSAGES,
+  ACCESS_TITLES,
+  accessHoldOf,
+  normaliseAccessStatus,
+} from "@/lib/account/access";
 import { getDesktopConnectIdentity } from "@/lib/admin/access";
 import {
   AccountApiRequestError,
@@ -18,6 +24,7 @@ import {
   loginPathForDesktopConnect,
   parseDesktopConnectParams,
 } from "@/lib/auth/desktop-connect";
+import { getCurrentAccessHold } from "@/lib/dal/access";
 import { requestNow } from "@/lib/request-time";
 
 export const metadata: Metadata = {
@@ -126,6 +133,16 @@ export default async function ConnectDesktopPage({ searchParams }: ConnectDeskto
         description="Nothing was connected. To sign in, return to Quantify Terminal and choose Sign in with browser again."
       />
     );
+  }
+
+  // Access is by application, and the service refuses to approve a desktop sign-in for an
+  // account it has not admitted. Saying so before the Connect button is pressed beats a
+  // button that can only fail; the action still shows the same sentence if the status
+  // changes between this read and the press.
+  const fromMe = normaliseAccessStatus(me.user.access_status);
+  const hold = fromMe ? accessHoldOf(fromMe) : await getCurrentAccessHold();
+  if (hold) {
+    return <Notice title={ACCESS_TITLES[hold]} description={ACCESS_MESSAGES[hold]} />;
   }
 
   return (

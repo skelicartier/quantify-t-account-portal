@@ -3,6 +3,7 @@ export { Button, ButtonLink, buttonClass } from "@/components/ui/button";
 export { Callout } from "@/components/ui/callout";
 export { Card, LinkCard, Section } from "@/components/ui/card";
 export { CategoryRow, DataTable, type DataTableColumn } from "@/components/ui/data-table";
+export { Dialog } from "@/components/ui/dialog";
 export { EmptyState } from "@/components/ui/empty-state";
 export { Checkbox, Field, Input, Select, Textarea, describedBy } from "@/components/ui/field";
 export { KeyValue, KeyValueRow } from "@/components/ui/key-value";

@@ -68,6 +68,7 @@ const lifecycle: AccountApiAccountLifecycle = {
       max_attempts: 3,
       next_attempt_at: "",
       last_error: "",
+      hold: null,
       offline_desktop_cache_note: "not-remotely-deletable",
     },
     requests: [],
@@ -140,4 +141,95 @@ it("submits export and cancellation forms with current revision", async () => {
   const cancelForm = cancelDeletionAction.mock.calls[0]?.[1] as FormData;
   expect(cancelForm.get("revision")).toBe(lifecycle.revision);
   expect(cancelForm.get("requestId")).toBe(lifecycle.deletion.active!.id);
+});
+
+it("confirms a deletion request with what the erasure removes and what it keeps", async () => {
+  const user = userEvent.setup();
+  const requestDeletionAction = vi.fn(async () => ({
+    ...INITIAL_ACCOUNT_LIFECYCLE_STATE,
+    status: "success" as const,
+    message: "Deletion request created.",
+    erasure: {
+      erased:
+        "When the cooling-off period ends, every record this service holds about you is erased.",
+      kept: ["A record that an erasure happened.", "Records the law requires us to keep."],
+    },
+  }));
+
+  render(
+    <AccountDataControls
+      lifecycle={{ ...lifecycle, deletion: { active: null, requests: [] } }}
+      requestExportAction={successAction}
+      requestDeletionAction={requestDeletionAction}
+      cancelDeletionAction={successAction}
+    />,
+  );
+
+  const deletionSection = screen
+    .getByRole("heading", { name: "Controlled deletion" })
+    .closest("section")!;
+  await user.type(within(deletionSection).getByLabelText(/current password/i), "pw");
+  await user.type(within(deletionSection).getByLabelText(/confirmation/i), "DELETE MY ACCOUNT");
+  await user.click(within(deletionSection).getByRole("button", { name: /request deletion/i }));
+
+  const confirmation = await screen.findByRole("status");
+  expect(confirmation).toHaveTextContent("Deletion requested");
+  expect(within(confirmation).getByRole("heading", { name: "What is erased" })).toBeVisible();
+  expect(confirmation).toHaveTextContent("every record this service holds about you is erased");
+  expect(within(confirmation).getByRole("heading", { name: "What is kept" })).toBeVisible();
+  expect(within(confirmation).getAllByRole("listitem")).toHaveLength(2);
+});
+
+it("says a due deletion is waiting for the brokers to confirm their cancels, and stays cancellable", () => {
+  const active = lifecycle.deletion.active!;
+  const held = {
+    ...active,
+    status: "blocked" as const,
+    can_cancel: true,
+    cleanup: { ...active.cleanup, brokers: "held" as const },
+    last_error: "waiting for the broker to confirm cancellation",
+    next_attempt_at: "2026-09-20T01:15:00Z",
+    hold: {
+      code: "broker_cancellation",
+      next_check_at: "2026-09-20T01:15:00Z",
+      held_until: "2026-09-23T01:00:00Z",
+    },
+  };
+  render(
+    <AccountDataControls
+      lifecycle={{ ...lifecycle, deletion: { active: held, requests: [held] } }}
+      requestExportAction={successAction}
+      requestDeletionAction={successAction}
+      cancelDeletionAction={successAction}
+    />,
+  );
+
+  const hold = screen.getByText("Deletion is waiting for your brokers").closest(".callout")!;
+  expect(hold).toHaveClass("callout--attention");
+  expect(hold).toHaveTextContent("every working order has been asked to cancel");
+  expect(hold).toHaveTextContent("Next check");
+  expect(hold).toHaveTextContent("the erasure goes ahead without that confirmation");
+  expect(screen.getByRole("button", { name: /cancel deletion/i })).toBeEnabled();
+  expect(screen.getByText("Waiting for brokers to confirm cancellation.")).toBeVisible();
+});
+
+it("reads the hold from its code, not from the wording of the last error", () => {
+  const active = lifecycle.deletion.active!;
+  const blocked = {
+    ...active,
+    status: "blocked" as const,
+    last_error: "waiting for the broker to confirm cancellation",
+    hold: null,
+  };
+  render(
+    <AccountDataControls
+      lifecycle={{ ...lifecycle, deletion: { active: blocked, requests: [blocked] } }}
+      requestExportAction={successAction}
+      requestDeletionAction={successAction}
+      cancelDeletionAction={successAction}
+    />,
+  );
+
+  expect(screen.queryByText("Deletion is waiting for your brokers")).toBeNull();
+  expect(screen.getByText("Deletion has not completed")).toBeVisible();
 });

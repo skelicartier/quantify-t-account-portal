@@ -126,6 +126,10 @@ export const accountApiMeSchema = z
         user_id: z.guid(),
         email: z.string().email().max(254),
         is_active: z.boolean(),
+        // Access is by application: pending, approved or declined, read from the database the
+        // way the access gate reads it. Optional so a console ahead of the service still reads
+        // an older `me`; `.strict()` means it must be declared, or every `me` read fails.
+        access_status: z.string().max(16).optional(),
       })
       .strict(),
     role: z
@@ -169,6 +173,10 @@ const accountProfileSchema = z
     created_at: z.string().max(64),
     last_login_at: z.string().max(64),
     updated_at: z.string().max(64),
+    // Access is by application (migration 0077): pending, approved or declined. Optional so a
+    // console deployed ahead of the service still reads an older profile; `.strict()` means it
+    // has to be declared here, or every profile read fails the moment the service sends it.
+    access_status: z.string().max(16).optional(),
   })
   .strict();
 
@@ -327,6 +335,14 @@ const accountExportJobSchema = z
   })
   .strict();
 
+const accountDeletionHoldSchema = z
+  .object({
+    code: z.string().min(1).max(64),
+    next_check_at: z.string().max(64),
+    held_until: z.string().max(64),
+  })
+  .strict();
+
 const accountDeletionRequestSchema = z
   .object({
     id: z.guid(),
@@ -346,13 +362,27 @@ const accountDeletionRequestSchema = z
     cleanup: z
       .record(
         z.string().min(1).max(40),
-        z.enum(["pending", "source-locked", "retry", "complete", "failed", "skipped"]),
+        // `held` while the erasure waits for a broker to confirm cancellation; `incomplete`
+        // when it went ahead without that confirmation (`brokers` step).
+        z.enum([
+          "pending",
+          "source-locked",
+          "retry",
+          "complete",
+          "failed",
+          "skipped",
+          "held",
+          "incomplete",
+        ]),
       )
       .refine((value) => Object.keys(value).length <= 16),
     attempts: z.number().int().nonnegative().max(100),
     max_attempts: z.number().int().positive().max(10),
     next_attempt_at: z.string().max(64),
     last_error: z.string().max(240),
+    // What a due erasure is waiting for, as a code: `broker_cancellation` while a broker has
+    // not confirmed every cancel. `held_until` is when it goes ahead regardless.
+    hold: accountDeletionHoldSchema.nullable().default(null),
     offline_desktop_cache_note: z.literal("not-remotely-deletable"),
   })
   .strict();
@@ -415,6 +445,15 @@ export const accountApiAccountExportDownloadSchema = z
   })
   .strict();
 
+export const accountErasureStatementSchema = z
+  .object({
+    erased: z.string().min(1).max(2000),
+    kept: z.array(z.string().min(1).max(1000)).max(20),
+  })
+  .strict();
+
+export type AccountErasureStatement = z.infer<typeof accountErasureStatementSchema>;
+
 export const accountApiAccountDeletionResultSchema = z
   .object({
     ok: z.literal(true),
@@ -430,6 +469,10 @@ export const accountApiAccountDeletionResultSchema = z
       .nullable(),
     replayed: z.boolean(),
     legacy_mirrored: z.boolean(),
+    // What the erasure removes when the cooling-off period ends and what it keeps, in the
+    // service's words (`erasure.ERASURE_STATEMENT`), so the confirmation can say exactly that.
+    // Optional: a replay of a request stored before the service sent it carries none.
+    erasure: accountErasureStatementSchema.optional(),
   })
   .strict();
 
@@ -1230,6 +1273,14 @@ export const brokerConnectionSchema = z
     // The connection's own kill switch. `.strict()` means this has to be declared here the
     // moment the service starts sending it, or every broker read fails to parse.
     trading_enabled: z.boolean(),
+    // Switched off by the account's kill switch and not yet resumed on its own (0079). Such a
+    // connection stays off through a routine test until `trading/resume` names it. Defaults
+    // to false so a console deployed ahead of the service still reads an older list.
+    trading_halted: z.boolean().default(false),
+    // Since when, and why: the halt that switched this connection off. The reason is only on
+    // the list (`me/brokers`), not on a single connection a resume returns.
+    halted_at: z.string().max(64).nullable().default(null),
+    halt_reason: z.string().max(200).nullable().default(null),
     last_error: z.string().max(400),
     created_at: z.string().max(64).nullable(),
     updated_at: z.string().max(64).nullable(),
@@ -1243,6 +1294,13 @@ export const accountApiBrokerConnectionsSchema = z
     connections: z.array(brokerConnectionSchema).max(50),
     implemented_brokers: z.array(z.string().max(40)).max(50),
     encryption_configured: z.boolean(),
+    // The account-level kill switch. A screen that showed each connection's flag and not this
+    // would say "ready" for a connection no order can use.
+    trading_halted: z.boolean().default(false),
+    halted_at: z.string().max(64).nullable().default(null),
+    // Why trading is off: "account deletion", "access declined", or what the person typed
+    // when they pressed the kill switch. Null unless halted.
+    halt_reason: z.string().max(200).nullable().default(null),
   })
   .strict();
 
@@ -1295,6 +1353,296 @@ export async function deleteAccountApiBrokerConnection(
     {},
     options,
   );
+}
+
+// ------------------------------------------------------------------ step-up
+//
+// A bearer token proves a session exists, not that a person is at the keyboard. The acts that
+// stand for a person's judgement — turning trading back on, arming a standing authorisation,
+// confirming a live order — need the account password entered again through `auth/step-up`,
+// which mints a short-lived grant bound to this session and one purpose. The console asks for
+// the password in the dialog that performs the act, spends the grant in the same server
+// action, and never returns either to the browser.
+
+export const STEP_UP_PURPOSES = ["confirm", "arm", "resume"] as const;
+export type StepUpPurpose = (typeof STEP_UP_PURPOSES)[number];
+
+export const accountApiStepUpSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    step_up: z
+      .object({
+        grant: z.string().min(1).max(128),
+        purpose: z.enum(STEP_UP_PURPOSES),
+        expires_at: z.string().min(1).max(64),
+        single_use: z.boolean(),
+        // A confirm grant is good for a few confirmations on one connection; arm and resume
+        // grants for one act. Optional so the first shape of this answer still parses.
+        max_uses: z.number().int().positive().max(100).optional(),
+        connection_id: z.string().max(64).nullable().optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type AccountApiStepUp = z.infer<typeof accountApiStepUpSchema>;
+
+export async function requestAccountApiStepUp(
+  accessToken: string,
+  body: { password: string; purpose: StepUpPurpose },
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiStepUp> {
+  const payload = await postAccountApiJson(
+    "auth/step-up",
+    accessToken,
+    { password: body.password, purpose: body.purpose },
+    options,
+  );
+  return parseAccountApiPayload(accountApiStepUpSchema, payload, "auth/step-up", "POST");
+}
+
+// ------------------------------------------------------------------ kill switch and resume
+
+/** One order intent as `broker_routes._order_view` returns it: an allowlist of JSON types. */
+export const brokerOrderIntentSchema = z
+  .object({
+    id: z.string().max(64),
+    connection_id: z.string().max(64),
+    client_order_id: z.string().max(80),
+    symbol: z.string().max(40),
+    side: z.string().max(16),
+    quantity: z.number(),
+    order_type: z.string().max(24),
+    limit_price: z.number().nullable(),
+    stop_price: z.number().nullable(),
+    time_in_force: z.string().max(16),
+    paper: z.boolean(),
+    estimated_value: z.number().nullable(),
+    state: z.string().max(32),
+    broker_order_id: z.string().max(120),
+    broker_message: z.string().max(400),
+    submitted_at: z.string().max(64).nullable(),
+    settled_at: z.string().max(64).nullable(),
+    confirmation_basis: z.string().max(16),
+    authorisation_id: z.string().max(64),
+  })
+  .strict();
+
+/** What the kill switch recorded for one cancel, with the broker's answer in its own words. */
+export const BROKER_CANCEL_OUTCOMES = [
+  "cancel_requested",
+  "already_cancelling",
+  "refused",
+  "unreachable",
+] as const;
+export type BrokerCancelOutcome = (typeof BROKER_CANCEL_OUTCOMES)[number];
+
+export const brokerCancellationSchema = z
+  .object({
+    connection_id: z.string().max(64),
+    broker_order_id: z.string().max(120),
+    client_order_id: z.string().max(80),
+    symbol: z.string().max(40),
+    outcome: z.enum(BROKER_CANCEL_OUTCOMES),
+    broker_status: z.string().max(40),
+    broker_message: z.string().max(400),
+    requested_at: z.string().max(64).nullable(),
+    // False when the cancel was sent but its record could not be written: the order was
+    // still asked to cancel, and the sweep says it cannot vouch for the record.
+    recorded: z.boolean().optional(),
+  })
+  .strict();
+
+export const brokerSweepConnectionSchema = z
+  .object({
+    connection_id: z.string().max(64),
+    broker: z.string().max(40),
+    paper: z.boolean(),
+    trading_enabled: z.boolean(),
+    working_orders: z.number().int().nonnegative(),
+    cancels: z.array(brokerCancellationSchema).max(1000),
+    record_failures: z
+      .array(
+        z
+          .object({ broker_order_id: z.string().max(120), outcome: z.enum(BROKER_CANCEL_OUTCOMES) })
+          .strict(),
+      )
+      .max(1000)
+      .default([]),
+    complete: z.boolean(),
+    in_flight: z.array(brokerOrderIntentSchema).max(1000),
+  })
+  .strict();
+
+/**
+ * The kill switch's answer. Three shapes share it: the full sweep; a replay of that sweep for
+ * a retried Idempotency-Key (`replayed`); and, for a second press while the first with that
+ * key is still sweeping, only that the halt holds (`sweep_in_progress`, no counts).
+ */
+export const accountApiKillSwitchSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    trading_halted: z.boolean(),
+    halted_at: z.string().max(64).nullable(),
+    already_halted: z.boolean().optional(),
+    connections_switched_off: z.number().int().nonnegative().optional(),
+    authorisations_revoked: z.number().int().nonnegative().optional(),
+    cancelled: z.number().int().nonnegative().optional(),
+    in_flight: z.number().int().nonnegative().optional(),
+    // False when the orders on their way to a broker could not be read, so the sweep cannot
+    // vouch for them; `complete` is false with it.
+    in_flight_known: z.boolean().optional(),
+    complete: z.boolean(),
+    connections: z.array(brokerSweepConnectionSchema).max(50).optional(),
+    sweep_in_progress: z.boolean().optional(),
+    replayed: z.boolean().optional(),
+  })
+  .strict();
+
+export type AccountApiKillSwitch = z.infer<typeof accountApiKillSwitchSchema>;
+
+export async function engageAccountApiKillSwitch(
+  accessToken: string,
+  body: { reason?: string },
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiKillSwitch> {
+  // The service honours an Idempotency-Key here rather than requiring one: the halt comes
+  // first whatever the body says. Each press sends its own key so a retried press replays
+  // the first answer instead of sweeping twice.
+  const payload = await postAccountApiJson(
+    "me/brokers/kill-switch",
+    accessToken,
+    body.reason ? { reason: body.reason } : {},
+    options,
+  );
+  return parseAccountApiPayload(
+    accountApiKillSwitchSchema,
+    payload,
+    "me/brokers/kill-switch",
+    "POST",
+  );
+}
+
+export const accountApiTradingResumeSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    resumed: z.boolean(),
+    // Null on success; otherwise why trading stayed off (`RESUME_REFUSED_*`). A string, not an
+    // enum, so a refusal added later is shown by its message rather than failing the parse.
+    reason: z.string().max(64).nullable().optional(),
+    scope: z.enum(["connection", "account"]).optional(),
+    // The connection test's own words: why trading did not come back, or the broker's "ok".
+    message: z.string().max(4000).optional(),
+    trading_halted: z.boolean(),
+    connections_still_halted: z.number().int().nonnegative().optional(),
+    connection: brokerConnectionSchema.optional(),
+  })
+  .strict();
+
+export type AccountApiTradingResume = z.infer<typeof accountApiTradingResumeSchema>;
+
+/** The resume refusals the console words for itself (`broker_routes.RESUME_REFUSED_*`). */
+export const RESUME_REFUSED_BROKER_TEST = "broker_test_failed";
+export const RESUME_REFUSED_KILL_SWITCH = "kill_switch_pressed_during_resume";
+
+export type AccountApiTradingResumeBody =
+  { connection_id: string; step_up: string } | { scope: "account"; step_up: string };
+
+export async function resumeAccountApiTrading(
+  accessToken: string,
+  body: AccountApiTradingResumeBody,
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiTradingResume> {
+  const payload = await postAccountApiJson("me/brokers/trading/resume", accessToken, body, options);
+  return parseAccountApiPayload(
+    accountApiTradingResumeSchema,
+    payload,
+    "me/brokers/trading/resume",
+    "POST",
+  );
+}
+
+// ------------------------------------------------------------------ standing authorisations
+//
+// Read and revoked here; armed from the desktop app, which is where the strategy that sends
+// under one runs. Arming takes a step-up of its own (`purpose: "arm"`), and the console has no
+// order or strategy surface to arm one from.
+
+export const BROKER_AUTHORISATION_STATES = ["active", "expired", "used", "revoked"] as const;
+
+export const brokerAuthorisationSchema = z
+  .object({
+    id: z.string().max(64),
+    connection_id: z.string().max(64),
+    account: z.string().max(120),
+    broker: z.string().max(40),
+    strategy: z.string().max(120),
+    max_order_value: z.number().nullable(),
+    max_orders: z.number().int().nonnegative(),
+    used_orders: z.number().int().nonnegative(),
+    remaining: z.number().int().nonnegative(),
+    expires_at: z.string().max(64).nullable(),
+    created_at: z.string().max(64).nullable(),
+    revoked_at: z.string().max(64).nullable(),
+    revoke_reason: z.string().max(200),
+    state: z.enum(BROKER_AUTHORISATION_STATES),
+  })
+  .strict();
+
+export type BrokerAuthorisation = z.infer<typeof brokerAuthorisationSchema>;
+
+export const accountApiBrokerAuthorisationsSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    authorisations: z.array(brokerAuthorisationSchema).max(50),
+  })
+  .strict();
+
+export type AccountApiBrokerAuthorisations = z.infer<typeof accountApiBrokerAuthorisationsSchema>;
+
+export const accountApiBrokerAuthorisationSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    authorisation: brokerAuthorisationSchema,
+  })
+  .strict();
+
+export async function fetchAccountApiBrokerAuthorisations(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiBrokerAuthorisations> {
+  const payload = await fetchAccountApiJson("me/brokers/authorisations", accessToken, options);
+  return parseAccountApiPayload(
+    accountApiBrokerAuthorisationsSchema,
+    payload,
+    "me/brokers/authorisations",
+    "GET",
+  );
+}
+
+export async function revokeAccountApiBrokerAuthorisation(
+  accessToken: string,
+  authorisationId: string,
+  body: { reason?: string },
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<BrokerAuthorisation> {
+  const payload = await postAccountApiJson(
+    `me/brokers/authorisations/${encodeURIComponent(authorisationId)}/revoke`,
+    accessToken,
+    body.reason ? { reason: body.reason } : {},
+    options,
+  );
+  return parseAccountApiPayload(
+    accountApiBrokerAuthorisationSchema,
+    payload,
+    "me/brokers/authorisations/{authorisation_id}/revoke",
+    "POST",
+  ).authorisation;
 }
 
 export async function fetchAccountApiActivity(

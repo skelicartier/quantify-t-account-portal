@@ -112,6 +112,7 @@ const accountLifecyclePayload: AccountApiAccountLifecycle = {
       max_attempts: 3,
       next_attempt_at: "",
       last_error: "",
+      hold: null,
       offline_desktop_cache_note: "not-remotely-deletable",
     },
     requests: [],

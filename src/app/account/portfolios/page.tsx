@@ -6,16 +6,31 @@ import {
   makePortfolioDefault,
   renamePortfolio,
 } from "@/app/account/portfolios/actions";
+import { AccessHoldPage } from "@/components/account/access-banner";
 import { PortfolioAccounts } from "@/components/account/portfolio-accounts";
 import { PageHeader } from "@/components/shell/page-header";
 import { Callout } from "@/components/ui/callout";
+import { getCurrentAccessHold } from "@/lib/dal/access";
 import { getPortfolios } from "@/lib/dal/portfolios";
 
 export const metadata: Metadata = { title: "Portfolios" };
 export const dynamic = "force-dynamic";
 
 export default async function PortfoliosPage() {
+  const hold = await getCurrentAccessHold();
+  if (hold) return <AccessHoldPage title="Portfolios" titleId="portfolios-heading" hold={hold} />;
+
   const view = await getPortfolios();
+  if (view.status === "access") {
+    return (
+      <AccessHoldPage
+        title="Portfolios"
+        titleId="portfolios-heading"
+        hold={view.access}
+        withMessage
+      />
+    );
+  }
 
   return (
     <>

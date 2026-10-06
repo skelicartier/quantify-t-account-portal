@@ -102,6 +102,7 @@ const view: AccountSubscriptionView = {
     lastSignInAt: "2026-09-12T09:00:00Z",
     emailConfirmed: true,
     profileState: "ready",
+    accessStatus: "approved",
   },
   entitlements,
   history: [

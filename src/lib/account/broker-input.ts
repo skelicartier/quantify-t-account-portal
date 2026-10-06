@@ -148,10 +148,39 @@ export type BrokerConnection = {
   last_test_success: boolean;
   /** The connection's own switch. Off means the service refuses orders on it. */
   trading_enabled: boolean;
+  /**
+   * Switched off by the account's kill switch and not yet resumed. A routine test does not
+   * turn such a connection back on; only a resume, with the password, does.
+   */
+  trading_halted: boolean;
+  /** When the halt that switched this connection off happened, and why. */
+  halted_at: string | null;
+  halt_reason: string | null;
   last_error: string;
   created_at: string | null;
   updated_at: string | null;
 };
+
+/** One standing authorisation as the Account API lists it (`_authorisation_view`). */
+export type StandingAuthorisation = {
+  id: string;
+  connection_id: string;
+  account: string;
+  broker: string;
+  strategy: string;
+  max_order_value: number | null;
+  max_orders: number;
+  used_orders: number;
+  remaining: number;
+  expires_at: string | null;
+  created_at: string | null;
+  revoked_at: string | null;
+  revoke_reason: string;
+  state: "active" | "expired" | "used" | "revoked";
+};
+
+export type StandingAuthorisationsView =
+  { status: "ready"; items: readonly StandingAuthorisation[] } | { status: "unavailable" };
 
 export type BrokerActionState = {
   status: "idle" | "success" | "error";
@@ -173,7 +202,15 @@ export function connectionReadiness(
   connection: BrokerConnection,
   now: number,
 ): { ready: boolean; reason: string } {
-  // Checked first, because it is the one the customer can act on immediately and the one the
+  // The kill switch first: the service refuses a halted connection before it reads anything
+  // else about it, and the only way back is a resume with the password, not a test.
+  if (connection.trading_halted) {
+    return {
+      ready: false,
+      reason: "Switched off by the kill switch. Resume this connection to trade with it again.",
+    };
+  }
+  // Checked next, because it is the one the customer can act on immediately and the one the
   // service checks before anything else. Saying "Ready" for a connection whose switch is off
   // promises something the order route will refuse.
   if (!connection.trading_enabled) {
