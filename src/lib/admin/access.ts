@@ -4,7 +4,8 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import { normaliseAccessStatus, type AccessStatus } from "@/lib/account/access";
-import { heartbeatAccountApiSession } from "@/lib/account/session-lifecycle";
+import { heartbeatAccountApiSession as sendSessionHeartbeat } from "@/lib/account/session-lifecycle";
+import { afterResponse } from "@/lib/after-response";
 import {
   fetchReleaseCatalogue,
   releaseApiConfigured,
@@ -542,7 +543,20 @@ async function currentAccessToken(nextPath = "/admin"): Promise<string> {
     throw new AccountApiUnavailableError();
   }
   if (!token) redirect(loginDestination(nextPath));
+  // Every loader asks who this is and then what the session owes. The second question is
+  // started here so the two travel together; each loader still awaits the answer (read once
+  // per request, and it never rejects) before it shows anything.
+  void getCurrentAssurance();
   return token;
+}
+
+/**
+ * Tell the Account API this session is still in use, after the page has gone out. It was
+ * awaited before every administration page rendered, a write that nothing on the page
+ * reads.
+ */
+async function heartbeatAccountApiSession(accessToken: string): Promise<void> {
+  afterResponse(() => sendSessionHeartbeat(accessToken));
 }
 
 async function currentAccountApiIdentity(nextPath: string): Promise<{

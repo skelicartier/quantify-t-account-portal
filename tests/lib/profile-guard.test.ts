@@ -20,6 +20,8 @@ vi.mock("@/lib/admin/account-api", () => ({
 }));
 vi.mock("@/lib/dal/assurance-guard", () => ({
   requireSatisfiedAssurance: mocks.requireSatisfiedAssurance,
+  // Started alongside the account read; the guard above is what is awaited.
+  getCurrentAssurance: vi.fn(async () => ({})),
 }));
 vi.mock("@/lib/account/session-lifecycle", () => ({
   heartbeatCurrentAccountApiSession: mocks.heartbeatCurrentAccountApiSession,

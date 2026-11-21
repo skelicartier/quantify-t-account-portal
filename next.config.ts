@@ -57,6 +57,13 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // The dev badge sat over the rail's identity in every review screenshot.
   devIndicators: false,
+  experimental: {
+    // A section opened in the last half minute opens again at once, from what the browser
+    // already holds, instead of asking the server for the same page. Anything that changes
+    // data refreshes what it changed (every action revalidates its pages), signing out
+    // clears all of it, and going back or forward was already served this way.
+    staleTimes: { dynamic: 30, static: 180 },
+  },
   async headers() {
     return [
       {

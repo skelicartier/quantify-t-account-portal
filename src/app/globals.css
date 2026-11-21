@@ -972,6 +972,22 @@
     background: var(--bg);
   }
 
+  /* A page the browser already holds arrives within a frame or two of the press. Clearing
+     the pane for those two frames would be a flicker, so the pane and its spinner wait a
+     twentieth of a second: too short to notice as a delay, long enough that a page which
+     is simply there never flashes empty first. */
+  .page-veil,
+  .page-veil + .page-loading {
+    opacity: 0;
+    animation: page-veil-in 1ms linear 50ms forwards;
+  }
+
+  @keyframes page-veil-in {
+    to {
+      opacity: 1;
+    }
+  }
+
   .nav-toggle {
     display: inline-flex;
     align-items: center;
