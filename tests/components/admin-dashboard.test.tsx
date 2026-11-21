@@ -139,17 +139,30 @@ describe("AdminDashboard", () => {
           {
             status: "mfa-required",
             me,
-            assurance: { ...assurance, currentLevel: "aal1", challengeRequired: true },
+            assurance: {
+              ...assurance,
+              currentLevel: "aal1",
+              requiredLevel: "aal2",
+              challengeRequired: true,
+              passkey: {
+                mode: "when-enrolled",
+                staff: true,
+                enrolled: true,
+                count: 1,
+                required: true,
+                verified: false,
+                fresh: false,
+                verifiedUntil: null,
+                freshUntil: null,
+              },
+            },
           } satisfies AdminDashboardAccess
         }
       />,
     );
 
-    expect(screen.getByRole("heading", { name: /verified second factor/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /security settings/i })).toHaveAttribute(
-      "href",
-      "/account/security",
-    );
+    expect(screen.getByRole("heading", { name: /confirm it is you/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /use passkey/i })).toBeEnabled();
     expect(screen.queryByText("Manage roles")).not.toBeInTheDocument();
   });
 

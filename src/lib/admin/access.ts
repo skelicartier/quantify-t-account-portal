@@ -507,6 +507,18 @@ export function hasSatisfiedPrivilegedAssurance(assurance: AssuranceState): bool
   return assurance.requiredLevel === "aal2" && assurance.currentLevel === "aal2";
 }
 
+/**
+ * Whether this session may change things, not only read them. The service wants a
+ * passkey proof from the last quarter of an hour for a write that changes an account, a
+ * role, a plan, a credential or a notice, and refuses with a bare 403 otherwise. Asking
+ * here first lets the form say "confirm with your passkey" instead of "not authorized".
+ */
+export function hasFreshPrivilegedAssurance(assurance: AssuranceState): boolean {
+  if (!hasSatisfiedPrivilegedAssurance(assurance)) return false;
+  const passkey = assurance.passkey;
+  return !passkey || !passkey.required || passkey.fresh;
+}
+
 function isAccountApiNotFound(error: unknown): boolean {
   return (
     (error instanceof AccountApiRequestError && error.status === 404) ||

@@ -178,7 +178,7 @@ describe("staff access action", () => {
 
     const result = await setStaffRole(INITIAL_ADMIN_STAFF_STATE, form());
 
-    expect(result.message).toMatch(/authenticator/i);
+    expect(result.message).toMatch(/passkey/i);
     expect(mocks.setAccountApiAdminStaffRole).not.toHaveBeenCalled();
   });
 

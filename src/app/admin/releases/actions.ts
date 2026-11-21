@@ -6,7 +6,7 @@ import { fetchAccountApiMe } from "@/lib/admin/account-api";
 import {
   canPublishRelease,
   hasAdminPortalAccess,
-  hasSatisfiedPrivilegedAssurance,
+  hasFreshPrivilegedAssurance,
 } from "@/lib/admin/access";
 import {
   fetchReleaseCatalogue,
@@ -59,8 +59,8 @@ async function authorize(): Promise<Authorized | ReleaseActionState> {
   if (!hasAdminPortalAccess(me) || !canPublishRelease(me)) {
     return failure("This account cannot publish releases.");
   }
-  if (!hasSatisfiedPrivilegedAssurance(await getCurrentAssurance())) {
-    return failure("Verify your authenticator code before publishing a release.");
+  if (!hasFreshPrivilegedAssurance(await getCurrentAssurance())) {
+    return failure("Confirm with your passkey before publishing a release.");
   }
   return { accessToken };
 }

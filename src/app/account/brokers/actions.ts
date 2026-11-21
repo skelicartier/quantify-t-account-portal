@@ -56,7 +56,7 @@ async function authorize(): Promise<{ accessToken: string } | BrokerActionState>
   await requireSameOriginServerAction();
   const { decision } = await requireMutationAssurance();
   if (decision !== "satisfied") {
-    return failure("Verify your authenticator code before changing a broker connection.");
+    return failure("Confirm with your passkey before changing a broker connection.");
   }
   const azure = await createServerAzureClient();
   const accessToken = azure.getAccessToken();

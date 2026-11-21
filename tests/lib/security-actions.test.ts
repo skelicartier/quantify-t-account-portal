@@ -264,7 +264,7 @@ describe("source-locked security actions", () => {
     const state = await changePassword(INITIAL_PASSWORD_CHANGE_STATE, passwordForm());
 
     expect(state.status).toBe("error");
-    expect(state.message).toContain("authenticator code");
+    expect(state.message).toContain("passkey");
     expect(mocks.verifyCurrentPassword).not.toHaveBeenCalled();
   });
 });

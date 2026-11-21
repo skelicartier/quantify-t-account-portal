@@ -131,8 +131,50 @@ describe("admin user activation action", () => {
     const result = await updateAdminUserActivation(INITIAL_ADMIN_USER_ACTIVATION_STATE, form());
 
     expect(result.status).toBe("error");
-    expect(result.message).toMatch(/authenticator/i);
+    expect(result.message).toMatch(/passkey/i);
     expect(mocks.setAccountApiAdminUserActive).not.toHaveBeenCalled();
+  });
+
+  it("asks for the passkey again when the session's confirmation is no longer recent", async () => {
+    // Reading is still open to this session; the service wants a proof from the last
+    // quarter of an hour before it changes who somebody is.
+    const passkey = {
+      mode: "when-enrolled" as const,
+      staff: true,
+      enrolled: true,
+      count: 1,
+      required: true,
+      verified: true,
+      fresh: false,
+      verifiedUntil: "2026-11-21T21:00:00Z",
+      freshUntil: null,
+    };
+    mocks.getCurrentAssurance.mockResolvedValue({
+      ...assurance,
+      currentLevel: "aal2",
+      requiredLevel: "aal2",
+      mfaEnrolled: true,
+      passkey,
+    });
+
+    const stale = await updateAdminUserActivation(INITIAL_ADMIN_USER_ACTIVATION_STATE, form());
+
+    expect(stale.status).toBe("error");
+    expect(stale.message).toMatch(/passkey/i);
+    expect(mocks.setAccountApiAdminUserActive).not.toHaveBeenCalled();
+
+    mocks.getCurrentAssurance.mockResolvedValue({
+      ...assurance,
+      currentLevel: "aal2",
+      requiredLevel: "aal2",
+      mfaEnrolled: true,
+      passkey: { ...passkey, fresh: true, freshUntil: "2026-11-21T09:15:00Z" },
+    });
+
+    const fresh = await updateAdminUserActivation(INITIAL_ADMIN_USER_ACTIVATION_STATE, form());
+
+    expect(fresh.status).toBe("success");
+    expect(mocks.setAccountApiAdminUserActive).toHaveBeenCalledTimes(1);
   });
 
   it("refuses self-deactivation before calling the Account API", async () => {
@@ -209,7 +251,7 @@ describe("admin user session revocation action", () => {
     );
 
     expect(result.status).toBe("error");
-    expect(result.message).toMatch(/authenticator/i);
+    expect(result.message).toMatch(/passkey/i);
     expect(mocks.revokeAccountApiAdminUserSession).not.toHaveBeenCalled();
   });
 

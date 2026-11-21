@@ -12,7 +12,7 @@ import {
   canManageStaff,
   hasAdminPortalAccess,
   hasPrivilegedRole,
-  hasSatisfiedPrivilegedAssurance,
+  hasFreshPrivilegedAssurance,
 } from "@/lib/admin/access";
 import { roleLabel } from "@/lib/admin/role-labels";
 import {
@@ -66,8 +66,8 @@ async function grantingCaller(): Promise<Caller> {
   if (!hasAdminPortalAccess(me) || !canManageStaff(me)) {
     return { ok: false, message: "This account cannot change staff access." };
   }
-  if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(await getCurrentAssurance())) {
-    return { ok: false, message: "Verify your authenticator code before changing staff access." };
+  if (hasPrivilegedRole(me) && !hasFreshPrivilegedAssurance(await getCurrentAssurance())) {
+    return { ok: false, message: "Confirm with your passkey before changing staff access." };
   }
   return { ok: true, accessToken };
 }

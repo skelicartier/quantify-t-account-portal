@@ -8,11 +8,17 @@ export function isProtectedAdminPath(pathname: string): boolean {
   return pathname === "/admin" || pathname.startsWith("/admin/");
 }
 
-/** Paths that require a session: the console itself and the desktop handoff page. */
+/** The page a signed-in session confirms its passkey on. It needs the session to exist. */
+export function isPasskeyChallengePath(pathname: string): boolean {
+  return pathname === "/passkey" || pathname.startsWith("/passkey/");
+}
+
+/** Paths that require a session: the console itself, its passkey door and the desktop handoff page. */
 export function isProtectedPortalPath(pathname: string): boolean {
   return (
     isProtectedAccountPath(pathname) ||
     isProtectedAdminPath(pathname) ||
+    isPasskeyChallengePath(pathname) ||
     isDesktopConnectPath(pathname)
   );
 }

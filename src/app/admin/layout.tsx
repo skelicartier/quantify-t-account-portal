@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
 
 import { logout, setConsoleTheme } from "@/app/account/actions";
+import { AdminPasskeyNotice } from "@/components/admin/admin-passkey-notice";
 import { ConsoleShell } from "@/components/shell/console-shell";
 import type { ShellIdentity } from "@/components/shell/shell-types";
 import { getAdminEntry } from "@/lib/admin/access";
 import { getCurrentAccount } from "@/lib/dal/account";
+import { getCurrentAssurance } from "@/lib/dal/assurance-guard";
 import { DEV_PERSONAS, devAutologinPersona } from "@/lib/auth/dev-bypass";
 import { readConsoleTheme } from "@/lib/dal/theme";
 
@@ -19,11 +21,16 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   // The pages keep the hard gates; the layout only needs enough to draw the frame. The
   // account is read too, so the rail names the person the way the account pages do; a
   // failed read falls back to the address.
-  const [entry, theme, account] = await Promise.all([
+  const [entry, theme, account, assurance] = await Promise.all([
     getAdminEntry(),
     readConsoleTheme(),
     getCurrentAccount().catch(() => null),
+    // The same read every page below makes, once per request; it never throws.
+    getCurrentAssurance(),
   ]);
+  const passkeyNotice = entry?.canEnterAdmin ? (
+    <AdminPasskeyNotice passkey={assurance.passkey} />
+  ) : null;
   const identity: ShellIdentity = entry
     ? {
         email: entry.me.user.email,
@@ -52,6 +59,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
       signOutAction={logout}
       theme={theme}
       themeAction={setConsoleTheme}
+      notice={passkeyNotice ?? undefined}
     >
       {children}
     </ConsoleShell>

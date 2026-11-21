@@ -228,7 +228,7 @@ describe("admin application decisions", () => {
     const result = await decideAdminUserAccess(INITIAL_ADMIN_USER_ACCESS_STATE, form("approved"));
 
     expect(result.status).toBe("error");
-    expect(result.message).toMatch(/authenticator/iu);
+    expect(result.message).toMatch(/passkey/iu);
     expect(mocks.decideAccountApiAdminUserAccess).not.toHaveBeenCalled();
   });
 

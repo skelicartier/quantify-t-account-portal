@@ -116,7 +116,7 @@ describe("admin user role action", () => {
     const result = await updateAdminUserRole(INITIAL_ADMIN_USER_ROLE_STATE, form());
 
     expect(result.status).toBe("error");
-    expect(result.message).toMatch(/authenticator/i);
+    expect(result.message).toMatch(/passkey/i);
     expect(mocks.setAccountApiAdminUserRole).not.toHaveBeenCalled();
   });
 

@@ -3404,6 +3404,43 @@
     gap: 8px;
   }
 
+  /* Passkeys. The confirm button and whatever it has to say sit together; the status
+     line reads as one sentence with its pill; the standing notice in Administration puts
+     its button at the end of the line it explains. */
+  .passkey-confirm {
+    display: grid;
+    justify-items: start;
+    gap: 10px;
+  }
+
+  .passkey-status {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .passkey-row-actions {
+    display: inline-flex;
+    gap: 6px;
+  }
+
+  .passkey-notice > .callout__body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 16px;
+  }
+
+  .passkey-fresh {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
   /* A support conversation. Oldest first, with the desk's own replies set against the
      accent so a reader can find where the last answer ended without reading back. */
   .thread {

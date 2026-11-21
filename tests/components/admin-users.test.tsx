@@ -182,13 +182,29 @@ describe("AdminUsers", () => {
           {
             status: "mfa-required",
             me,
-            assurance: { ...assurance, currentLevel: "aal1", challengeRequired: true },
+            assurance: {
+              ...assurance,
+              currentLevel: "aal1",
+              requiredLevel: "aal2",
+              challengeRequired: true,
+              passkey: {
+                mode: "when-enrolled",
+                staff: true,
+                enrolled: true,
+                count: 1,
+                required: true,
+                verified: false,
+                fresh: false,
+                verifiedUntil: null,
+                freshUntil: null,
+              },
+            },
           } satisfies AdminUsersAccess
         }
       />,
     );
 
-    expect(screen.getByRole("heading", { name: /verified second factor/i })).toBeVisible();
+    expect(screen.getByRole("heading", { name: /confirm it is you/i })).toBeVisible();
     expect(screen.queryByText("owner@example.test")).not.toBeInTheDocument();
   });
   it("shows account KPIs, daily analytics and the export link when metrics load", () => {

@@ -241,7 +241,7 @@ describe("subscription server actions", () => {
     );
 
     expect(result.status).toBe("error");
-    expect(result.message).toMatch(/authenticator/iu);
+    expect(result.message).toMatch(/passkey/iu);
     expect(mocks.setAccountApiAdminUserSubscription).not.toHaveBeenCalled();
   });
 

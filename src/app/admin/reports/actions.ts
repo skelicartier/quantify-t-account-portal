@@ -78,7 +78,7 @@ export async function enqueueAdminReport(
       return failure("This account cannot queue reports.");
     }
     if (!hasSatisfiedPrivilegedAssurance(await getCurrentAssurance())) {
-      return failure("Verify your authenticator code before queueing reports.");
+      return failure("Confirm with your passkey before queueing reports.");
     }
     const current = await fetchAccountApiAdminReports(accessToken);
     if (current.revision !== revision) {

@@ -3504,3 +3504,165 @@ export async function enqueueAccountApiAdminNotificationEmail(
     "POST",
   );
 }
+
+// ------------------------------------------------------------------ passkeys
+//
+// These schemas are deliberately not `.strict()`. The assurance block decides whether
+// the console opens Administration, and a field the service adds later must not turn
+// "proved" into "the service is unavailable" for every staff member at once. Each field
+// the console acts on is still named and typed here; an unknown one is dropped.
+
+export const PASSKEY_MODES = ["off", "when-enrolled", "required"] as const;
+
+export const accountApiPasskeyAssuranceSchema = z.object({
+  mode: z.enum(PASSKEY_MODES),
+  staff: z.boolean(),
+  enrolled: z.boolean(),
+  passkeys: z.number().int().min(0).max(1000),
+  required: z.boolean(),
+  verified: z.boolean(),
+  fresh: z.boolean(),
+  verified_at: z.string().max(64).nullable(),
+  verified_until: z.string().max(64).nullable(),
+  fresh_until: z.string().max(64).nullable(),
+  session_bound: z.boolean(),
+});
+
+export type AccountApiPasskeyAssurance = z.infer<typeof accountApiPasskeyAssuranceSchema>;
+
+export const accountApiPasskeySchema = z.object({
+  id: z.guid(),
+  name: z.string().max(80),
+  created_at: z.string().max(64).nullable(),
+  last_used_at: z.string().max(64).nullable(),
+});
+
+export type AccountApiPasskey = z.infer<typeof accountApiPasskeySchema>;
+
+export const accountApiPasskeysSchema = z.object({
+  ok: z.literal(true),
+  correlation_id: correlationSchema,
+  passkeys: z.array(accountApiPasskeySchema).max(64),
+  assurance: accountApiPasskeyAssuranceSchema,
+  limits: z.object({
+    max_passkeys: z.number().int().positive().max(1000),
+    session_minutes: z.number().int().positive(),
+    fresh_minutes: z.number().int().positive(),
+  }),
+});
+
+export type AccountApiPasskeys = z.infer<typeof accountApiPasskeysSchema>;
+
+/** What `navigator.credentials.create` / `.get` take, in the standard JSON form. */
+const passkeyOptionsSchema = z.object({
+  ok: z.literal(true),
+  correlation_id: correlationSchema,
+  public_key: z.record(z.string(), z.unknown()),
+  expires_at: z.string().max(64).nullable(),
+});
+
+export type AccountApiPasskeyOptions = z.infer<typeof passkeyOptionsSchema>;
+
+const passkeyRegisteredSchema = z.object({
+  ok: z.literal(true),
+  correlation_id: correlationSchema,
+  passkey: accountApiPasskeySchema,
+  assurance: accountApiPasskeyAssuranceSchema,
+});
+
+const passkeyVerifiedSchema = z.object({
+  ok: z.literal(true),
+  correlation_id: correlationSchema,
+  assurance: accountApiPasskeyAssuranceSchema,
+});
+
+const passkeyRemovedSchema = z.object({
+  ok: z.literal(true),
+  correlation_id: correlationSchema,
+  removed: z.guid(),
+  passkeys: z.array(accountApiPasskeySchema).max(64),
+  assurance: accountApiPasskeyAssuranceSchema,
+});
+
+/** The browser's own `toJSON()` of a credential: passed through, checked by the service. */
+export type PasskeyCredentialJson = Readonly<Record<string, unknown>>;
+
+type PasskeyWriteOptions = AccountApiFetchOptions & { idempotencyKey: string };
+
+export async function fetchAccountApiPasskeys(
+  accessToken: string,
+  options: AccountApiFetchOptions = {},
+): Promise<AccountApiPasskeys> {
+  const payload = await fetchAccountApiJson("me/passkeys", accessToken, options);
+  return parseAccountApiPayload(accountApiPasskeysSchema, payload, "me/passkeys", "GET");
+}
+
+export async function requestAccountApiPasskeyRegistration(
+  accessToken: string,
+  body: { password: string; origin: string },
+  options: PasskeyWriteOptions,
+): Promise<AccountApiPasskeyOptions> {
+  const route = "me/passkeys/register/options";
+  const payload = await postAccountApiJson(
+    route,
+    accessToken,
+    { password: body.password, origin: body.origin },
+    options,
+  );
+  return parseAccountApiPayload(passkeyOptionsSchema, payload, route, "POST");
+}
+
+export async function completeAccountApiPasskeyRegistration(
+  accessToken: string,
+  body: { name: string; credential: PasskeyCredentialJson },
+  options: PasskeyWriteOptions,
+): Promise<z.infer<typeof passkeyRegisteredSchema>> {
+  const route = "me/passkeys/register";
+  const payload = await postAccountApiJson(
+    route,
+    accessToken,
+    { name: body.name, credential: body.credential },
+    options,
+  );
+  return parseAccountApiPayload(passkeyRegisteredSchema, payload, route, "POST");
+}
+
+export async function requestAccountApiPasskeyChallenge(
+  accessToken: string,
+  body: { origin: string },
+  options: PasskeyWriteOptions,
+): Promise<AccountApiPasskeyOptions> {
+  const route = "me/passkeys/verify/options";
+  const payload = await postAccountApiJson(route, accessToken, { origin: body.origin }, options);
+  return parseAccountApiPayload(passkeyOptionsSchema, payload, route, "POST");
+}
+
+export async function verifyAccountApiPasskey(
+  accessToken: string,
+  body: { credential: PasskeyCredentialJson },
+  options: PasskeyWriteOptions,
+): Promise<z.infer<typeof passkeyVerifiedSchema>> {
+  const route = "me/passkeys/verify";
+  const payload = await postAccountApiJson(
+    route,
+    accessToken,
+    { credential: body.credential },
+    options,
+  );
+  return parseAccountApiPayload(passkeyVerifiedSchema, payload, route, "POST");
+}
+
+export async function removeAccountApiPasskey(
+  accessToken: string,
+  body: { passkey_id: string },
+  options: PasskeyWriteOptions,
+): Promise<z.infer<typeof passkeyRemovedSchema>> {
+  const route = "me/passkeys/remove";
+  const payload = await postAccountApiJson(
+    route,
+    accessToken,
+    { passkey_id: body.passkey_id },
+    options,
+  );
+  return parseAccountApiPayload(passkeyRemovedSchema, payload, route, "POST");
+}

@@ -26,17 +26,76 @@ describe("AdminGate", () => {
     expect(screen.queryByText("Privileged content")).not.toBeInTheDocument();
   });
 
-  it("points an unverified session at security settings", () => {
+  const passkey = {
+    mode: "when-enrolled" as const,
+    staff: true,
+    enrolled: true,
+    count: 1,
+    required: true,
+    verified: false,
+    fresh: false,
+    verifiedUntil: null,
+    freshUntil: null,
+  };
+  const owed = {
+    verifiedTotpFactors: [],
+    unverifiedTotpFactorIds: [],
+    currentLevel: "aal1" as const,
+    requiredLevel: "aal2" as const,
+    mfaEnrolled: true,
+    challengeRequired: true,
+    levelReadable: true,
+    factorsReadable: true,
+  };
+
+  it("asks a session that owes its passkey for the passkey, on the spot", () => {
+    render(
+      <AdminGate
+        access={{ status: "mfa-required", assurance: { ...owed, passkey } }}
+        section="Audit"
+      >
+        <p>Privileged content</p>
+      </AdminGate>,
+    );
+    expect(screen.getByRole("heading", { name: /confirm it is you/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /use passkey/i })).toBeEnabled();
+    expect(screen.queryByText("Privileged content")).not.toBeInTheDocument();
+  });
+
+  it("sends a staff account that must add its first passkey to security settings", () => {
+    render(
+      <AdminGate
+        access={{
+          status: "mfa-required",
+          assurance: {
+            ...owed,
+            mfaEnrolled: false,
+            challengeRequired: false,
+            passkey: { ...passkey, mode: "required", enrolled: false, count: 0 },
+          },
+        }}
+        section="Audit"
+      >
+        <p>Privileged content</p>
+      </AdminGate>,
+    );
+    expect(screen.getByRole("heading", { name: /add a passkey to open administration/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /security settings/i })).toHaveAttribute(
+      "href",
+      "/account/security#security-passkeys-heading",
+    );
+    expect(screen.queryByRole("button", { name: /passkey/i })).not.toBeInTheDocument();
+  });
+
+  it("says the check failed, and offers no passkey prompt, when the state could not be read", () => {
     render(
       <AdminGate access={{ status: "mfa-required" }} section="Audit">
         <p>Privileged content</p>
       </AdminGate>,
     );
-    expect(screen.getByRole("heading", { name: /verified second factor/i })).toBeVisible();
-    expect(screen.getByRole("link", { name: /security settings/i })).toHaveAttribute(
-      "href",
-      "/account/security",
-    );
+    expect(screen.getByRole("heading", { name: /could not be checked/i })).toBeVisible();
+    expect(screen.getByRole("link", { name: /try again/i })).toHaveAttribute("href", "/admin");
+    expect(screen.queryByText("Privileged content")).not.toBeInTheDocument();
   });
 
   it("names the missing permission in product language", () => {

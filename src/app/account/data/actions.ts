@@ -34,7 +34,7 @@ const SERVICE_ERROR: AccountLifecycleActionState = {
 
 const CHALLENGE_ERROR: AccountLifecycleActionState = {
   ...SERVICE_ERROR,
-  message: "Finish signing in with your authenticator code before changing account data state.",
+  message: "Confirm with your passkey before changing account data state.",
 };
 
 const WRONG_PASSWORD_ERROR: AccountLifecycleActionState = {

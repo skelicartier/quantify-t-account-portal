@@ -51,7 +51,7 @@ const NOTICES: Record<string, { tone: "neutral" | "success" | "attention"; text:
   },
   "mfa-required": {
     tone: "neutral",
-    text: "This account requires an authenticator code. Sign in with your password to continue to the code step.",
+    text: "This account is protected by a passkey. Sign in with your password, then confirm with the passkey.",
   },
 };
 

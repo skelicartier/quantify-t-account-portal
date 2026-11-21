@@ -21,7 +21,7 @@ import { createServerAzureClient } from "@/lib/supabase/server";
 import { verifyCurrentPassword } from "@/lib/supabase/verification-client";
 
 const CHALLENGE_REQUIRED_MESSAGE =
-  "Finish signing in with your authenticator code before changing your security settings.";
+  "Confirm with your passkey before changing your security settings.";
 
 const PASSWORD_SERVICE_ERROR: PasswordChangeActionState = {
   status: "error",

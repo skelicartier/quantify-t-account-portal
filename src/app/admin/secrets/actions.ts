@@ -14,7 +14,7 @@ import {
 import {
   canWriteManagedSecrets,
   hasAdminPortalAccess,
-  hasSatisfiedPrivilegedAssurance,
+  hasFreshPrivilegedAssurance,
 } from "@/lib/admin/access";
 import {
   isAdminSecretMode,
@@ -90,8 +90,8 @@ async function writingCaller(): Promise<Caller> {
   if (!hasAdminPortalAccess(me) || !canWriteManagedSecrets(me)) {
     return { ok: false, message: "This account cannot change credentials." };
   }
-  if (!hasSatisfiedPrivilegedAssurance(await getCurrentAssurance())) {
-    return { ok: false, message: "Verify your authenticator code before changing a credential." };
+  if (!hasFreshPrivilegedAssurance(await getCurrentAssurance())) {
+    return { ok: false, message: "Confirm with your passkey before changing a credential." };
   }
   return { ok: true, accessToken };
 }

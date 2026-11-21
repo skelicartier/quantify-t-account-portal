@@ -148,7 +148,7 @@ describe("support desk actions", () => {
     const result = await replyToSupportConversation(INITIAL_ADMIN_SUPPORT_STATE, replyForm());
 
     expect(result.status).toBe("error");
-    expect(result.message).toMatch(/authenticator/i);
+    expect(result.message).toMatch(/passkey/i);
     expect(mocks.replyToAccountApiAdminSupport).not.toHaveBeenCalled();
   });
 

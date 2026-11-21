@@ -1,19 +1,14 @@
 import type { Metadata } from "next";
 
-import {
-  changeEmail,
-  changePassword,
-  confirmTotpEnrollment,
-  removeTotpFactor,
-  startTotpEnrollment,
-} from "@/app/account/security/actions";
+import { changeEmail, changePassword } from "@/app/account/security/actions";
 import { EmailChangeForm } from "@/components/account/email-change-form";
+import { PasskeyPanel } from "@/components/account/passkey-panel";
 import { PasswordChangeForm } from "@/components/account/password-change-form";
-import { TwoFactorPanel } from "@/components/account/two-factor-panel";
 import { PageHeader } from "@/components/shell/page-header";
 import { Callout } from "@/components/ui/callout";
 import { requireCurrentAccount } from "@/lib/dal/account";
-import { getCurrentAssurance } from "@/lib/dal/assurance-guard";
+import { getCurrentPasskeys } from "@/lib/dal/assurance-guard";
+import { requestNow } from "@/lib/request-time";
 
 export const metadata: Metadata = { title: "Security" };
 export const dynamic = "force-dynamic";
@@ -29,7 +24,8 @@ export default async function SecurityPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const account = await requireCurrentAccount();
-  const assurance = await getCurrentAssurance();
+  const passkeys = await getCurrentPasskeys();
+  const now = requestNow();
   const { notice } = await searchParams;
   const noticeMessage = typeof notice === "string" ? NOTICES[notice] : undefined;
 
@@ -39,7 +35,7 @@ export default async function SecurityPage({
         eyebrow="Account"
         title="Security"
         titleId="security-heading"
-        description="Change your password, move to a new verified email, and require a second factor at sign-in. Every change here asks for your current password."
+        description="Change your password, move to a new verified email, and protect this account with a passkey. Every change here asks for your current password."
       />
 
       <div className="page-content">
@@ -70,19 +66,19 @@ export default async function SecurityPage({
 
         <div className="settings-row">
           <div className="settings-row__intro">
-            <h2 id="security-mfa-heading">Authenticator app</h2>
+            <h2 id="security-passkeys-heading">Passkeys</h2>
             <p>
-              What you see here is what sign-in enforces: the status comes from your verified
-              factors, not from a saved preference.
+              A passkey lives on your own device and is unlocked by your fingerprint, face or
+              device PIN. It cannot be typed into a look-alike site, and nothing this service
+              stores can sign in with it. Once you have one, the console asks for it in every
+              new session.
             </p>
           </div>
-          <TwoFactorPanel
-            factors={assurance.verifiedTotpFactors}
-            currentLevel={assurance.currentLevel}
-            factorsReadable={assurance.factorsReadable}
-            startEnrollment={startTotpEnrollment}
-            confirmEnrollment={confirmTotpEnrollment}
-            removeFactor={removeTotpFactor}
+          <PasskeyPanel
+            passkeys={passkeys?.passkeys ?? []}
+            state={passkeys?.state ?? null}
+            maxPasskeys={passkeys?.maxPasskeys ?? 10}
+            now={now}
           />
         </div>
 
@@ -93,16 +89,18 @@ export default async function SecurityPage({
           <Callout title="Keep these in mind">
             <ul className="stack stack--tight">
               <li>
-                Keep your authenticator app backed up. This console issues no printable recovery
-                codes, so a lost authenticator cannot be bypassed from this page.
+                Add a second passkey on another device (a phone, a security key) so that losing
+                one does not lock you out. Passkeys kept in iCloud Keychain or Google Password
+                Manager also follow you to your other devices.
               </li>
               <li>
                 Losing your password alone is recoverable: use the sign-in page&apos;s password
-                reset and confirm from your verified inbox.
+                reset and confirm from your verified inbox. A reset does not remove a passkey.
               </li>
               <li>
-                Losing your second factor requires an identity-verified support review before the
-                factor can be removed. Removing it yourself always needs your current password.
+                Losing every device that holds a passkey needs the workspace Owner to reset your
+                passkeys after checking it is you. Nothing in this console, and no link in any
+                email, can remove one.
               </li>
               <li>
                 Password resets and email changes are confirmed by email. Treat any message you did

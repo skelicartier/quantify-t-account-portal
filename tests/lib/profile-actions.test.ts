@@ -213,7 +213,7 @@ describe("profile Server Actions", () => {
   });
 
   it.each([
-    ["owed challenge", "challenge-required", "authenticator code"],
+    ["owed challenge", "challenge-required", "passkey"],
     ["unreadable assurance", "unavailable", "temporarily unavailable"],
   ] as const)("refuses a mutation with %s", async (_label, assuranceDecision, message) => {
     installClient({ assuranceDecision });

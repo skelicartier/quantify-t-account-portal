@@ -12,7 +12,7 @@ import {
 import {
   canManageNotifications,
   hasAdminPortalAccess,
-  hasSatisfiedPrivilegedAssurance,
+  hasFreshPrivilegedAssurance,
 } from "@/lib/admin/access";
 import { getCurrentAssurance } from "@/lib/dal/assurance-guard";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
@@ -64,8 +64,8 @@ export async function enqueueAdminEmail(
     if (!hasAdminPortalAccess(me) || !canManageNotifications(me)) {
       return failure("This account cannot queue email.");
     }
-    if (!hasSatisfiedPrivilegedAssurance(await getCurrentAssurance())) {
-      return failure("Verify your authenticator code before queueing email.");
+    if (!hasFreshPrivilegedAssurance(await getCurrentAssurance())) {
+      return failure("Confirm with your passkey before queueing email.");
     }
     const current = await fetchAccountApiAdminNotificationEmailQueue(accessToken);
     if (current.revision !== revision.data)

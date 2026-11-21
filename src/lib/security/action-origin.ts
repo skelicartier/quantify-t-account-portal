@@ -28,6 +28,11 @@ function configuredPortalOrigin(): string | null {
   }
 }
 
+/** The console's own address, as configured: what a passkey made here is bound to. */
+export function portalOrigin(): string | null {
+  return configuredPortalOrigin();
+}
+
 function requestOrigin(headersList: Headers): string | null {
   return originFromUrl(headersList.get("origin")) ?? originFromUrl(headersList.get("referer"));
 }

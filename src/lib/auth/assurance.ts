@@ -8,6 +8,8 @@
  * factor, and enforcement is real only when the session's assurance level is
  * compared against the level those factors require.
  */
+import type { PasskeyState } from "@/lib/passkeys/state";
+
 export type VerifiedTotpFactor = {
   id: string;
   friendlyName: string | null;
@@ -56,6 +58,13 @@ export type AssuranceState = {
    * security decision, which is why every mutation refuses while it is false.
    */
   factorsReadable: boolean;
+  /**
+   * The passkey state the Account API reported for this session, when it reported one.
+   * Absent on a service from before passkeys and on a read that failed; the levels above
+   * are already derived from it, so nothing has to consult this to make a decision. It is
+   * here for the pages that explain what is missing and offer the right next step.
+   */
+  passkey?: PasskeyState | null;
 };
 
 export const EMPTY_ASSURANCE_STATE: AssuranceState = {
@@ -79,6 +88,33 @@ export const AZURE_PASSWORD_ONLY_ASSURANCE_STATE: AssuranceState = {
   levelReadable: true,
   factorsReadable: true,
 };
+
+/**
+ * The assurance state for a session whose passkey state the Account API answered.
+ *
+ * The second level means one thing here: this session proved a passkey recently enough
+ * for the service to answer its staff routes. It is required of any account that has a
+ * passkey (the console asks for it before it shows anything) and of a staff account the
+ * service will not serve without one. Both facts come from the service's own answer for
+ * this session's token, so neither can be argued with from the browser.
+ */
+export function assuranceFromPasskey(passkey: PasskeyState): AssuranceState {
+  const owed = passkey.enrolled || passkey.required;
+  return {
+    verifiedTotpFactors: [],
+    unverifiedTotpFactorIds: [],
+    currentLevel: passkey.verified ? "aal2" : "aal1",
+    requiredLevel: owed ? "aal2" : "aal1",
+    mfaEnrolled: passkey.enrolled,
+    // Only an account that HAS a passkey is stopped at the door. One that must add its
+    // first is let in to its own pages, because the Security page is where it adds it;
+    // Administration stays shut for it through `requiredLevel`.
+    challengeRequired: passkey.enrolled && !passkey.verified,
+    levelReadable: true,
+    factorsReadable: true,
+    passkey,
+  };
+}
 
 type FactorLike = {
   id?: unknown;

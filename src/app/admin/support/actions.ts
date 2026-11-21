@@ -85,7 +85,7 @@ async function deskCaller(
   if (!hasAdminPortalAccess(me) || !permits(me)) return { ok: false, message: refusal };
 
   if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(await getCurrentAssurance())) {
-    return { ok: false, message: "Verify your authenticator code before using the support desk." };
+    return { ok: false, message: "Confirm with your passkey before using the support desk." };
   }
   return { ok: true, accessToken };
 }

@@ -270,7 +270,7 @@ describe("publishing a release", () => {
     const result = await publishRelease(INITIAL_RELEASE_ACTION_STATE, publishForm());
 
     expect(result.status).toBe("error");
-    expect(result.message).toMatch(/authenticator/iu);
+    expect(result.message).toMatch(/passkey/iu);
     expect(mocks.publishReleaseManifest).not.toHaveBeenCalled();
   });
 

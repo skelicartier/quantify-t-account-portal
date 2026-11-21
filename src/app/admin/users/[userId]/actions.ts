@@ -27,7 +27,7 @@ import {
 import {
   hasAdminPortalAccess,
   hasPrivilegedRole,
-  hasSatisfiedPrivilegedAssurance,
+  hasFreshPrivilegedAssurance,
 } from "@/lib/admin/access";
 import {
   featureLabel,
@@ -62,7 +62,7 @@ const AUTH_ERROR: AdminUserActivationState = {
 
 const CHALLENGE_ERROR: AdminUserActivationState = {
   status: "error",
-  message: "Finish signing in with your authenticator code before changing user status.",
+  message: "Confirm with your passkey before changing user status.",
 };
 
 const FORBIDDEN_ERROR: AdminUserActivationState = {
@@ -108,7 +108,7 @@ const ROLE_AUTH_ERROR: AdminUserRoleState = {
 
 const ROLE_CHALLENGE_ERROR: AdminUserRoleState = {
   status: "error",
-  message: "Finish signing in with your authenticator code before changing roles.",
+  message: "Confirm with your passkey before changing roles.",
 };
 
 const ROLE_FORBIDDEN_ERROR: AdminUserRoleState = {
@@ -150,7 +150,7 @@ export async function updateAdminUserRole(
     }
 
     const assurance = await getCurrentAssurance();
-    if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    if (hasPrivilegedRole(me) && !hasFreshPrivilegedAssurance(assurance)) {
       return ROLE_CHALLENGE_ERROR;
     }
 
@@ -205,7 +205,7 @@ export async function updateAdminUserActivation(
     }
 
     const assurance = await getCurrentAssurance();
-    if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    if (hasPrivilegedRole(me) && !hasFreshPrivilegedAssurance(assurance)) {
       return CHALLENGE_ERROR;
     }
 
@@ -238,7 +238,7 @@ const ACCESS_AUTH_ERROR: AdminUserAccessState = {
 
 const ACCESS_CHALLENGE_ERROR: AdminUserAccessState = {
   status: "error",
-  message: "Finish signing in with your authenticator code before deciding applications.",
+  message: "Confirm with your passkey before deciding applications.",
 };
 
 const ACCESS_FORBIDDEN_ERROR: AdminUserAccessState = {
@@ -343,7 +343,7 @@ export async function decideAdminUserAccess(
     }
 
     const assurance = await getCurrentAssurance();
-    if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    if (hasPrivilegedRole(me) && !hasFreshPrivilegedAssurance(assurance)) {
       return ACCESS_CHALLENGE_ERROR;
     }
 
@@ -504,9 +504,9 @@ export async function updateAdminUserSubscription(
     }
 
     const assurance = await getCurrentAssurance();
-    if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    if (hasPrivilegedRole(me) && !hasFreshPrivilegedAssurance(assurance)) {
       return planFailure(
-        "Finish signing in with your authenticator code before changing plans.",
+        "Confirm with your passkey before changing plans.",
         expected,
       );
     }
@@ -651,9 +651,9 @@ export async function updateAdminUserEntitlement(
     }
 
     const assurance = await getCurrentAssurance();
-    if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    if (hasPrivilegedRole(me) && !hasFreshPrivilegedAssurance(assurance)) {
       return overrideFailure(
-        "Finish signing in with your authenticator code before changing allowances.",
+        "Confirm with your passkey before changing allowances.",
         previousState,
       );
     }
@@ -723,7 +723,7 @@ export async function revokeAdminUserSession(
     }
 
     const assurance = await getCurrentAssurance();
-    if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+    if (hasPrivilegedRole(me) && !hasFreshPrivilegedAssurance(assurance)) {
       return CHALLENGE_ERROR;
     }
 

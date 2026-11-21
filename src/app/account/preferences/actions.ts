@@ -22,7 +22,7 @@ const AUTH_ERROR: PreferencesActionState = {
 const CHALLENGE_ERROR: PreferencesActionState = {
   ...INITIAL_PREFERENCES_ACTION_STATE,
   status: "error",
-  message: "Finish signing in with your authenticator code before saving changes.",
+  message: "Confirm with your passkey before saving changes.",
 };
 
 const SERVICE_ERROR: PreferencesActionState = {

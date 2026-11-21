@@ -12,7 +12,7 @@ import {
 import {
   canManageNotifications,
   hasAdminPortalAccess,
-  hasSatisfiedPrivilegedAssurance,
+  hasFreshPrivilegedAssurance,
 } from "@/lib/admin/access";
 import { getCurrentAssurance } from "@/lib/dal/assurance-guard";
 import { requireSameOriginServerAction } from "@/lib/security/action-origin";
@@ -59,8 +59,8 @@ export async function saveAdminNotification(
     if (!hasAdminPortalAccess(me) || !canManageNotifications(me)) {
       return failure("This account cannot publish notifications.");
     }
-    if (!hasSatisfiedPrivilegedAssurance(await getCurrentAssurance())) {
-      return failure("Verify your authenticator code before saving notifications.");
+    if (!hasFreshPrivilegedAssurance(await getCurrentAssurance())) {
+      return failure("Confirm with your passkey before saving notifications.");
     }
     const current = await fetchAccountApiAdminNotifications(accessToken);
     if (current.revision !== revision.data)
