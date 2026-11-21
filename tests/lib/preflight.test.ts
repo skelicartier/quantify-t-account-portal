@@ -810,7 +810,7 @@ describe("preflight audit", () => {
           {
             key: "Content-Security-Policy",
             value:
-              "script-src 'self' https://challenges.cloudflare.com; connect-src 'self' https://*.azurewebsites.net",
+              "script-src 'self' https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com",
           },
         ],
       },

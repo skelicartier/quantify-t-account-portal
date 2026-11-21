@@ -9,9 +9,10 @@ describe("credential-surface security headers", () => {
     expect(csp).toContain("script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com");
     expect(csp).not.toContain("'unsafe-eval'");
     expect(csp).toContain("frame-src https://challenges.cloudflare.com");
-    expect(csp).toContain(
-      "connect-src 'self' https://challenges.cloudflare.com https://*.azurewebsites.net",
-    );
+    expect(csp).toContain("connect-src 'self' https://challenges.cloudflare.com;");
+    // Nothing the page's scripts could send data to except this origin and the challenge.
+    expect(csp).not.toContain("*");
+    expect(csp).not.toContain("azurewebsites");
     expect(csp).not.toContain("supabase.co");
     expect(
       globalRule?.headers.some(({ key }) => key === "Content-Security-Policy-Report-Only"),

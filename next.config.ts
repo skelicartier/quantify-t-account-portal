@@ -13,7 +13,10 @@ const contentSecurityPolicy = [
   `script-src 'self' 'unsafe-inline'${developmentScriptSource} https://challenges.cloudflare.com`,
   "style-src 'self' 'unsafe-inline'",
   "frame-src https://challenges.cloudflare.com",
-  "connect-src 'self' https://challenges.cloudflare.com https://*.azurewebsites.net",
+  // The browser talks to this origin and the bot challenge, and to nothing else: every call
+  // to the Account API is made on the server. A wildcard host here is somewhere a script
+  // could send data, and anybody can host a site under a cloud provider's shared domain.
+  "connect-src 'self' https://challenges.cloudflare.com",
   "upgrade-insecure-requests",
 ].join("; ");
 

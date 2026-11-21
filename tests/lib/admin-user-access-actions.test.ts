@@ -241,6 +241,23 @@ describe("admin application decisions", () => {
     expect(mocks.decideAccountApiAdminUserAccess).not.toHaveBeenCalled();
   });
 
+  it("says why an account whose address nobody confirmed cannot be approved", async () => {
+    mocks.decideAccountApiAdminUserAccess.mockRejectedValue(
+      new AccountApiRequestError({
+        status: 409,
+        code: "email_unconfirmed",
+        message: "This account has not confirmed its email address yet.",
+        correlationId: "qt-correlation",
+      }),
+    );
+
+    const result = await decideAdminUserAccess(INITIAL_ADMIN_USER_ACCESS_STATE, form("approved"));
+
+    expect(result.status).toBe("error");
+    expect(result.message).toMatch(/has not confirmed its email address/u);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
   it.each([
     [403, /cannot decide/iu],
     [404, /not found/iu],

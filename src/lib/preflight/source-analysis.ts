@@ -534,7 +534,9 @@ export function analyzePortalSecurityHeaders(
       !hasReportOnlyPolicy &&
       Boolean(contentSecurityPolicy?.includes("script-src")) &&
       Boolean(contentSecurityPolicy?.includes("https://challenges.cloudflare.com")) &&
-      Boolean(contentSecurityPolicy?.includes("https://*.azurewebsites.net")) &&
+      // No wildcard host anywhere in the policy: a shared hosting domain is one anybody
+      // can publish under, so allowing it is allowing an address to send data to.
+      !contentSecurityPolicy?.includes("*") &&
       !contentSecurityPolicy?.includes("supabase.co") &&
       !contentSecurityPolicy?.includes("'unsafe-eval'"),
     exactNoStoreRoutes:

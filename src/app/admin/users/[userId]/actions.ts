@@ -362,6 +362,14 @@ export async function decideAdminUserAccess(
     if (error instanceof AccountApiRequestError) {
       if (error.status === 404) return { status: "error", message: "That account was not found." };
       if (error.status === 403) return ACCESS_FORBIDDEN_ERROR;
+      if (error.code === "email_unconfirmed") {
+        // Sign-up proves nothing about who typed the address; the confirmation link does.
+        return {
+          status: "error",
+          message:
+            "This account has not confirmed its email address yet, so it cannot be approved. It can be once its holder uses the link in the sign-up email.",
+        };
+      }
       if (error.status === 400) {
         return {
           status: "error",
