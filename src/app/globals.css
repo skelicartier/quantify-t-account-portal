@@ -941,6 +941,40 @@
     }
   }
 
+  /* The loading marker under the top bar: strips and a word, in the terminal register. It
+     waits a moment before it shows, so a page that arrives at once never flashes it. */
+  .route-loading {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    z-index: 100;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 14px 7px 12px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel-raised);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    pointer-events: none;
+    transform: translateX(-50%);
+    opacity: 0;
+    animation: route-loading-in 160ms var(--ease) 140ms forwards;
+  }
+
+  .route-loading .bars {
+    color: var(--accent);
+  }
+
+  @keyframes route-loading-in {
+    to {
+      opacity: 1;
+    }
+  }
+
   .nav-toggle {
     display: inline-flex;
     align-items: center;
@@ -2879,6 +2913,79 @@
     gap: 28px;
   }
 
+  /* loading strips: five verticals rising and falling in turn */
+  .bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 12px;
+    flex: none;
+  }
+
+  .bars > span {
+    display: block;
+    width: 2px;
+    height: 100%;
+    background: currentColor;
+    transform-origin: 50% 100%;
+    transform: scaleY(0.3);
+    animation: bars 900ms var(--ease) infinite;
+  }
+
+  .bars > span:nth-child(2) {
+    animation-delay: 110ms;
+  }
+
+  .bars > span:nth-child(3) {
+    animation-delay: 220ms;
+  }
+
+  .bars > span:nth-child(4) {
+    animation-delay: 330ms;
+  }
+
+  .bars > span:nth-child(5) {
+    animation-delay: 440ms;
+  }
+
+  .bars--block {
+    gap: 4px;
+    height: 26px;
+    color: var(--accent);
+  }
+
+  .bars--block > span {
+    width: 4px;
+  }
+
+  @keyframes bars {
+    0%,
+    100% {
+      transform: scaleY(0.3);
+      opacity: 0.55;
+    }
+    45% {
+      transform: scaleY(1);
+      opacity: 1;
+    }
+  }
+
+  /* In a button the strips sit before the label, in the label's own colour. */
+  .btn > .bars {
+    margin-right: 8px;
+  }
+
+  .skeleton-page__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
   .skeleton-page__header {
     display: grid;
     gap: 12px;
@@ -3676,6 +3783,31 @@
 
     .skeleton {
       animation: none;
+    }
+
+    /* Still, at stepped heights: it reads as a level meter, not as something broken. */
+    .bars > span {
+      animation: none;
+      opacity: 1;
+    }
+
+    .bars > span:nth-child(1),
+    .bars > span:nth-child(5) {
+      transform: scaleY(0.45);
+    }
+
+    .bars > span:nth-child(2),
+    .bars > span:nth-child(4) {
+      transform: scaleY(0.75);
+    }
+
+    .bars > span:nth-child(3) {
+      transform: scaleY(1);
+    }
+
+    .route-loading {
+      animation: none;
+      opacity: 1;
     }
   }
 }

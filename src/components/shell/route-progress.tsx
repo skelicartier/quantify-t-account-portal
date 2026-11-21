@@ -3,14 +3,18 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { LoadingBars } from "@/components/ui/loading-bars";
+
 const STALE_AFTER_MS = 10_000;
 
 type Navigation = { from: string; to: string };
 
 /**
- * A thin bar along the top edge while a same-origin link is loading. Clicks are
- * observed on the document, so every console link — sidebar, paging, "Open" — gets the
- * same indicator without wrapping each one; it ends when the location changes.
+ * A thin bar along the top edge and the loading strips beneath it while a same-origin
+ * link is loading. Clicks are observed on the document, so every console link — sidebar,
+ * paging, "Open" — gets the same indicator without wrapping each one; it ends when the
+ * location changes. The strips appear a moment after the bar, so a page that arrives at
+ * once is not interrupted by them.
  */
 export function RouteProgress() {
   const pathname = usePathname();
@@ -43,5 +47,13 @@ export function RouteProgress() {
 
   const pending = navigation !== null && navigation.from === current;
   if (!pending) return null;
-  return <div className="route-progress" role="progressbar" aria-label="Loading page" />;
+  return (
+    <>
+      <div className="route-progress" role="progressbar" aria-label="Loading page" />
+      <div className="route-loading" aria-hidden="true">
+        <LoadingBars />
+        <span>Loading</span>
+      </div>
+    </>
+  );
 }

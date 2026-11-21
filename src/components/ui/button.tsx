@@ -1,5 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
+import { useFormStatus } from "react-dom";
+
+import { LoadingBars } from "@/components/ui/loading-bars";
 
 export type ButtonVariant = "default" | "primary" | "danger" | "ghost";
 export type ButtonSize = "default" | "small" | "icon";
@@ -28,19 +33,38 @@ export function buttonClass({
     .join(" ");
 }
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & ButtonStyle & { children: ReactNode };
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
+  ButtonStyle & {
+    children: ReactNode;
+    /** Show the loading strips. A submit button also shows them while its form is sending. */
+    busy?: boolean | undefined;
+  };
 
+/**
+ * A button. One that submits a form shows the loading strips for as long as that form's
+ * action is in flight, without each form having to say so: pressing Save and seeing
+ * nothing move is what makes a working page look stuck.
+ */
 export function Button({
   variant,
   size,
   block,
   className,
   type = "button",
+  busy,
   children,
   ...rest
 }: ButtonProps) {
+  const { pending } = useFormStatus();
+  const working = busy ?? (type === "submit" && pending);
   return (
-    <button className={buttonClass({ variant, size, block, className })} type={type} {...rest}>
+    <button
+      className={buttonClass({ variant, size, block, className })}
+      type={type}
+      aria-busy={working || undefined}
+      {...rest}
+    >
+      {working && <LoadingBars />}
       {children}
     </button>
   );
