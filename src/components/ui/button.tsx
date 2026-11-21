@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 
-import { LoadingBars } from "@/components/ui/loading-bars";
+import { Spinner } from "@/components/ui/spinner";
 
 export type ButtonVariant = "default" | "primary" | "danger" | "ghost";
 export type ButtonSize = "default" | "small" | "icon";
@@ -36,12 +36,12 @@ export function buttonClass({
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
   ButtonStyle & {
     children: ReactNode;
-    /** Show the loading strips. A submit button also shows them while its form is sending. */
+    /** Show the spinner. A submit button also shows it while its form is sending. */
     busy?: boolean | undefined;
   };
 
 /**
- * A button. One that submits a form shows the loading strips for as long as that form's
+ * A button. One that submits a form shows the spinner for as long as that form's
  * action is in flight, without each form having to say so: pressing Save and seeing
  * nothing move is what makes a working page look stuck.
  */
@@ -64,7 +64,7 @@ export function Button({
       aria-busy={working || undefined}
       {...rest}
     >
-      {working && <LoadingBars />}
+      {working && <Spinner />}
       {children}
     </button>
   );

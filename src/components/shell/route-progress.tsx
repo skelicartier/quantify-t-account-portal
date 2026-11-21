@@ -3,18 +3,18 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { LoadingBars } from "@/components/ui/loading-bars";
+import { PageSpinner } from "@/components/ui/spinner";
 
 const STALE_AFTER_MS = 10_000;
 
 type Navigation = { from: string; to: string };
 
 /**
- * A thin bar along the top edge and the loading strips beneath it while a same-origin
- * link is loading. Clicks are observed on the document, so every console link — sidebar,
- * paging, "Open" — gets the same indicator without wrapping each one; it ends when the
- * location changes. The strips appear a moment after the bar, so a page that arrives at
- * once is not interrupted by them.
+ * A thin bar along the top edge and the spinner in the middle of the page while a
+ * same-origin link is loading. Clicks are observed on the document, so every console link
+ * (sidebar, paging, "Open") gets the same indicator without wrapping each one; it ends
+ * when the location changes. The spinner appears a moment after the bar, so a page that
+ * arrives at once is not interrupted by it.
  */
 export function RouteProgress() {
   const pathname = usePathname();
@@ -50,10 +50,7 @@ export function RouteProgress() {
   return (
     <>
       <div className="route-progress" role="progressbar" aria-label="Loading page" />
-      <div className="route-loading" aria-hidden="true">
-        <LoadingBars />
-        <span>Loading</span>
-      </div>
+      <PageSpinner late />
     </>
   );
 }

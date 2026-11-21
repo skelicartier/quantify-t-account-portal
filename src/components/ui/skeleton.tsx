@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-import { LoadingBars } from "@/components/ui/loading-bars";
+import { PageSpinner } from "@/components/ui/spinner";
 
 type SkeletonProps = {
   variant?: "line" | "title" | "block";
@@ -25,10 +25,7 @@ export function PageSkeleton({ variant = "account" }: PageSkeletonProps) {
   const rows = variant === "admin" ? 6 : 5;
   return (
     <div className="skeleton-page" role="status" aria-busy="true">
-      <div className="skeleton-page__status" aria-hidden="true">
-        <LoadingBars size="block" />
-        <span>Loading</span>
-      </div>
+      <PageSpinner />
       <span className="sr-only">Loading</span>
       <div className="skeleton-page__header">
         {variant === "detail" && <Skeleton width="180px" />}

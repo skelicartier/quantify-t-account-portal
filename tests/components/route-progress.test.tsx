@@ -38,8 +38,9 @@ describe("RouteProgress", () => {
         .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     expect(screen.getByRole("progressbar", { name: "Loading page" })).toBeInTheDocument();
-    // And the strips under it, so a page that takes a moment visibly is doing something.
-    expect(document.querySelector(".route-loading .bars")).not.toBeNull();
+    // And the spinner in the middle of the page, so a page that takes a moment visibly is
+    // doing something.
+    expect(document.querySelector(".page-loading--late .spinner--block")).not.toBeNull();
 
     navigation.pathname = "/directory-archive";
     navigation.search = "limit=25";
@@ -51,6 +52,6 @@ describe("RouteProgress", () => {
       </>,
     );
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(document.querySelector(".route-loading")).toBeNull();
+    expect(document.querySelector(".page-loading")).toBeNull();
   });
 });

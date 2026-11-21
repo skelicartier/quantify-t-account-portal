@@ -941,35 +941,34 @@
     }
   }
 
-  /* The loading marker under the top bar: strips and a word, in the terminal register. It
-     waits a moment before it shows, so a page that arrives at once never flashes it. */
-  .route-loading {
+  /* The page-sized spinner: held in the middle of the content pane, on a small plate so it
+     reads over whatever is behind it. A page change and a page's placeholder both use it in
+     this one place, so it does not jump when one hands over to the other. */
+  .page-loading {
     position: fixed;
-    top: 12px;
-    left: 50%;
+    top: 50%;
+    left: calc(50% + var(--rail-width) / 2);
     z-index: 100;
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    padding: 7px 14px 7px 12px;
-    border: 1px solid var(--line-strong);
-    background: var(--panel-raised);
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+    display: grid;
+    place-items: center;
+    width: 68px;
+    height: 68px;
+    margin: -34px 0 0 -34px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--panel-raised) 86%, transparent);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
     pointer-events: none;
-    transform: translateX(-50%);
+  }
+
+  /* On a page change it waits a moment, so a page that arrives at once never flashes it. */
+  .page-loading--late {
     opacity: 0;
-    animation: route-loading-in 160ms var(--ease) 140ms forwards;
+    animation: page-loading-in 160ms var(--ease) 140ms forwards;
   }
 
-  .route-loading .bars {
-    color: var(--accent);
-  }
-
-  @keyframes route-loading-in {
+  @keyframes page-loading-in {
     to {
       opacity: 1;
     }
@@ -1379,6 +1378,11 @@
 
     .shell__body {
       padding-left: 0;
+    }
+
+    /* No rail beside the page at this width, so the middle is the middle of the screen. */
+    .page-loading {
+      left: 50%;
     }
 
     .cbar {
@@ -2913,77 +2917,90 @@
     gap: 28px;
   }
 
-  /* loading strips: five verticals rising and falling in turn */
-  .bars {
-    display: inline-flex;
-    align-items: flex-end;
-    gap: 2px;
-    height: 12px;
+  /* The spinner: eight short lines set around a centre. Each fades from full to faint over
+     one turn, each an eighth of a turn behind the one before, so the bright line travels
+     round the ring. Sized in em, so it follows the text it sits in. */
+  .spinner {
+    position: relative;
+    display: inline-block;
     flex: none;
+    width: 1em;
+    height: 1em;
+    font-size: 14px;
+    vertical-align: -0.125em;
   }
 
-  .bars > span {
-    display: block;
-    width: 2px;
-    height: 100%;
+  .spinner > span {
+    position: absolute;
+    top: 0;
+    left: 44.5%;
+    width: 11%;
+    height: 27.5%;
+    border-radius: 999px;
     background: currentColor;
-    transform-origin: 50% 100%;
-    transform: scaleY(0.3);
-    animation: bars 900ms var(--ease) infinite;
+    /* The middle of the ring, measured from this line: half the box is 181.8% of its length. */
+    transform-origin: 50% 181.82%;
+    opacity: 0.18;
+    animation: spinner-fade 800ms linear infinite;
   }
 
-  .bars > span:nth-child(2) {
-    animation-delay: 110ms;
+  .spinner > span:nth-child(1) {
+    transform: rotate(0deg);
+    animation-delay: -800ms;
   }
 
-  .bars > span:nth-child(3) {
-    animation-delay: 220ms;
+  .spinner > span:nth-child(2) {
+    transform: rotate(45deg);
+    animation-delay: -700ms;
   }
 
-  .bars > span:nth-child(4) {
-    animation-delay: 330ms;
+  .spinner > span:nth-child(3) {
+    transform: rotate(90deg);
+    animation-delay: -600ms;
   }
 
-  .bars > span:nth-child(5) {
-    animation-delay: 440ms;
+  .spinner > span:nth-child(4) {
+    transform: rotate(135deg);
+    animation-delay: -500ms;
   }
 
-  .bars--block {
-    gap: 4px;
-    height: 26px;
-    color: var(--accent);
+  .spinner > span:nth-child(5) {
+    transform: rotate(180deg);
+    animation-delay: -400ms;
   }
 
-  .bars--block > span {
-    width: 4px;
+  .spinner > span:nth-child(6) {
+    transform: rotate(225deg);
+    animation-delay: -300ms;
   }
 
-  @keyframes bars {
-    0%,
-    100% {
-      transform: scaleY(0.3);
-      opacity: 0.55;
-    }
-    45% {
-      transform: scaleY(1);
+  .spinner > span:nth-child(7) {
+    transform: rotate(270deg);
+    animation-delay: -200ms;
+  }
+
+  .spinner > span:nth-child(8) {
+    transform: rotate(315deg);
+    animation-delay: -100ms;
+  }
+
+  .spinner--block {
+    font-size: 30px;
+    color: var(--text);
+  }
+
+  @keyframes spinner-fade {
+    from {
       opacity: 1;
     }
+    to {
+      opacity: 0.18;
+    }
   }
 
-  /* In a button the strips sit before the label, in the label's own colour. */
-  .btn > .bars {
+  /* In a button the spinner sits before the label, in the label's own colour. */
+  .btn > .spinner {
     margin-right: 8px;
-  }
-
-  .skeleton-page__status {
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
   }
 
   .skeleton-page__header {
@@ -3822,27 +3839,44 @@
       animation: none;
     }
 
-    /* Still, at stepped heights: it reads as a level meter, not as something broken. */
-    .bars > span {
+    /* Still, as a ring of graded lines: it reads as a paused spinner, not as something broken. */
+    .spinner > span {
       animation: none;
-      opacity: 1;
     }
 
-    .bars > span:nth-child(1),
-    .bars > span:nth-child(5) {
-      transform: scaleY(0.45);
+    .spinner > span:nth-child(1) {
+      opacity: 1.0;
     }
 
-    .bars > span:nth-child(2),
-    .bars > span:nth-child(4) {
-      transform: scaleY(0.75);
+    .spinner > span:nth-child(2) {
+      opacity: 0.88;
     }
 
-    .bars > span:nth-child(3) {
-      transform: scaleY(1);
+    .spinner > span:nth-child(3) {
+      opacity: 0.77;
     }
 
-    .route-loading {
+    .spinner > span:nth-child(4) {
+      opacity: 0.65;
+    }
+
+    .spinner > span:nth-child(5) {
+      opacity: 0.53;
+    }
+
+    .spinner > span:nth-child(6) {
+      opacity: 0.41;
+    }
+
+    .spinner > span:nth-child(7) {
+      opacity: 0.3;
+    }
+
+    .spinner > span:nth-child(8) {
+      opacity: 0.18;
+    }
+
+    .page-loading--late {
       animation: none;
       opacity: 1;
     }
