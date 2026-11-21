@@ -1,11 +1,12 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/link";
 import { usePathname } from "next/navigation";
 
 import { BrandMark } from "@/components/brand/brand-mark";
 import { MobileNavToggle } from "@/components/shell/mobile-nav-toggle";
 import { ACCOUNT_LINKS, ADMIN_LINKS, type NavLink } from "@/components/shell/nav-links";
+import { usePendingPath } from "@/components/shell/pending-route";
 import { SidebarClock } from "@/components/shell/sidebar-clock";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 
@@ -42,7 +43,9 @@ function crumbsFor(pathname: string): Crumb[] {
  * everywhere. On phones it carries the brand and the menu button instead.
  */
 export function ContextBar() {
-  const pathname = usePathname();
+  const committed = usePathname();
+  // Names the section a pressed link is opening, from the press, as the rail does.
+  const pathname = usePendingPath() ?? committed;
   const crumbs = crumbsFor(pathname);
   return (
     <div className="cbar">

@@ -1,5 +1,5 @@
 import { Download } from "lucide-react";
-import Link from "next/link";
+import Link from "@/components/ui/link";
 
 import { AdminGate } from "@/components/admin/admin-gate";
 import {
@@ -146,7 +146,8 @@ export function AdminUsers({ access, accessAction, now }: AdminUsersProps) {
         }
         actions={
           authorized ? (
-            <ButtonLink href={exportHref(filters)}>
+            // A file the server streams back, not a page: the browser fetches it itself.
+            <ButtonLink href={exportHref(filters)} download data-no-progress>
               <Download size={14} aria-hidden="true" />
               Export CSV
             </ButtonLink>

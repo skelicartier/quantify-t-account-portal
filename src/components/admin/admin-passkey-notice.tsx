@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/ui/link";
 
 import { PasskeyConfirm } from "@/components/passkeys/passkey-confirm";
 import { Callout } from "@/components/ui/callout";

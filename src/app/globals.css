@@ -962,16 +962,14 @@
     pointer-events: none;
   }
 
-  /* On a page change it waits a moment, so a page that arrives at once never flashes it. */
-  .page-loading--late {
-    opacity: 0;
-    animation: page-loading-in 160ms var(--ease) 140ms forwards;
-  }
-
-  @keyframes page-loading-in {
-    to {
-      opacity: 1;
-    }
+  /* A pressed link clears the content pane at once, under the top bar and beside the rail,
+     so the section just left is not what the person keeps looking at while the next one
+     loads. The rail and the top bar stay as they are, and stay usable. */
+  .page-veil {
+    position: fixed;
+    inset: 0 0 0 var(--rail-width);
+    z-index: 20;
+    background: var(--bg);
   }
 
   .nav-toggle {
@@ -1383,6 +1381,10 @@
     /* No rail beside the page at this width, so the middle is the middle of the screen. */
     .page-loading {
       left: 50%;
+    }
+
+    .page-veil {
+      left: 0;
     }
 
     .cbar {
@@ -2912,9 +2914,9 @@
     min-height: 92px;
   }
 
+  /* The placeholder of a page still loading: an empty pane tall enough to hold the spinner. */
   .skeleton-page {
-    display: grid;
-    gap: 28px;
+    min-height: 60vh;
   }
 
   /* The spinner: eight short lines set around a centre. Each fades from full to faint over
@@ -3876,10 +3878,6 @@
       opacity: 0.18;
     }
 
-    .page-loading--late {
-      animation: none;
-      opacity: 1;
-    }
   }
 }
 

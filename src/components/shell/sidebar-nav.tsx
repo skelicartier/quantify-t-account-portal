@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/link";
 import { usePathname } from "next/navigation";
 
 import type { NavLink } from "@/components/shell/nav-links";
+import { usePendingPath } from "@/components/shell/pending-route";
 
 type SidebarNavProps = {
   /** The landmark's name, for screen readers ("Account sections"). */
@@ -16,7 +17,10 @@ type SidebarNavProps = {
 
 /** One group of the rail: a mono heading, then icon-and-word links; the current one tinted. */
 export function SidebarNav({ label, heading, links, collapsed = false }: SidebarNavProps) {
-  const pathname = usePathname();
+  const committed = usePathname();
+  // The section a pressed link is opening, tinted from the press rather than from the
+  // moment its page starts to arrive.
+  const pathname = usePendingPath() ?? committed;
   return (
     <nav className="rail__group" aria-label={label}>
       <p className="rail__group-label">{heading}</p>

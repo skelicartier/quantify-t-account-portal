@@ -36,14 +36,13 @@ export function Spinner({ size = "inline", label, className }: SpinnerProps) {
 }
 
 /**
- * The page-sized spinner, held in the middle of the content pane. A page change and the
+ * The page-sized spinner, held in the middle of the content pane. A pressed link and the
  * placeholder of a page still loading both use this one, in the same place, so the mark
- * does not jump when one hands over to the other. `late` waits a moment before showing,
- * so a page that arrives at once never flashes it.
+ * does not jump when one hands over to the other.
  */
-export function PageSpinner({ late = false }: { late?: boolean }) {
+export function PageSpinner() {
   return (
-    <div className={late ? "page-loading page-loading--late" : "page-loading"} aria-hidden="true">
+    <div className="page-loading" aria-hidden="true">
       <Spinner size="block" />
     </div>
   );

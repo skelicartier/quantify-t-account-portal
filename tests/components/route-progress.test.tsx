@@ -38,9 +38,10 @@ describe("RouteProgress", () => {
         .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
     expect(screen.getByRole("progressbar", { name: "Loading page" })).toBeInTheDocument();
-    // And the spinner in the middle of the page, so a page that takes a moment visibly is
-    // doing something.
-    expect(document.querySelector(".page-loading--late .spinner--block")).not.toBeNull();
+    // At once, with no wait: the page just left is cleared and the spinner is in the middle,
+    // so a press is never answered with the old section sitting there.
+    expect(document.querySelector(".page-veil")).not.toBeNull();
+    expect(document.querySelector(".page-loading .spinner--block")).not.toBeNull();
 
     navigation.pathname = "/directory-archive";
     navigation.search = "limit=25";
@@ -53,5 +54,6 @@ describe("RouteProgress", () => {
     );
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(document.querySelector(".page-loading")).toBeNull();
+    expect(document.querySelector(".page-veil")).toBeNull();
   });
 });

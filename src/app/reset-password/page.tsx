@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/ui/link";
 
 import { resetPassword } from "@/app/reset-password/actions";
 import { AuthShell } from "@/components/auth/auth-shell";

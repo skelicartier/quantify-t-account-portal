@@ -1,7 +1,7 @@
 "use client";
 
 import { LogOut, Moon, ShieldCheck, Sun, UserRound } from "lucide-react";
-import Link from "next/link";
+import Link from "@/components/ui/link";
 
 import type { ShellIdentity } from "@/components/shell/shell-types";
 import { useConsoleTheme } from "@/components/shell/theme-scope";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/ui/link";
 
 import { manageSupportConversation, replyToSupportConversation } from "@/app/admin/support/actions";
 import { AdminGate } from "@/components/admin/admin-gate";

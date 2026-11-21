@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/ui/link";
 
 import { PageHeader } from "@/components/shell/page-header";
 import { Callout } from "@/components/ui/callout";

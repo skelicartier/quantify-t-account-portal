@@ -1,5 +1,5 @@
 import { ExternalLink } from "lucide-react";
-import Link from "next/link";
+import Link from "@/components/ui/link";
 import type { ReactNode } from "react";
 
 import { PageHeader } from "@/components/shell/page-header";

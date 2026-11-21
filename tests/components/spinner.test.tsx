@@ -45,14 +45,26 @@ describe("Spinner", () => {
     expect(rule).toMatch(/left: calc\(50% \+ var\(--rail-width\) \/ 2\);/u);
   });
 
-  it("sits in the middle of a page that has not arrived yet, in the place a page change uses", () => {
+  it("clears the content pane beside the rail and under the top bar, and nothing else", () => {
+    const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
+    const rule = css.slice(css.indexOf("  .page-veil {"), css.indexOf("  .nav-toggle {"));
+
+    expect(rule).toMatch(/inset: 0 0 0 var\(--rail-width\);/u);
+    expect(rule).toMatch(/background: var\(--bg\);/u);
+    // Under the top bar (30) and the rail (40), so both stay visible and usable.
+    expect(rule).toMatch(/z-index: 20;/u);
+  });
+
+  it("is all a page that has not arrived yet shows: a cleared pane and the one spinner", () => {
     const { container } = render(<PageSkeleton variant="admin" />);
     expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
     expect(container.querySelectorAll(".page-loading .spinner--block")).toHaveLength(1);
-    expect(container.querySelector(".page-loading--late")).toBeNull();
+    // No grey blocks standing in for the page: a press shows the same spinner in the same
+    // place, and a second layout flashing in between would read as two loads.
+    expect(container.querySelector(".skeleton")).toBeNull();
 
-    const late = render(<PageSpinner late />);
-    expect(late.container.querySelector(".page-loading.page-loading--late .spinner--block")).not.toBeNull();
+    const pressed = render(<PageSpinner />);
+    expect(pressed.container.querySelector(".page-loading .spinner--block")).not.toBeNull();
   });
 });
 
