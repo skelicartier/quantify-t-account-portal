@@ -4,6 +4,7 @@ import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 
 import { AccountNavigation } from "@/components/account/account-navigation";
+import { AdminNavigation } from "@/components/admin/admin-navigation";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { RailIdentity } from "@/components/shell/rail-identity";
 import type { ShellIdentity } from "@/components/shell/shell-types";
@@ -48,9 +49,9 @@ type RailProps = {
 };
 
 /**
- * The left rail: the wordmark, the account's sections, then who is signed in as a menu.
- * The console is the customer's own account and nothing else: the product's administration
- * is run from HQ. Collapses to icons and remembers that per device.
+ * The left rail: the wordmark, the account's sections and — for staff — administration,
+ * then who is signed in as a menu. One rail for the whole console: there is no separate
+ * "admin console" to switch into. Collapses to icons and remembers that per device.
  */
 export function Rail({ identity, signOutAction }: RailProps) {
   const collapsed = useRailCollapsed();
@@ -81,6 +82,7 @@ export function Rail({ identity, signOutAction }: RailProps) {
 
       <div className="rail__groups">
         <AccountNavigation collapsed={collapsed} />
+        {identity.canEnterAdmin && <AdminNavigation collapsed={collapsed} />}
       </div>
 
       <RailIdentity identity={identity} signOutAction={signOutAction} collapsed={collapsed} />

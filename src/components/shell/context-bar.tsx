@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { BrandMark } from "@/components/brand/brand-mark";
 import { MobileNavToggle } from "@/components/shell/mobile-nav-toggle";
-import { ACCOUNT_LINKS, type NavLink } from "@/components/shell/nav-links";
+import { ACCOUNT_LINKS, ADMIN_LINKS, type NavLink } from "@/components/shell/nav-links";
 import { SidebarClock } from "@/components/shell/sidebar-clock";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 
@@ -13,6 +13,7 @@ type Crumb = { href: string; label: string };
 
 const GROUPS: ReadonlyArray<{ label: string; home: string; links: readonly NavLink[] }> = [
   { label: "Account", home: "/account", links: ACCOUNT_LINKS },
+  { label: "Administration", home: "/admin", links: ADMIN_LINKS },
 ];
 
 /** The section and page a path sits under, from the navigation table. */

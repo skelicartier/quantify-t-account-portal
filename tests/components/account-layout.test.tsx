@@ -6,7 +6,7 @@ const accountMocks = vi.hoisted(() => ({
   logout: vi.fn(async () => undefined),
   setConsoleTheme: vi.fn(async () => undefined),
   requireCurrentAccount: vi.fn(),
-  getAccountRole: vi.fn(),
+  getAdminEntry: vi.fn(),
   readConsoleTheme: vi.fn(async () => "dark" as const),
   getCurrentAccessHold: vi.fn(),
 }));
@@ -25,7 +25,7 @@ vi.mock("@/lib/dal/account", () => ({
 }));
 
 vi.mock("@/lib/admin/access", () => ({
-  getAccountRole: accountMocks.getAccountRole,
+  getAdminEntry: accountMocks.getAdminEntry,
 }));
 
 vi.mock("@/lib/dal/access", () => ({
@@ -56,7 +56,7 @@ describe("AccountLayout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     accountMocks.requireCurrentAccount.mockResolvedValue(account);
-    accountMocks.getAccountRole.mockResolvedValue(null);
+    accountMocks.getAdminEntry.mockResolvedValue(null);
     accountMocks.getCurrentAccessHold.mockResolvedValue(null);
   });
 
@@ -80,16 +80,22 @@ describe("AccountLayout", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("names a staff member's role but offers no administration: that is run from HQ", async () => {
-    accountMocks.getAccountRole.mockResolvedValue("owner");
+  it("offers administration only when the backend admits the caller", async () => {
+    accountMocks.getAdminEntry.mockResolvedValue({
+      canEnterAdmin: true,
+      me: {
+        role: { effective: "owner" },
+        user: { email: "user@example.com" },
+        environment: "production",
+      },
+    });
 
     render(await AccountLayout({ children: <p>Protected</p> }));
 
+    const admin = screen.getByRole("navigation", { name: "Administration sections" });
+    expect(admin).toBeVisible();
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/admin");
     expect(screen.getByText("Owner · Desk plan")).toBeVisible();
-    expect(
-      screen.queryByRole("navigation", { name: "Administration sections" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Dashboard" })).not.toBeInTheDocument();
   });
 
   it("does not construct protected content when the account guard redirects", async () => {

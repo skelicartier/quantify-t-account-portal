@@ -35,6 +35,7 @@ describe("credential-surface security headers", () => {
         "/forgot-password",
         "/reset-password",
         "/account/:path*",
+        "/admin/:path*",
         "/auth/:path*",
         "/connect/:path*",
       ]),

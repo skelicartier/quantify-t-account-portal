@@ -14,12 +14,13 @@ export function Skeleton({ variant = "line", width, height }: SkeletonProps) {
 }
 
 type PageSkeletonProps = {
-  variant?: "account" | "detail";
+  variant?: "account" | "admin" | "detail";
 };
 
 /** Instant loading UI for a console page; wrapped as one live region so it is announced once. */
 export function PageSkeleton({ variant = "account" }: PageSkeletonProps) {
   const stats = variant === "account" ? 3 : 4;
+  const rows = variant === "admin" ? 6 : 5;
   return (
     <div className="skeleton-page" role="status" aria-busy="true">
       <span className="sr-only">Loading</span>
@@ -47,7 +48,7 @@ export function PageSkeleton({ variant = "account" }: PageSkeletonProps) {
         </div>
       )}
       <div className="skeleton-page__rows" aria-hidden="true">
-        {Array.from({ length: 5 }, (_, index) => (
+        {Array.from({ length: rows }, (_, index) => (
           <Skeleton key={index} variant="block" />
         ))}
       </div>

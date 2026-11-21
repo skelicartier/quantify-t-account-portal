@@ -215,6 +215,9 @@ const TASK7_LIFECYCLE_SOURCES = {
       await heartbeatAccountApiSession(accessToken);
       return { accessToken, me };
     }
+    export async function getAdminRoleReportAccess() {
+      return await fetchAccountApiRoleReport(accessToken);
+    }
   `,
   actionOrigin: `
     export class SameOriginActionError extends Error {}
@@ -274,6 +277,7 @@ const completeSnapshot: RepositorySnapshot = {
       "/forgot-password",
       "/reset-password",
       "/account/:path*",
+      "/admin/:path*",
       "/auth/:path*",
       "/connect/:path*",
     ],
@@ -791,7 +795,14 @@ describe("preflight audit", () => {
   );
 
   it("blocks evaluated headers when one credential route lacks no-store", () => {
-    const sources = ["/login", "/signup", "/forgot-password", "/reset-password", "/account/:path*"];
+    const sources = [
+      "/login",
+      "/signup",
+      "/forgot-password",
+      "/reset-password",
+      "/account/:path*",
+      "/admin/:path*",
+    ];
     const evidence = analyzePortalSecurityHeaders([
       {
         source: "/:path*",

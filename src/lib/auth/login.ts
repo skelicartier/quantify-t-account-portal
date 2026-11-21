@@ -10,7 +10,7 @@ import {
   isDesktopConnectPath,
   parseDesktopConnectParams,
 } from "@/lib/auth/desktop-connect";
-import { isProtectedAccountPath } from "@/lib/auth/route-policy";
+import { isProtectedAdminPath, isProtectedAccountPath } from "@/lib/auth/route-policy";
 
 const loginSchema = z.object({
   email: z
@@ -90,7 +90,12 @@ export function sanitizeNextPath(value: unknown): string {
       const handoff = parseDesktopConnectParams(destination.searchParams);
       return handoff ? desktopConnectPath(handoff) : "/account";
     }
-    if (!isProtectedAccountPath(destination.pathname)) return "/account";
+    if (
+      !isProtectedAccountPath(destination.pathname) &&
+      !isProtectedAdminPath(destination.pathname)
+    ) {
+      return "/account";
+    }
     return `${destination.pathname}${destination.search}`;
   } catch {
     return "/account";
