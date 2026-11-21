@@ -4,8 +4,11 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import {
+  ACCESS_DECISIONS,
+  ACCESS_REASON_MAX,
   AccountApiRequestError,
   ASSIGNABLE_ROLES,
+  decideAccountApiAdminUserAccess,
   fetchAccountApiMe,
   revokeAccountApiAdminUserSession,
   ROLE_WRITE_CAPABILITY,
@@ -16,6 +19,8 @@ import {
   SUBSCRIPTION_WRITE_CAPABILITY,
   USER_ACTIVATION_CAPABILITY,
   USER_SESSION_REVOKE_CAPABILITY,
+  type AccessDecision,
+  type AccountApiAdminUserAccessDecision,
   type AccountApiEntitlementUpdateBody,
   type AssignableRole,
 } from "@/lib/admin/account-api";
@@ -42,6 +47,7 @@ import {
   type AdminEntitlementOverrideState,
   type AdminSubscriptionPlanState,
 } from "@/lib/admin/subscription";
+import { DEFAULT_APPROVAL_REASON, type AdminUserAccessState } from "@/lib/admin/user-access";
 import type { AdminUserActivationState } from "@/lib/admin/user-activation";
 import type { AdminUserRoleState } from "@/lib/admin/user-role";
 import type { AdminUserSessionRevocationState } from "@/lib/admin/user-session-revocation";
@@ -220,6 +226,150 @@ export async function updateAdminUserActivation(
       if (error.status === 403 || error.status === 409) return FORBIDDEN_ERROR;
     }
     return SERVICE_ERROR;
+  }
+}
+
+// ------------------------------------------------------------- applications
+
+const ACCESS_AUTH_ERROR: AdminUserAccessState = {
+  status: "error",
+  message: "Your administrative session could not be verified. Sign in again and retry.",
+};
+
+const ACCESS_CHALLENGE_ERROR: AdminUserAccessState = {
+  status: "error",
+  message: "Finish signing in with your authenticator code before deciding applications.",
+};
+
+const ACCESS_FORBIDDEN_ERROR: AdminUserAccessState = {
+  status: "error",
+  message: "This administrative session cannot decide that account's application.",
+};
+
+const ACCESS_SERVICE_ERROR: AdminUserAccessState = {
+  status: "error",
+  message: "Application decisions are temporarily unavailable. Nothing was changed; try again.",
+};
+
+function parseDecision(value: FormDataEntryValue | null): AccessDecision | null {
+  const candidate = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return (ACCESS_DECISIONS as readonly string[]).includes(candidate)
+    ? (candidate as AccessDecision)
+    : null;
+}
+
+/** What happened, in the words the person who pressed the button needs. */
+function accessDecisionMessage(
+  decision: AccessDecision,
+  result: AccountApiAdminUserAccessDecision,
+): string {
+  if (result.unchanged) {
+    return decision === "approved"
+      ? "This application was already approved. Nothing changed."
+      : "This application was already declined. Nothing changed.";
+  }
+  const parts: string[] = [
+    decision === "approved" ? "Application approved." : "Application declined.",
+  ];
+  if (decision === "declined") {
+    const ended = result.sessions_revoked ?? 0;
+    parts.push(
+      ended === 0
+        ? "The account had no open sessions."
+        : `${ended} ${ended === 1 ? "session was" : "sessions were"} ended.`,
+    );
+    if (result.trading) {
+      parts.push(
+        result.trading.complete
+          ? "Its trading was halted and every working order cancelled."
+          : "Its trading was halted; some orders are still being cancelled, so check its broker connections.",
+      );
+    }
+  }
+  parts.push(
+    result.decision_emailed
+      ? "The applicant has been emailed."
+      : "The email to the applicant could not be sent, so tell them directly.",
+  );
+  return parts.join(" ");
+}
+
+/**
+ * Approve or decline one account's application.
+ *
+ * The same capability as activation, because it is the same kind of decision about who
+ * may use the product. An approval without a typed reason records a standing one; a
+ * decline must say why, because the reason is what staff read later and what the
+ * applicant is owed.
+ */
+export async function decideAdminUserAccess(
+  _previousState: AdminUserAccessState,
+  formData: FormData,
+): Promise<AdminUserAccessState> {
+  const userId = parseUuid(formData.get("userId"));
+  const decision = parseDecision(formData.get("decision"));
+  if (!userId || !decision) return ACCESS_SERVICE_ERROR;
+
+  const typed = String(formData.get("reason") ?? "")
+    .split(/\s+/u)
+    .filter(Boolean)
+    .join(" ");
+  if (typed.length > ACCESS_REASON_MAX) {
+    return {
+      status: "error",
+      message: `Keep the reason to ${ACCESS_REASON_MAX} characters or fewer.`,
+    };
+  }
+  if (decision === "declined" && typed.length === 0) {
+    return { status: "error", message: "Give the reason for declining first." };
+  }
+  const reason = typed || DEFAULT_APPROVAL_REASON;
+
+  try {
+    await requireSameOriginServerAction();
+    const azure = await createServerAzureClient();
+    const accessToken = azure.getAccessToken();
+    if (!accessToken) return ACCESS_AUTH_ERROR;
+
+    const me = await fetchAccountApiMe(accessToken);
+    if (
+      !hasAdminPortalAccess(me) ||
+      !me.capabilities.includes(USER_ACTIVATION_CAPABILITY) ||
+      me.user.user_id === userId
+    ) {
+      return ACCESS_FORBIDDEN_ERROR;
+    }
+
+    const assurance = await getCurrentAssurance();
+    if (hasPrivilegedRole(me) && !hasSatisfiedPrivilegedAssurance(assurance)) {
+      return ACCESS_CHALLENGE_ERROR;
+    }
+
+    const result = await decideAccountApiAdminUserAccess(
+      accessToken,
+      userId,
+      { status: decision, reason },
+      { idempotencyKey: `portal-${randomUUID()}` },
+    );
+
+    revalidatePath("/admin");
+    revalidatePath("/admin/users");
+    revalidatePath(`/admin/users/${userId}`);
+    return { status: "success", message: accessDecisionMessage(decision, result) };
+  } catch (error) {
+    if (error instanceof AccountApiRequestError) {
+      if (error.status === 404) return { status: "error", message: "That account was not found." };
+      if (error.status === 403) return ACCESS_FORBIDDEN_ERROR;
+      if (error.status === 400) {
+        return {
+          status: "error",
+          message: "The account service refused that decision. Check the reason and try again.",
+        };
+      }
+    }
+    return ACCESS_SERVICE_ERROR;
   }
 }
 

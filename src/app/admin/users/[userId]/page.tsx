@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import {
+  decideAdminUserAccess,
   revokeAdminUserSession,
   updateAdminUserActivation,
   updateAdminUserEntitlement,
@@ -28,6 +29,7 @@ export default async function AdminUserDetailPage({ params }: AdminUserDetailPag
       activationAction={updateAdminUserActivation}
       sessionRevokeAction={revokeAdminUserSession}
       roleAction={updateAdminUserRole}
+      accessAction={decideAdminUserAccess}
       planAction={updateAdminUserSubscription}
       overrideAction={updateAdminUserEntitlement}
       now={requestNow()}

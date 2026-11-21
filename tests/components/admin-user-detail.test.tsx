@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 
 import { AdminUserDetail } from "@/components/admin/admin-user-detail";
 import type { AccountApiMe, AccountApiAdminUserDetail } from "@/lib/admin/account-api";
@@ -103,6 +103,91 @@ describe("AdminUserDetail", () => {
     expect(
       screen.queryByText(/provider session|revoked by|pin|passcode|metadata/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows a pending application and offers both decisions to staff who can decide", () => {
+    render(
+      <AdminUserDetail
+        accessAction={vi.fn(async () => ({ status: "idle" as const, message: "" }))}
+        access={
+          {
+            status: "authorized",
+            me: { ...me, capabilities: [...me.capabilities, "users:set-active"] },
+            assurance,
+            detail: {
+              ...detail,
+              user: { ...detail.user, user_id: TARGET_ID, access_status: "pending" },
+              access: { status: "pending", decided_at: null, decided_by: null, reason: "" },
+            },
+            usage: null,
+          } satisfies AdminUserDetailAccess
+        }
+      />,
+    );
+
+    const card = screen.getByRole("article", { name: "Application" });
+    expect(within(card).getByText("Awaiting review")).toBeVisible();
+    expect(within(card).getByText("Not yet")).toBeVisible();
+    expect(within(card).getByRole("textbox", { name: "Reason" })).toBeEnabled();
+    expect(within(card).getByRole("button", { name: "Approve" })).toBeEnabled();
+    expect(within(card).getByRole("button", { name: "Decline" })).toBeEnabled();
+  });
+
+  it("shows who declined an application and why, and offers only the decision that would change it", () => {
+    render(
+      <AdminUserDetail
+        accessAction={vi.fn(async () => ({ status: "idle" as const, message: "" }))}
+        access={
+          {
+            status: "authorized",
+            me: { ...me, capabilities: [...me.capabilities, "users:set-active"] },
+            assurance,
+            detail: {
+              ...detail,
+              user: { ...detail.user, user_id: TARGET_ID, access_status: "declined" },
+              access: {
+                status: "declined",
+                decided_at: "2026-11-20T08:00:00Z",
+                decided_by: USER_ID,
+                reason: "Outside the markets we serve",
+              },
+            },
+            usage: null,
+          } satisfies AdminUserDetailAccess
+        }
+      />,
+    );
+
+    const card = screen.getByRole("article", { name: "Application" });
+    expect(within(card).getByText("Declined")).toBeVisible();
+    expect(within(card).getByText("Outside the markets we serve")).toBeVisible();
+    expect(within(card).getByRole("link")).toHaveAttribute("href", `/admin/users/${USER_ID}`);
+    expect(within(card).getByRole("button", { name: "Approve after all" })).toBeEnabled();
+    expect(
+      within(card).queryByRole("button", { name: /Decline|Withdraw/u }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the application without controls on your own account or without the permission", () => {
+    render(
+      <AdminUserDetail
+        accessAction={vi.fn(async () => ({ status: "idle" as const, message: "" }))}
+        access={
+          {
+            status: "authorized",
+            me: { ...me, capabilities: [...me.capabilities, "users:set-active"] },
+            assurance,
+            detail: { ...detail, user: { ...detail.user, access_status: "approved" } },
+            usage: null,
+          } satisfies AdminUserDetailAccess
+        }
+      />,
+    );
+
+    const card = screen.getByRole("article", { name: "Application" });
+    expect(within(card).getByText("Approved")).toBeVisible();
+    expect(within(card).getByText("You can't decide your own application.")).toBeVisible();
+    expect(within(card).queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("renders a not-found state without user records", () => {

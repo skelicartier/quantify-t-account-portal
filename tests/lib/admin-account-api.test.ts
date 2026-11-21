@@ -33,6 +33,8 @@ import {
   fetchAccountApiAdminReleaseStatus,
   fetchAccountApiAdminUser,
   fetchAccountApiAdminUsers,
+  decideAccountApiAdminUserAccess,
+  accessStatusOf,
   fetchAccountApiNotificationState,
   fetchAccountApiNotifications,
   fetchAccountApiMe,
@@ -672,6 +674,192 @@ describe("Account API client", () => {
       Accept: "application/json",
       Authorization: "Bearer bearer-token",
     });
+  });
+
+  it("reads a configuration that names the export worker apart from the report worker", async () => {
+    const fetcher = vi.fn<TestFetcher>(async () =>
+      jsonResponse({
+        ...configurationPayload,
+        features: { ...configurationPayload.features, export_worker_enabled: true },
+      }),
+    );
+
+    const result = await fetchAccountApiAdminConfiguration("bearer-token", {
+      environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+      fetcher,
+    });
+
+    expect(result.features.export_worker_enabled).toBe(true);
+    expect(result.features.artifact_worker_enabled).toBe(false);
+  });
+
+  it("asks the directory for one application queue and reads each row's status", async () => {
+    const fetcher = vi.fn<TestFetcher>(async () =>
+      jsonResponse({
+        ...adminUsersPayload,
+        users: adminUsersPayload.users.map((row) => ({
+          ...row,
+          user: { ...row.user, access_status: "pending" },
+        })),
+      }),
+    );
+
+    const result = await fetchAccountApiAdminUsers("bearer-token", {
+      environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+      fetcher,
+      limit: 1,
+      offset: 0,
+      access: "pending",
+    });
+
+    const [url] = firstFetchCall(fetcher);
+    expect(url.toString()).toBe(`${ACCOUNT_API_URL}/admin/users?limit=1&offset=0&access=pending`);
+    expect(accessStatusOf(result.users[0]!.user)).toBe("pending");
+  });
+
+  it("reads an account with no recorded or an unknown application status as pending", () => {
+    expect(accessStatusOf({})).toBe("pending");
+    expect(accessStatusOf({ access_status: "" })).toBe("pending");
+    expect(accessStatusOf({ access_status: "waitlisted" })).toBe("pending");
+    expect(accessStatusOf({ access_status: " Approved " })).toBe("approved");
+    expect(accessStatusOf({ access_status: "declined" })).toBe("declined");
+  });
+
+  it("reads the decision on an application from the account detail", async () => {
+    const fetcher = vi.fn<TestFetcher>(async () =>
+      jsonResponse({
+        ...adminUserDetailPayload,
+        access: {
+          status: "declined",
+          decided_at: "2026-11-21T08:00:00Z",
+          decided_by: USER_ID,
+          reason: "Outside the markets we serve",
+        },
+      }),
+    );
+
+    const result = await fetchAccountApiAdminUser("bearer-token", USER_ID, {
+      environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+      fetcher,
+    });
+
+    expect(result.access).toEqual({
+      status: "declined",
+      decided_at: "2026-11-21T08:00:00Z",
+      decided_by: USER_ID,
+      reason: "Outside the markets we serve",
+    });
+  });
+
+  it("posts a decision on an application with its reason and an idempotency key", async () => {
+    const fetcher = vi.fn<TestFetcher>(async () =>
+      jsonResponse({
+        ok: true,
+        correlation_id: "qt-access",
+        user_id: USER_ID,
+        access: {
+          status: "declined",
+          decided_at: "2026-11-21T08:00:00Z",
+          decided_by: USER_ID,
+          reason: "Outside the markets we serve",
+        },
+        unchanged: false,
+        sessions_revoked: 2,
+        trading: null,
+        decision_emailed: true,
+        event: { id: "41", event_type: "account.access_declined" },
+      }),
+    );
+
+    const result = await decideAccountApiAdminUserAccess(
+      "bearer-token",
+      USER_ID,
+      { status: "declined", reason: "  Outside the markets\n we serve " },
+      {
+        environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+        fetcher,
+        idempotencyKey: "portal-abcdef123456",
+      },
+    );
+
+    expect(result.access.status).toBe("declined");
+    expect(result.sessions_revoked).toBe(2);
+    const [url, init] = firstFetchCall(fetcher);
+    expect(url.toString()).toBe(`${ACCOUNT_API_URL}/admin/users/${USER_ID}/access`);
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(
+      JSON.stringify({ status: "declined", reason: "Outside the markets we serve" }),
+    );
+    expect(init.headers).toMatchObject({
+      Authorization: "Bearer bearer-token",
+      "Idempotency-Key": "portal-abcdef123456",
+    });
+  });
+
+  it("reads the short answer of a decision that changed nothing, and a replayed one", async () => {
+    const standing = {
+      ok: true,
+      correlation_id: "qt-access",
+      user_id: USER_ID,
+      access: { status: "approved", decided_at: null, decided_by: null, reason: "" },
+      unchanged: true,
+      event: null,
+    };
+    const fetcher = vi
+      .fn<TestFetcher>()
+      .mockResolvedValueOnce(jsonResponse(standing))
+      .mockResolvedValueOnce(jsonResponse({ ...standing, replayed: true }));
+    const options = {
+      environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+      fetcher,
+      idempotencyKey: "portal-abcdef123456",
+    };
+
+    const first = await decideAccountApiAdminUserAccess(
+      "bearer-token",
+      USER_ID,
+      { status: "approved", reason: "ok" },
+      options,
+    );
+    const second = await decideAccountApiAdminUserAccess(
+      "bearer-token",
+      USER_ID,
+      { status: "approved", reason: "ok" },
+      options,
+    );
+
+    expect(first.unchanged).toBe(true);
+    expect(second.replayed).toBe(true);
+  });
+
+  it("sends no decision without a reason, with one too long, or for a malformed account", async () => {
+    const fetcher = vi.fn<TestFetcher>(async () => jsonResponse({}));
+    const options = {
+      environment: { QT_ACCOUNT_API_URL: ACCOUNT_API_URL },
+      fetcher,
+      idempotencyKey: "portal-abcdef123456",
+    };
+
+    await expect(
+      decideAccountApiAdminUserAccess("t", USER_ID, { status: "approved", reason: "   " }, options),
+    ).rejects.toThrow(AccountApiUnavailableError);
+    await expect(
+      decideAccountApiAdminUserAccess(
+        "t",
+        USER_ID,
+        { status: "declined", reason: "x".repeat(401) },
+        options,
+      ),
+    ).rejects.toThrow(AccountApiUnavailableError);
+    await expect(
+      decideAccountApiAdminUserAccess(
+        "t",
+        "not-a-uuid",
+        { status: "approved", reason: "ok" },
+        options,
+      ),
+    ).rejects.toThrow(AccountApiUnavailableError);
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("fetches one admin user detail without putting secrets in the route", async () => {

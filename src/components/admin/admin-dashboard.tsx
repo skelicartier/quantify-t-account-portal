@@ -13,6 +13,7 @@ import { Stat, StatGrid } from "@/components/ui/stat";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Timestamp } from "@/components/ui/timestamp";
 import type { AdminDashboardAccess } from "@/lib/admin/access";
+import { applicationsLabel } from "@/lib/admin/user-access";
 import {
   capabilityLabel,
   mismatchLabel,
@@ -45,6 +46,7 @@ export function AdminDashboard({ access, now }: AdminDashboardProps) {
   const authorized = access.status === "authorized" ? access : null;
   const metrics = authorized?.metrics ?? null;
   const roleReport = authorized?.roleReport ?? null;
+  const pending = authorized?.pendingApplications ?? null;
   const flaggedEvents = metrics
     ? (metrics.auth_events_24h.by_outcome.failure ?? 0) +
       (metrics.auth_events_24h.by_outcome.blocked ?? 0)
@@ -76,6 +78,17 @@ export function AdminDashboard({ access, now }: AdminDashboardProps) {
               {authorized.degraded.map((item) => DEGRADED_LABELS[item]).join(" and ")}{" "}
               {authorized.degraded.length === 1 ? "is" : "are"} temporarily unavailable. Everything
               else on this page is current; refresh in a moment to try again.
+            </Callout>
+          )}
+
+          {pending !== null && pending > 0 && (
+            <Callout tone="attention" role="status" title={applicationsLabel(pending)}>
+              Nobody new can use Quantify Terminal until their application is approved.
+              <div className="page-state__actions">
+                <ButtonLink href="/admin/users?access=pending" size="small" variant="primary">
+                  Review applications
+                </ButtonLink>
+              </div>
             </Callout>
           )}
 

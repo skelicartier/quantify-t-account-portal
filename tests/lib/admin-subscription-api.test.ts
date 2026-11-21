@@ -130,6 +130,24 @@ describe("subscription Account API client", () => {
     expect(new Headers(init.headers).get("authorization")).toBe("Bearer bearer-token");
   });
 
+  it("reads the research model the service publishes beside the chat model", async () => {
+    // The service has sent `research_model` since every model moved to the cloud. A strict
+    // schema that did not know it refused the whole document, and with it the Subscription
+    // page of every account.
+    const fetcher = vi.fn<TestFetcher>(async () =>
+      jsonResponse({
+        ...entitlements,
+        chat_model: "claude-haiku",
+        research_model: "claude-sonnet",
+      }),
+    );
+
+    const result = await fetchAccountApiEntitlements("bearer-token", { environment, fetcher });
+
+    expect(result.chat_model).toBe("claude-haiku");
+    expect(result.research_model).toBe("claude-sonnet");
+  });
+
   it("refuses an entitlement document carrying a field the contract does not publish", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const fetcher = vi.fn<TestFetcher>(async () =>

@@ -58,12 +58,39 @@ const users: AccountApiAdminUsers = {
         display_name: "Owner One",
         is_active: true,
         subscription_tier: "pro",
+        access_status: "approved",
         created_at: "2026-09-01T00:00:00Z",
         last_login_at: "2026-09-04T00:00:00Z",
         updated_at: "2026-09-04T00:00:00Z",
       },
       role: me.role,
     },
+  ],
+};
+
+const APPLICANT_ID = "7e5f9c11-2a3b-4c5d-8e9f-0a1b2c3d4e66";
+
+const withApplicant: AccountApiAdminUsers = {
+  ...users,
+  pagination: { limit: 25, offset: 0, has_more: false, next_offset: null, total: 2 },
+  users: [
+    {
+      user: {
+        user_id: APPLICANT_ID,
+        email: "priya@example.test",
+        first_name: "Priya",
+        last_name: "Nair",
+        display_name: "Priya Nair",
+        is_active: true,
+        subscription_tier: "free",
+        access_status: "pending",
+        created_at: "2026-11-20T00:00:00Z",
+        last_login_at: "",
+        updated_at: "2026-11-20T00:00:00Z",
+      },
+      role: { ...me.role, effective: "user", database: "user", legacy: null },
+    },
+    ...users.users,
   ],
 };
 
@@ -124,6 +151,7 @@ describe("AdminUsers", () => {
             assurance,
             users,
             metrics: null,
+            pendingApplications: null,
             filters: {},
             limit: 25,
             offset: 0,
@@ -173,6 +201,7 @@ describe("AdminUsers", () => {
             assurance,
             users: { ...users, pagination: { ...users.pagination, total: 182 } },
             metrics,
+            pendingApplications: null,
             filters: {},
             limit: 25,
             offset: 0,
@@ -206,6 +235,7 @@ describe("AdminUsers", () => {
             assurance,
             users: { ...users, pagination: { ...users.pagination, total: 3 } },
             metrics: null,
+            pendingApplications: null,
             filters: { q: "owner", status: "active" },
             limit: 25,
             offset: 0,
@@ -229,6 +259,105 @@ describe("AdminUsers", () => {
     expect(screen.queryByRole("list", { name: "Account totals" })).not.toBeInTheDocument();
   });
 
+  it("puts applications awaiting review in front of whoever can decide them", () => {
+    const decide = vi.fn(async () => ({ status: "idle" as const, message: "" }));
+    render(
+      <AdminUsers
+        accessAction={decide}
+        access={
+          {
+            status: "authorized",
+            me: { ...me, capabilities: [...me.capabilities, "users:set-active"] },
+            assurance,
+            users: withApplicant,
+            metrics: null,
+            pendingApplications: 3,
+            filters: {},
+            limit: 25,
+            offset: 0,
+          } satisfies AdminUsersAccess
+        }
+      />,
+    );
+
+    const prompt = screen.getByText("3 applications are awaiting review").closest(".callout");
+    expect(prompt).not.toBeNull();
+    expect(
+      within(prompt as HTMLElement).getByRole("link", { name: "Review applications" }),
+    ).toHaveAttribute("href", "/admin/users?access=pending");
+
+    const table = screen.getByRole("table", { name: "Accounts" });
+    const applicant = within(table).getByText("Priya Nair").closest("tr") as HTMLElement;
+    expect(within(applicant).getByText("Awaiting review")).toBeVisible();
+    expect(within(applicant).getByRole("button", { name: "Approve Priya Nair" })).toBeEnabled();
+    expect(within(applicant).getByRole("link", { name: "Review" })).toHaveAttribute(
+      "href",
+      `/admin/users/${APPLICANT_ID}`,
+    );
+    // An approved account has nothing to approve, and nobody approves themselves.
+    const owner = within(table).getByText("Owner One").closest("tr") as HTMLElement;
+    expect(within(owner).getByText("Approved")).toBeVisible();
+    expect(within(owner).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("shows the queue without an approve button to staff who cannot decide", () => {
+    render(
+      <AdminUsers
+        accessAction={vi.fn(async () => ({ status: "idle" as const, message: "" }))}
+        access={
+          {
+            status: "authorized",
+            me,
+            assurance,
+            users: withApplicant,
+            metrics: null,
+            pendingApplications: 1,
+            filters: { access: "pending" },
+            limit: 25,
+            offset: 0,
+          } satisfies AdminUsersAccess
+        }
+      />,
+    );
+
+    const table = screen.getByRole("table", { name: "Accounts" });
+    expect(within(table).queryByRole("button", { name: /Approve/u })).not.toBeInTheDocument();
+    expect(within(table).getByRole("link", { name: "Review" })).toBeVisible();
+    // Already looking at the queue: no prompt to go and look at it.
+    expect(screen.queryByText(/awaiting review$/u)).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Application" })).toHaveValue("pending");
+    expect(screen.getByRole("link", { name: "Export CSV" })).toHaveAttribute(
+      "href",
+      "/admin/users/export?access=pending",
+    );
+  });
+
+  it("says the queue is empty when nobody is waiting", () => {
+    render(
+      <AdminUsers
+        access={
+          {
+            status: "authorized",
+            me,
+            assurance,
+            users: {
+              ...users,
+              users: [],
+              pagination: { limit: 25, offset: 0, has_more: false, next_offset: null, total: 0 },
+            },
+            metrics: null,
+            pendingApplications: 0,
+            filters: { access: "pending" },
+            limit: 25,
+            offset: 0,
+          } satisfies AdminUsersAccess
+        }
+      />,
+    );
+
+    expect(screen.getByText("No applications are awaiting review.")).toBeVisible();
+  });
+
   it("keeps the KPI strip when the directory itself fails", () => {
     render(
       <AdminUsers
@@ -239,6 +368,7 @@ describe("AdminUsers", () => {
             assurance,
             users: null,
             metrics,
+            pendingApplications: null,
             filters: {},
             limit: 25,
             offset: 0,

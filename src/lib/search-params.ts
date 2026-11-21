@@ -66,12 +66,18 @@ export function buildPageHref(
 export type UserDirectoryFilters = {
   q?: string | undefined;
   status?: "active" | "inactive" | undefined;
+  access?: "pending" | "approved" | "declined" | undefined;
 };
 
-/** The directory's search box and status filter; anything unrecognised is dropped. */
+/** The directory's search box and its two filters; anything unrecognised is dropped. */
 export function parseUserFilters(params: SearchParams): UserDirectoryFilters {
   const q = (firstSearchValue(params.q) ?? "").trim().slice(0, 120);
   const rawStatus = (firstSearchValue(params.status) ?? "").trim().toLowerCase();
   const status = rawStatus === "active" || rawStatus === "inactive" ? rawStatus : undefined;
-  return { ...(q ? { q } : {}), ...(status ? { status } : {}) };
+  const rawAccess = (firstSearchValue(params.access) ?? "").trim().toLowerCase();
+  const access =
+    rawAccess === "pending" || rawAccess === "approved" || rawAccess === "declined"
+      ? rawAccess
+      : undefined;
+  return { ...(q ? { q } : {}), ...(status ? { status } : {}), ...(access ? { access } : {}) };
 }

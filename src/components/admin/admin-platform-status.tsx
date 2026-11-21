@@ -98,10 +98,17 @@ export function AdminConfiguration({ access, now }: StatusProps<AdminConfigurati
                       description="Delivers queued account emails."
                     />
                     <FeatureRow
-                      label="Export worker"
+                      label="Report worker"
                       enabled={configuration.features.artifact_worker_enabled}
-                      description="Builds encrypted account exports and audit CSVs."
+                      description="Builds the audit and account reports queued in Reports."
                     />
+                    {configuration.features.export_worker_enabled !== undefined && (
+                      <FeatureRow
+                        label="Export worker"
+                        enabled={configuration.features.export_worker_enabled}
+                        description="Builds the encrypted copy of their data an account asks for."
+                      />
+                    )}
                     <FeatureRow
                       label="Deletion worker"
                       enabled={configuration.features.deletion_worker_enabled}

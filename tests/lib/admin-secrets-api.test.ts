@@ -66,6 +66,37 @@ describe("managed credential schema", () => {
     expect(accountApiAdminSecretsSchema.parse(inventory)).toStrictEqual(inventory);
   });
 
+  it("accepts a key as the service describes it the moment it is saved, and one it never wrote", () => {
+    // Recorded from the service: a saved key carries where it came from and an empty check
+    // time until it is first checked; a key put in the store some other way has no author
+    // and no date. Refusing either took the whole Provider keys page down with it.
+    const [first] = inventory.slots;
+    const saved = {
+      fingerprint: "cdffe1197187114b",
+      prefix: "",
+      length: 31,
+      position: 0,
+      set_by: "4eacf6af-ba2b-40db-a5ae-f96f7744835f",
+      set_at: "2026-11-21T09:59:51.992042Z",
+      origin: "console",
+      verification: { state: "unverified", checked_at: "" },
+    };
+    const outside = {
+      ...saved,
+      fingerprint: "0f1e2d3c4b5a6978",
+      position: 1,
+      set_by: "",
+      set_at: "",
+      origin: "outside",
+      verification: { state: "unverified", checked_at: null },
+    };
+    const payload = { ...inventory, slots: [{ ...first, entries: [saved, outside] }] };
+
+    const parsed = accountApiAdminSecretsSchema.parse(payload);
+
+    expect(parsed.slots[0]?.entries.map((entry) => entry.origin)).toEqual(["console", "outside"]);
+  });
+
   it.each([
     ["value", { value: "sk-or-v1-the-actual-key" }],
     ["masked_secret", { masked_secret: "••••••••3f2a" }],

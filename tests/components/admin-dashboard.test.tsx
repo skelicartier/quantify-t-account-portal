@@ -110,6 +110,7 @@ describe("AdminDashboard", () => {
             assurance,
             metrics,
             roleReport,
+            pendingApplications: null,
             degraded: [],
           } satisfies AdminDashboardAccess
         }

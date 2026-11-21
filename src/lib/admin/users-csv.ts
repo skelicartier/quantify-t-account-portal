@@ -1,4 +1,4 @@
-import type { AccountApiAdminUsers } from "@/lib/admin/account-api";
+import { accessStatusOf, type AccountApiAdminUsers } from "@/lib/admin/account-api";
 import { roleLabel } from "@/lib/admin/role-labels";
 
 export const USERS_CSV_COLUMNS = [
@@ -7,6 +7,7 @@ export const USERS_CSV_COLUMNS = [
   "first_name",
   "last_name",
   "status",
+  "application",
   "role",
   "plan",
   "created_at",
@@ -36,6 +37,7 @@ export function usersCsvRow(summary: AdminUserSummary): string {
     user.first_name,
     user.last_name,
     user.is_active ? "active" : "inactive",
+    accessStatusOf(user),
     roleLabel(role.effective),
     user.subscription_tier || "free",
     user.created_at,

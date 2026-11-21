@@ -71,4 +71,14 @@ describe("parseUserFilters", () => {
     expect(parseUserFilters({})).toEqual({});
     expect(parseUserFilters({ q: "x".repeat(200) }).q).toHaveLength(120);
   });
+
+  it("keeps a known application filter and drops an unknown one", async () => {
+    const { parseUserFilters } = await import("@/lib/search-params");
+    expect(parseUserFilters({ access: " Pending " })).toEqual({ access: "pending" });
+    expect(parseUserFilters({ access: "declined", status: "active" })).toEqual({
+      status: "active",
+      access: "declined",
+    });
+    expect(parseUserFilters({ access: "waitlisted" })).toEqual({});
+  });
 });

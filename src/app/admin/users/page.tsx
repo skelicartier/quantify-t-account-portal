@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { decideAdminUserAccess } from "@/app/admin/users/[userId]/actions";
 import { AdminUsers } from "@/components/admin/admin-users";
 import { getAdminUsersAccess } from "@/lib/admin/access";
 import { parsePagination, parseUserFilters, type SearchParams } from "@/lib/search-params";
@@ -17,5 +18,5 @@ export default async function AdminUsersPage({ searchParams }: AdminUsersPagePro
   const { limit, offset } = parsePagination(params);
   const access = await getAdminUsersAccess(limit, offset, parseUserFilters(params));
 
-  return <AdminUsers access={access} now={requestNow()} />;
+  return <AdminUsers access={access} accessAction={decideAdminUserAccess} now={requestNow()} />;
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  ACCESS_STATUSES,
   ADMIN_USER_STATUS_FILTERS,
   AccountApiRequestError,
   fetchAccountApiAdminUsers,
@@ -21,11 +22,15 @@ function filtersFrom(url: URL): AccountApiAdminUserFilters {
   const status = (ADMIN_USER_STATUS_FILTERS as readonly string[]).includes(rawStatus)
     ? (rawStatus as AccountApiAdminUserFilters["status"])
     : undefined;
-  return { ...(q ? { q } : {}), ...(status ? { status } : {}) };
+  const rawAccess = (url.searchParams.get("access") ?? "").trim().toLowerCase();
+  const access = (ACCESS_STATUSES as readonly string[]).includes(rawAccess)
+    ? (rawAccess as AccountApiAdminUserFilters["access"])
+    : undefined;
+  return { ...(q ? { q } : {}), ...(status ? { status } : {}), ...(access ? { access } : {}) };
 }
 
 /**
- * GET /admin/users/export?q=&status= — the directory as CSV, for the same people who can
+ * GET /admin/users/export?q=&status=&access= — the directory as CSV, for the same people who can
  * read it in the console. Same gates as the page (signed in, administration capability,
  * verified second factor for privileged roles); the file streams straight back and is
  * never stored.

@@ -143,6 +143,20 @@ describe("AccountSubscription", () => {
     expect(chat[2]).toHaveTextContent("43 of 300");
   });
 
+  it("shows the research model when the plan has one, and no row when it has none", () => {
+    const { rerender } = render(<AccountSubscription view={view} now={NOW} />);
+    expect(screen.queryByText("Research model")).not.toBeInTheDocument();
+
+    rerender(
+      <AccountSubscription
+        view={{ ...view, entitlements: { ...entitlements, research_model: "claude-sonnet" } }}
+        now={NOW}
+      />,
+    );
+    expect(screen.getByText("Research model")).toBeVisible();
+    expect(screen.getByText("Claude Sonnet")).toBeVisible();
+  });
+
   it("says nothing extra about an allowance that is simply the plan's", () => {
     // 300 a month IS Pro's published figure. Repeating it as "Included with Pro" beside
     // itself was the table's largest wasted column.

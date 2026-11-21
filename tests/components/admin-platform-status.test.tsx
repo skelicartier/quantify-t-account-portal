@@ -122,6 +122,30 @@ describe("admin platform status", () => {
     expect(screen.queryByText("owner@example.test")).not.toBeInTheDocument();
   });
 
+  it("names the report worker and the export worker as the two jobs they are", () => {
+    const { rerender } = render(
+      <AdminConfiguration access={{ status: "authorized", me, assurance, configuration }} />,
+    );
+    // A service that does not send the export switch gets no row claiming to know it.
+    expect(screen.getByText("Report worker")).toBeVisible();
+    expect(screen.queryByText("Export worker")).not.toBeInTheDocument();
+
+    rerender(
+      <AdminConfiguration
+        access={{
+          status: "authorized",
+          me,
+          assurance,
+          configuration: {
+            ...configuration,
+            features: { ...configuration.features, export_worker_enabled: true },
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText("Export worker")).toBeVisible();
+  });
+
   it("renders credential and release status as locked status-only tables", () => {
     render(
       <>

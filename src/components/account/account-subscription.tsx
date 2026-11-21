@@ -155,6 +155,11 @@ export function AccountSubscription({ view, now }: AccountSubscriptionProps) {
               <KeyValueRow label="Chat model">
                 {modelLabel(entitlements.chat_model) || "Not published"}
               </KeyValueRow>
+              {entitlements.research_model && (
+                <KeyValueRow label="Research model">
+                  {modelLabel(entitlements.research_model)}
+                </KeyValueRow>
+              )}
               {/* `entitlement_version` is a synchronisation counter. It answers a question
                   nobody holding a subscription asks, and it sat in the same list as the plan
                   and the chat model as though it were comparable. */}

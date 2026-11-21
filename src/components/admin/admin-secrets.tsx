@@ -166,9 +166,17 @@ function SlotKeys({ slot, now }: { slot: AccountApiAdminSecretSlot; now?: number
           <td>
             <Check entry={entry} now={now} />
           </td>
-          <td>{entry.set_by ? <ShortId value={entry.set_by} full /> : <span>—</span>}</td>
           <td>
-            <Timestamp value={entry.set_at} now={now} mode="both" />
+            {entry.set_by ? (
+              <ShortId value={entry.set_by} full />
+            ) : entry.origin === "outside" ? (
+              <span className="quiet">Outside the console</span>
+            ) : (
+              <span>—</span>
+            )}
+          </td>
+          <td>
+            <Timestamp value={entry.set_at} now={now} mode="both" fallback="Not recorded" />
           </td>
         </tr>
       ))}

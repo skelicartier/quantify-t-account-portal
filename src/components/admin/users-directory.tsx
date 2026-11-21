@@ -16,6 +16,7 @@ export function usersHref(filters: AccountApiAdminUserFilters, limit?: number): 
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
   if (filters.status) params.set("status", filters.status);
+  if (filters.access) params.set("access", filters.access);
   if (limit && limit !== ADMIN_PAGINATION_BOUNDS.defaultLimit) params.set("limit", String(limit));
   const query = params.toString();
   return query ? `/admin/users?${query}` : "/admin/users";
@@ -28,8 +29,12 @@ type UsersDirectoryProps = {
   children: ReactNode;
 };
 
+function accessFilter(value: string): AccountApiAdminUserFilters["access"] {
+  return value === "pending" || value === "approved" || value === "declined" ? value : undefined;
+}
+
 /**
- * The search box and status filter. Typing searches after a short pause and the page
+ * The search box and the two filters. Typing searches after a short pause and the page
  * stays put: the router swaps in the new results underneath a progress bar instead of
  * reloading, so focus and the typed text survive.
  */
@@ -38,14 +43,25 @@ export function UsersDirectory({ filters, limit, children }: UsersDirectoryProps
   const [isPending, startTransition] = useTransition();
   const [query, setQuery] = useState(filters.q ?? "");
   const [status, setStatus] = useState<string>(filters.status ?? "");
+  const [access, setAccess] = useState<string>(filters.access ?? "");
+  // A link elsewhere on the page ("Review applications") changes the applied filter
+  // without touching this control, so the control follows the filter when it moves.
+  const appliedAccess = filters.access ?? "";
+  const [seenAccess, setSeenAccess] = useState(appliedAccess);
+  if (seenAccess !== appliedAccess) {
+    setSeenAccess(appliedAccess);
+    setAccess(appliedAccess);
+  }
   const appliedQuery = filters.q ?? "";
 
   const search = useCallback(
-    (nextQuery: string, nextStatus: string, mode: "push" | "replace") => {
+    (nextQuery: string, nextStatus: string, nextAccess: string, mode: "push" | "replace") => {
+      const application = accessFilter(nextAccess);
       const href = usersHref(
         {
           ...(nextQuery ? { q: nextQuery } : {}),
           ...(nextStatus === "active" || nextStatus === "inactive" ? { status: nextStatus } : {}),
+          ...(application ? { access: application } : {}),
         },
         limit,
       );
@@ -60,11 +76,16 @@ export function UsersDirectory({ filters, limit, children }: UsersDirectoryProps
   useEffect(() => {
     const trimmed = query.trim();
     if (trimmed === appliedQuery) return undefined;
-    const id = window.setTimeout(() => search(trimmed, status, "replace"), SEARCH_TYPING_DELAY_MS);
+    const id = window.setTimeout(
+      () => search(trimmed, status, access, "replace"),
+      SEARCH_TYPING_DELAY_MS,
+    );
     return () => window.clearTimeout(id);
-  }, [appliedQuery, query, search, status]);
+  }, [access, appliedQuery, query, search, status]);
 
-  const filtered = Boolean(query.trim() || status || filters.q || filters.status);
+  const filtered = Boolean(
+    query.trim() || status || access || filters.q || filters.status || filters.access,
+  );
 
   return (
     <div className="directory">
@@ -74,7 +95,7 @@ export function UsersDirectory({ filters, limit, children }: UsersDirectoryProps
         aria-busy={isPending}
         onSubmit={(event) => {
           event.preventDefault();
-          search(query.trim(), status, "push");
+          search(query.trim(), status, access, "push");
         }}
       >
         <Field id="admin-users-q" label="Search">
@@ -97,12 +118,28 @@ export function UsersDirectory({ filters, limit, children }: UsersDirectoryProps
             value={status}
             onChange={(event) => {
               setStatus(event.target.value);
-              search(query.trim(), event.target.value, "push");
+              search(query.trim(), event.target.value, access, "push");
             }}
           >
             <option value="">All</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
+          </Select>
+        </Field>
+        <Field id="admin-users-access" label="Application">
+          <Select
+            id="admin-users-access"
+            name="access"
+            value={access}
+            onChange={(event) => {
+              setAccess(event.target.value);
+              search(query.trim(), status, event.target.value, "push");
+            }}
+          >
+            <option value="">All</option>
+            <option value="pending">Awaiting review</option>
+            <option value="approved">Approved</option>
+            <option value="declined">Declined</option>
           </Select>
         </Field>
         <div className="inline-actions">
@@ -117,7 +154,8 @@ export function UsersDirectory({ filters, limit, children }: UsersDirectoryProps
               onClick={() => {
                 setQuery("");
                 setStatus("");
-                search("", "", "push");
+                setAccess("");
+                search("", "", "", "push");
               }}
             >
               Clear

@@ -507,6 +507,73 @@ describe("admin access gates", () => {
     });
   });
 
+  it("counts the applications awaiting review from the service's own total", async () => {
+    const { access, fetchAccountApiAdminUsers } = await loadAccessHarness();
+    const queue = {
+      ...users,
+      pagination: { ...users.pagination, total: 7 },
+      users: users.users.map((row) => ({
+        ...row,
+        user: { ...row.user, access_status: "pending" },
+      })),
+    };
+    fetchAccountApiAdminUsers.mockResolvedValueOnce(users).mockResolvedValueOnce(queue);
+
+    await expect(access.getAdminUsersAccess(25, 0)).resolves.toMatchObject({
+      status: "authorized",
+      pendingApplications: 7,
+    });
+    expect(fetchAccountApiAdminUsers).toHaveBeenLastCalledWith("bearer-token", {
+      limit: 1,
+      offset: 0,
+      access: "pending",
+    });
+  });
+
+  it("does not mistake the whole directory for the queue when the service ignores the filter", async () => {
+    const { access, fetchAccountApiAdminUsers } = await loadAccessHarness();
+    const everyone = {
+      ...users,
+      pagination: { ...users.pagination, total: 182 },
+      users: users.users.map((row) => ({
+        ...row,
+        user: { ...row.user, access_status: "approved" },
+      })),
+    };
+    fetchAccountApiAdminUsers.mockResolvedValue(everyone);
+
+    await expect(access.getAdminUsersAccess(25, 0)).resolves.toMatchObject({
+      status: "authorized",
+      pendingApplications: null,
+    });
+    await expect(access.getAdminDashboardAccess()).resolves.toMatchObject({
+      status: "authorized",
+      pendingApplications: null,
+    });
+  });
+
+  it("reads an empty queue as nobody waiting, and a failed count as unknown", async () => {
+    const empty = await loadAccessHarness();
+    empty.fetchAccountApiAdminUsers.mockResolvedValue({
+      ...users,
+      users: [],
+      pagination: { ...users.pagination, has_more: false, next_offset: null, total: 0 },
+    });
+    await expect(empty.access.getAdminDashboardAccess()).resolves.toMatchObject({
+      status: "authorized",
+      pendingApplications: 0,
+      degraded: [],
+    });
+
+    const failing = await loadAccessHarness();
+    failing.fetchAccountApiAdminUsers.mockRejectedValue(new Error("upstream timeout"));
+    await expect(failing.access.getAdminDashboardAccess()).resolves.toMatchObject({
+      status: "authorized",
+      pendingApplications: null,
+      degraded: [],
+    });
+  });
+
   it("offers the admin section only to callers the backend admits", async () => {
     const admitted = await loadAccessHarness();
     await expect(admitted.access.getAdminEntry()).resolves.toMatchObject({

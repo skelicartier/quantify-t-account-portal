@@ -12,6 +12,7 @@ import {
 } from "@/lib/admin/release-api";
 import { getCurrentAssurance } from "@/lib/dal/assurance-guard";
 import {
+  accessStatusOf,
   AccountApiRequestError,
   AccountApiUnavailableError,
   ADMIN_ENTRY_CAPABILITY,
@@ -91,6 +92,8 @@ export type AdminDashboardAccess =
       assurance: AssuranceState;
       metrics: AccountApiAdminMetrics | null;
       roleReport: AccountApiRoleReport | null;
+      /** Applications awaiting review; `null` when the count could not be read. */
+      pendingApplications: number | null;
       degraded: AdminDashboardDegradation[];
     }
   | { status: "mfa-required"; me: AccountApiMe; assurance: AssuranceState }
@@ -124,6 +127,8 @@ export type AdminUsersAccess =
       users: AccountApiAdminUsers | null;
       /** `null` when the metrics read failed; the KPI strip and charts are simply absent. */
       metrics: AccountApiAdminMetrics | null;
+      /** Applications awaiting review; `null` when the count could not be read. */
+      pendingApplications: number | null;
       filters: AccountApiAdminUserFilters;
       limit: number;
       offset: number;
@@ -592,6 +597,30 @@ export const getAccountAccessStatus = cache(async (): Promise<AccessStatus | nul
   }
 });
 
+/**
+ * How many applications are waiting for a decision.
+ *
+ * One row of the queue is asked for and the service's own count is read off it. The row
+ * is checked too: a service that does not know the filter ignores it and answers with the
+ * whole directory, and its total would then be every account, not the queue. Never
+ * throws — the number is a prompt on a page that must render without it.
+ */
+async function countPendingApplications(accessToken: string): Promise<number | null> {
+  try {
+    const page = await fetchAccountApiAdminUsers(accessToken, {
+      limit: 1,
+      offset: 0,
+      access: "pending",
+    });
+    const first = page.users[0];
+    if (!first) return 0;
+    if (accessStatusOf(first.user) !== "pending") return null;
+    return page.pagination.total ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export const getAdminDashboardAccess = cache(async (): Promise<AdminDashboardAccess> => {
   const { accessToken, me } = await currentAccountApiIdentity("/admin");
 
@@ -604,12 +633,15 @@ export const getAdminDashboardAccess = cache(async (): Promise<AdminDashboardAcc
 
   // Each panel degrades on its own: an aggregate read that times out must not take the
   // operator's identity, capabilities, and navigation down with it.
-  const [metricsResult, roleReportResult] = await Promise.allSettled([
+  const reads = Promise.allSettled([
     fetchAccountApiAdminMetrics(accessToken),
     canReadRoleReport(me)
       ? fetchAccountApiRoleReport(accessToken, { includeMatches: false })
       : Promise.resolve(null),
   ]);
+  const pendingCount = countPendingApplications(accessToken);
+  const [metricsResult, roleReportResult] = await reads;
+  const pendingApplications = await pendingCount;
   const degraded: AdminDashboardDegradation[] = [];
   if (metricsResult.status === "rejected") degraded.push("metrics");
   if (roleReportResult.status === "rejected") degraded.push("role-report");
@@ -620,6 +652,7 @@ export const getAdminDashboardAccess = cache(async (): Promise<AdminDashboardAcc
     assurance,
     metrics: metricsResult.status === "fulfilled" ? metricsResult.value : null,
     roleReport: roleReportResult.status === "fulfilled" ? roleReportResult.value : null,
+    pendingApplications,
     degraded,
   };
 });
@@ -671,10 +704,15 @@ export const getAdminUsersAccess = cache(
 
     // The directory and the KPI strip fail independently; a metrics outage must never
     // hide the accounts and vice versa.
-    const [usersResult, metricsResult] = await Promise.allSettled([
+    // The directory is asked first and the queue's count beside it; the count answers
+    // null on any failure, so only the two reads below can fail the page's panels.
+    const reads = Promise.allSettled([
       fetchAccountApiAdminUsers(accessToken, { limit, offset, ...filters }),
       fetchAccountApiAdminMetrics(accessToken),
     ]);
+    const pendingCount = countPendingApplications(accessToken);
+    const [usersResult, metricsResult] = await reads;
+    const pendingApplications = await pendingCount;
     for (const result of [usersResult, metricsResult]) {
       if (
         result.status === "rejected" &&
@@ -687,7 +725,17 @@ export const getAdminUsersAccess = cache(
     const users = usersResult.status === "fulfilled" ? usersResult.value : null;
     const metrics = metricsResult.status === "fulfilled" ? metricsResult.value : null;
 
-    return { status: "authorized", me, assurance, users, metrics, filters, limit, offset };
+    return {
+      status: "authorized",
+      me,
+      assurance,
+      users,
+      metrics,
+      pendingApplications,
+      filters,
+      limit,
+      offset,
+    };
   },
 );
 

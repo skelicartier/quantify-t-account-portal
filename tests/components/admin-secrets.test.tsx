@@ -149,6 +149,31 @@ describe("AdminSecrets", () => {
     }
   });
 
+  it("says a key came from outside the console instead of leaving its author blank", () => {
+    render(
+      <AdminSecrets
+        now={NOW}
+        access={authorized({
+          slots: [
+            slot({
+              entries: [
+                entry({
+                  set_by: "",
+                  set_at: "",
+                  origin: "outside",
+                  verification: { state: "unverified", checked_at: "" },
+                }),
+              ],
+            }),
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Outside the console")).toBeVisible();
+    expect(screen.getByText("Not recorded")).toBeVisible();
+  });
+
   it("does not treat a registration identifier as a secret", () => {
     /**
      * An OpenSky client id is public by design. Masking it implies a confidentiality it

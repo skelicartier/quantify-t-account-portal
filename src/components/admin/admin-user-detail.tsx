@@ -1,4 +1,8 @@
 import { AdminGate } from "@/components/admin/admin-gate";
+import {
+  AdminUserAccessForm,
+  type AdminUserAccessAction,
+} from "@/components/admin/admin-user-access-form";
 import { AdminUserActivationForm } from "@/components/admin/admin-user-activation-form";
 import { AdminUserRoleForm } from "@/components/admin/admin-user-role-form";
 import { AdminUserSessionRevokeForm } from "@/components/admin/admin-user-session-revoke-form";
@@ -15,6 +19,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { Timestamp } from "@/components/ui/timestamp";
 import type { AdminUserDetailAccess } from "@/lib/admin/access";
 import {
+  accessStatusOf,
   ROLE_WRITE_CAPABILITY,
   SUBSCRIPTION_WRITE_CAPABILITY,
   USER_ACTIVATION_CAPABILITY,
@@ -26,6 +31,7 @@ import type {
   AdminEntitlementOverrideState,
   AdminSubscriptionPlanState,
 } from "@/lib/admin/subscription";
+import { accessLabel, accessTone } from "@/lib/admin/user-access";
 import type { AdminUserActivationState } from "@/lib/admin/user-activation";
 import type { AdminUserRoleState } from "@/lib/admin/user-role";
 import type { AdminUserSessionRevocationState } from "@/lib/admin/user-session-revocation";
@@ -42,6 +48,7 @@ type AdminUserDetailProps = {
     formData: FormData,
   ) => Promise<AdminUserSessionRevocationState>;
   roleAction?: (state: AdminUserRoleState, formData: FormData) => Promise<AdminUserRoleState>;
+  accessAction?: AdminUserAccessAction;
   planAction?: (
     state: AdminSubscriptionPlanState,
     formData: FormData,
@@ -92,12 +99,16 @@ export function AdminUserDetail({
   activationAction,
   sessionRevokeAction,
   roleAction,
+  accessAction,
   planAction,
   overrideAction,
   now,
 }: AdminUserDetailProps) {
   const { me } = access;
   const detail = access.status === "authorized" ? access.detail : null;
+  // The decision block is the fuller record; the row's own status covers a service that
+  // does not send the block.
+  const application = detail ? (detail.access?.status ?? accessStatusOf(detail.user)) : "pending";
   const usage = access.status === "authorized" ? access.usage : null;
   const isSelf = Boolean(detail) && me.user.user_id === detail?.user.user_id;
   const canManageSubscription =
@@ -153,6 +164,68 @@ export function AdminUserDetail({
                   hint="Most recent shown below"
                 />
               </StatGrid>
+
+              <Card
+                eyebrow="Access"
+                title="Application"
+                titleId="admin-user-application-heading"
+                important={application === "pending"}
+                description={
+                  application === "pending"
+                    ? "Access is by application. This account can sign in to the console and read its status, and nothing else, until it is approved."
+                    : application === "approved"
+                      ? "This account has been admitted to Quantify Terminal."
+                      : "This account was not admitted. It can still sign in to the console, export its data and delete its account."
+                }
+              >
+                <KeyValue columns={2}>
+                  <KeyValueRow label="Status">
+                    <StatusPill
+                      value={application}
+                      tone={accessTone(application)}
+                      label={accessLabel(application)}
+                    />
+                  </KeyValueRow>
+                  <KeyValueRow label="Decided">
+                    <Timestamp
+                      value={detail.access?.decided_at ?? null}
+                      now={now}
+                      mode="both"
+                      fallback={
+                        application === "pending" ? "Not yet" : "Before decisions were recorded"
+                      }
+                    />
+                  </KeyValueRow>
+                  <KeyValueRow label="Decided by">
+                    {detail.access?.decided_by ? (
+                      <ShortId
+                        value={detail.access.decided_by}
+                        href={`/admin/users/${detail.access.decided_by}`}
+                      />
+                    ) : application === "pending" ? (
+                      "Nobody yet"
+                    ) : (
+                      "Not recorded"
+                    )}
+                  </KeyValueRow>
+                  <KeyValueRow label="Reason">
+                    {detail.access?.reason || "None recorded"}
+                  </KeyValueRow>
+                </KeyValue>
+                {canChangeActivation && accessAction ? (
+                  <AdminUserAccessForm
+                    userId={detail.user.user_id}
+                    current={application}
+                    action={accessAction}
+                  />
+                ) : (
+                  <p className="field__hint">
+                    {isSelf
+                      ? "You can't decide your own application."
+                      : "Deciding applications needs the Activate or deactivate people permission."}
+                  </p>
+                )}
+              </Card>
 
               <div className="card-grid card-grid--2">
                 <Card eyebrow="Account" title="Details" titleId="admin-user-account-heading">

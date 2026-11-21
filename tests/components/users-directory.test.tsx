@@ -22,6 +22,10 @@ describe("usersHref", () => {
       "/admin/users?q=priya&status=active",
     );
     expect(usersHref({ status: "inactive" }, 25)).toBe("/admin/users?status=inactive&limit=25");
+    expect(usersHref({ access: "pending" })).toBe("/admin/users?access=pending");
+    expect(usersHref({ q: "priya", access: "declined" }, 25)).toBe(
+      "/admin/users?q=priya&access=declined&limit=25",
+    );
   });
 });
 
@@ -67,5 +71,28 @@ describe("UsersDirectory", () => {
     await user.click(screen.getByRole("button", { name: "Clear" }));
     expect(router.push).toHaveBeenLastCalledWith("/admin/users?limit=25");
     expect(screen.getByRole("searchbox", { name: "Search" })).toHaveValue("");
+  });
+
+  it("filters by application, keeps the other filters, and follows a filter applied from elsewhere", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <UsersDirectory filters={{ q: "owner", status: "active" }} limit={50}>
+        <p>rows</p>
+      </UsersDirectory>,
+    );
+
+    const application = screen.getByRole("combobox", { name: "Application" });
+    expect(application).toHaveValue("");
+    await user.selectOptions(application, "pending");
+    expect(router.push).toHaveBeenCalledWith("/admin/users?q=owner&status=active&access=pending");
+
+    // "Review applications" elsewhere on the page changes the applied filter, not this control.
+    rerender(
+      <UsersDirectory filters={{ access: "declined" }} limit={50}>
+        <p>rows</p>
+      </UsersDirectory>,
+    );
+    expect(screen.getByRole("combobox", { name: "Application" })).toHaveValue("declined");
+    expect(screen.getByRole("button", { name: "Clear" })).toBeEnabled();
   });
 });

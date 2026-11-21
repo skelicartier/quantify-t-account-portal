@@ -3,8 +3,26 @@ import "server-only";
 import { z } from "zod";
 
 import { ASSIGNABLE_ROLES, type AssignableRole } from "@/lib/admin/role-labels";
+import {
+  ACCESS_DECISIONS,
+  ACCESS_REASON_MAX,
+  ACCESS_STATUSES,
+  accessStatusOf,
+  type AccessDecision,
+  type AccessStatusValue,
+} from "@/lib/admin/user-access";
 
 export { ASSIGNABLE_ROLES, type AssignableRole };
+// The vocabulary of access by application lives in a module the browser may import; it is
+// re-exported here so server code has one place to import the client and its words from.
+export {
+  ACCESS_DECISIONS,
+  ACCESS_REASON_MAX,
+  ACCESS_STATUSES,
+  accessStatusOf,
+  type AccessDecision,
+  type AccessStatusValue,
+};
 export const ADMIN_ENTRY_CAPABILITY = "account:read-any";
 export const ROLE_REPORT_CAPABILITY = "roles:read-report";
 export const MANAGE_ROLES_CAPABILITY = "roles:write";
@@ -339,12 +357,26 @@ const adminUserSummarySchema = z
         display_name: z.string().max(180),
         is_active: z.boolean(),
         subscription_tier: z.string().max(64),
+        // Access is by application: pending, approved or declined. Optional because a
+        // service older than access-by-application does not send it; read it through
+        // `accessStatusOf`, which treats anything else as pending, as the service does.
+        access_status: z.string().max(16).optional(),
         created_at: z.string().max(64),
         last_login_at: z.string().max(64),
         updated_at: z.string().max(64),
       })
       .strict(),
     role: adminUserRoleSchema,
+  })
+  .strict();
+
+// The latest decision on an application: who made it, when, and the reason they gave.
+const adminAccessDecisionSchema = z
+  .object({
+    status: z.enum(ACCESS_STATUSES),
+    decided_at: z.string().max(64).nullable(),
+    decided_by: z.string().max(64).nullable(),
+    reason: z.string().max(ACCESS_REASON_MAX),
   })
   .strict();
 
@@ -491,6 +523,9 @@ export const accountApiAdminConfigurationSchema = z
       .object({
         email_worker_enabled: z.boolean(),
         artifact_worker_enabled: z.boolean(),
+        // The worker that builds an account's own data export. A separate switch from the
+        // report worker above; a service older than the split does not send it.
+        export_worker_enabled: z.boolean().optional(),
         deletion_worker_enabled: z.boolean(),
         signed_downloads_enabled: z.boolean(),
         account_export_encryption_configured: z.boolean(),
@@ -547,7 +582,8 @@ const adminSecretVerificationSchema = z
       "unsupported",
       "checking",
     ]),
-    checked_at: z.string().min(1).max(64).nullable(),
+    // Empty or null until the key has been checked once.
+    checked_at: z.string().max(64).nullable(),
   })
   .strict();
 
@@ -557,8 +593,11 @@ const adminSecretEntrySchema = z
     prefix: z.string().max(32),
     length: z.number().int().nonnegative().max(100_000),
     position: z.number().int().nonnegative().max(64),
+    // Both empty for a key the console did not write: it has no provenance to show.
     set_by: z.string().max(120),
-    set_at: z.string().min(1).max(64),
+    set_at: z.string().max(64),
+    /** `console` for a key saved here, `outside` for one put in the store some other way. */
+    origin: z.string().max(16).optional(),
     verification: adminSecretVerificationSchema,
   })
   .strict();
@@ -814,6 +853,44 @@ export const accountApiAdminUserDetailSchema = adminUserSummarySchema
     correlation_id: correlationSchema,
     sessions: z.array(adminSessionSchema).max(10),
     activity: z.array(adminActivitySchema).max(20),
+    access: adminAccessDecisionSchema.optional(),
+  })
+  .strict();
+
+/**
+ * The answer to approving or declining an application.
+ *
+ * A decision that changes nothing answers with the standing decision and `unchanged`, and
+ * leaves out everything the write would have reported. A decline says how many sessions it
+ * ended and, for an account that trades, what the kill switch did before they went.
+ */
+export const accountApiAdminUserAccessDecisionSchema = z
+  .object({
+    ok: z.literal(true),
+    correlation_id: correlationSchema,
+    user_id: z.guid(),
+    access: adminAccessDecisionSchema,
+    unchanged: z.boolean(),
+    sessions_revoked: z.number().int().nonnegative().optional(),
+    trading: z
+      .object({
+        trading_halted: z.boolean(),
+        authorisations_revoked: z.number().int().nonnegative(),
+        cancelled: z.number().int().nonnegative(),
+        complete: z.boolean(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    decision_emailed: z.boolean().optional(),
+    event: z
+      .object({
+        id: z.union([z.string().max(64), z.number().int()]).nullable(),
+        event_type: z.string().max(64),
+      })
+      .strict()
+      .nullable(),
+    replayed: z.boolean().optional(),
   })
   .strict();
 
@@ -854,6 +931,8 @@ export const accountApiEntitlementsSchema = z
     /** The cache key: it moves on every entitlement change. */
     entitlement_version: z.number().int().nonnegative(),
     chat_model: z.string().min(1).max(64).optional(),
+    /** The model deep research runs on for this plan; sent only when the plan has one. */
+    research_model: z.string().min(1).max(64).optional(),
     generated_at: z.string().max(64),
     ttl_seconds: z.number().int().nonnegative(),
     /** Present only while a trial is live. */
@@ -1496,6 +1575,9 @@ export type AccountApiEntitlementOverride = z.infer<typeof entitlementOverrideSc
 export type AccountApiAdminUsers = z.infer<typeof accountApiAdminUsersSchema>;
 export type AccountApiAdminUserDetail = z.infer<typeof accountApiAdminUserDetailSchema>;
 export type AccountApiAdminUserActivation = z.infer<typeof accountApiAdminUserActivationSchema>;
+export type AccountApiAdminUserAccessDecision = z.infer<
+  typeof accountApiAdminUserAccessDecisionSchema
+>;
 export type AccountApiAdminUserSessionRevoke = z.infer<
   typeof accountApiAdminUserSessionRevokeSchema
 >;
@@ -1536,6 +1618,8 @@ export type AccountApiAdminUserFilters = {
   /** Case-insensitive substring match on email, first name or last name. */
   q?: string | undefined;
   status?: AdminUserStatusFilter | undefined;
+  /** The applications queue: only accounts whose access is in this state. */
+  access?: AccessStatusValue | undefined;
 };
 
 type AccountApiAdminUsersOptions = AccountApiFetchOptions &
@@ -2885,7 +2969,7 @@ export async function fetchAccountApiAdminUsers(
   accessToken: string,
   options: AccountApiAdminUsersOptions = {},
 ): Promise<AccountApiAdminUsers> {
-  const { limit = 50, offset = 0, q, status, ...fetchOptions } = options;
+  const { limit = 50, offset = 0, q, status, access, ...fetchOptions } = options;
   const query: Record<string, string> = {
     ...(fetchOptions.query ?? {}),
     limit: String(limit),
@@ -2894,6 +2978,7 @@ export async function fetchAccountApiAdminUsers(
   const text = (q ?? "").trim();
   if (text) query.q = text.slice(0, 120);
   if (status) query.status = status;
+  if (access) query.access = access;
   const payload = await fetchAccountApiJson("admin/users", accessToken, {
     ...fetchOptions,
     query,
@@ -3130,6 +3215,37 @@ export async function setAccountApiAdminUserActive(
     `admin/users/${encodeURIComponent(parsedUserId.data)}/activation`,
     "POST",
   );
+}
+
+/**
+ * Approve or decline one account's application. The reason is required by the service and
+ * kept with the decision; a decline also ends the account's sessions.
+ */
+export async function decideAccountApiAdminUserAccess(
+  accessToken: string,
+  userId: string,
+  decision: { status: AccessDecision; reason: string },
+  options: AccountApiFetchOptions & { idempotencyKey: string },
+): Promise<AccountApiAdminUserAccessDecision> {
+  const parsedUserId = z.guid().safeParse(userId.trim().toLowerCase());
+  const parsedStatus = z.enum(ACCESS_DECISIONS).safeParse(decision.status);
+  const reason = decision.reason.split(/\s+/u).filter(Boolean).join(" ");
+  if (
+    !parsedUserId.success ||
+    !parsedStatus.success ||
+    reason.length === 0 ||
+    reason.length > ACCESS_REASON_MAX
+  ) {
+    throw new AccountApiUnavailableError();
+  }
+  const route = `admin/users/${encodeURIComponent(parsedUserId.data)}/access`;
+  const payload = await postAccountApiJson(
+    route,
+    accessToken,
+    { status: parsedStatus.data, reason },
+    options,
+  );
+  return parseAccountApiPayload(accountApiAdminUserAccessDecisionSchema, payload, route, "POST");
 }
 
 /**

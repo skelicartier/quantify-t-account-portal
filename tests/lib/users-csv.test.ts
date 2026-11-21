@@ -9,6 +9,7 @@ const summary = {
     display_name: 'Owner O"Neil, Jr',
     is_active: true,
     subscription_tier: "pro",
+    access_status: "approved",
     created_at: "2026-09-01T00:00:00Z",
     last_login_at: "",
     updated_at: "2026-09-04T00:00:00Z",
@@ -36,13 +37,20 @@ describe("users CSV", () => {
 
   it("projects one row per account with human status, role and plan", () => {
     expect(usersCsvRow(summary)).toBe(
-      '860aac31-73fb-4e10-8f3f-bfcf22a71c11,owner@example.test,Owner,"O""Neil, Jr",active,Owner,pro,2026-09-01T00:00:00Z,,2026-09-04T00:00:00Z',
+      '860aac31-73fb-4e10-8f3f-bfcf22a71c11,owner@example.test,Owner,"O""Neil, Jr",active,approved,Owner,pro,2026-09-01T00:00:00Z,,2026-09-04T00:00:00Z',
     );
+  });
+
+  it("writes an account with no recorded application as pending, as the service reads it", () => {
+    const user = { ...summary.user, access_status: undefined };
+    expect(usersCsvRow({ ...summary, user }).split(",")).toContain("pending");
   });
 
   it("writes a BOM, a header and CRLF line endings", () => {
     const document = usersCsv([summary]);
-    expect(document.startsWith("﻿user_id,email,first_name,last_name,status,role,plan,")).toBe(true);
+    expect(
+      document.startsWith("﻿user_id,email,first_name,last_name,status,application,role,plan,"),
+    ).toBe(true);
     expect(document.split("\r\n")).toHaveLength(3);
     expect(document.endsWith("\r\n")).toBe(true);
   });
