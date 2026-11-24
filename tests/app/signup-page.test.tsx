@@ -12,7 +12,7 @@ describe("SignupPage", () => {
   it("carries a desktop handoff through sign-up and back to sign-in", async () => {
     render(await SignupPage({ searchParams: Promise.resolve({ next: PATH }) }));
 
-    expect(screen.getByText(/returned to Quantify Terminal on this computer/iu)).toBeVisible();
+    expect(screen.getByText(/returned to the desktop app on this computer/iu)).toBeVisible();
     expect(document.querySelector('form input[name="next"]')).toHaveValue(PATH);
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
       "href",
@@ -24,7 +24,7 @@ describe("SignupPage", () => {
     render(await SignupPage({ searchParams: Promise.resolve({ next: "/admin" }) }));
 
     expect(
-      screen.queryByText(/returned to Quantify Terminal on this computer/iu),
+      screen.queryByText(/returned to the desktop app on this computer/iu),
     ).not.toBeInTheDocument();
     expect(document.querySelector('form input[name="next"]')).toBeNull();
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");

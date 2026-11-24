@@ -36,11 +36,11 @@ describe("LoginForm", () => {
     const password = screen.getByLabelText(/^password$/i);
     expect(email).toHaveAttribute("autocomplete", "email");
     expect(password).toHaveAttribute("autocomplete", "current-password");
-    expect(screen.getByRole("button", { name: /sign in securely/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^sign in$/i })).toBeEnabled();
 
     await user.type(email, "user@example.com");
     await user.type(password, "not-the-real-password");
-    await user.click(screen.getByRole("button", { name: /sign in securely/i }));
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
 
     await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
     const submitted = action.mock.calls[0]?.[1];
@@ -75,12 +75,12 @@ describe("LoginForm", () => {
 
     await user.type(screen.getByRole("textbox", { name: /email address/i }), "user@example.com");
     await user.type(screen.getByLabelText(/^password$/i), "correct-horse-battery-staple");
-    await user.click(screen.getByRole("button", { name: /sign in securely/i }));
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
 
     // The password step is gone: nothing on screen can re-post the credential.
     const code = await screen.findByRole("textbox", { name: /authenticator code/i });
     expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /sign in securely/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^sign in$/i })).not.toBeInTheDocument();
     expect(code).toHaveAttribute("autocomplete", "one-time-code");
 
     await user.type(code, "123456");

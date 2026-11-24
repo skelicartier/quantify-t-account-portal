@@ -109,7 +109,6 @@ export function LoginForm({ action, challengeAction, nextPath, turnstileSiteKey 
             name="password"
             type="password"
             autoComplete="current-password"
-            placeholder="Enter your password"
             maxLength={1_024}
             required
             disabled={isPending}
@@ -122,7 +121,7 @@ export function LoginForm({ action, challengeAction, nextPath, turnstileSiteKey 
         </Field>
         <TurnstileField siteKey={turnstileSiteKey} error={challengeError} disabled={isPending} />
         <Button variant="primary" type="submit" block disabled={isPending}>
-          {isPending ? "Verifying account…" : "Sign in securely"}
+          {isPending ? "Signing in…" : "Sign in"}
         </Button>
       </form>
 

@@ -53,7 +53,6 @@ export function SignupForm({ action, turnstileSiteKey, nextPath }: SignupFormPro
             name="fullName"
             type="text"
             autoComplete="name"
-            placeholder="How you'd like to be addressed"
             maxLength={160}
             disabled={isPending}
             invalid={Boolean(nameError)}
@@ -84,7 +83,6 @@ export function SignupForm({ action, turnstileSiteKey, nextPath }: SignupFormPro
             name="password"
             type="password"
             autoComplete="new-password"
-            placeholder="Create a password"
             minLength={12}
             maxLength={128}
             required
@@ -100,7 +98,6 @@ export function SignupForm({ action, turnstileSiteKey, nextPath }: SignupFormPro
             name="passwordConfirmation"
             type="password"
             autoComplete="new-password"
-            placeholder="Enter the same password"
             minLength={12}
             maxLength={128}
             required

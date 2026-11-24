@@ -25,5 +25,7 @@ describe("AuthShell", () => {
       "https://www.quantifyterminal.com/privacy",
     );
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
+    // The wordmark says the brand once; the heading, the form and the foot never repeat it.
+    expect(document.body.textContent?.match(/quantify\s*terminal/gi)).toHaveLength(1);
   });
 });

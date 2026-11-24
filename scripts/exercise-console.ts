@@ -49,7 +49,7 @@ async function signIn(page: Page, email: string) {
   await page.goto(`${BASE}/login`);
   await page.getByRole("textbox", { name: /email address/i }).fill(email);
   await page.getByLabel(/^password$/i).fill("password-1234");
-  await page.getByRole("button", { name: /sign in securely/i }).click();
+  await page.getByRole("button", { name: /^sign in$/i }).click();
   await page.waitForURL(/\/account/u, { timeout: 30_000 });
 }
 
@@ -255,7 +255,7 @@ async function main() {
       await page.goto(`${BASE}/login`);
       await page.getByRole("textbox", { name: /email address/iu }).fill(address);
       await page.getByLabel(/^password$/iu).fill("wrong-password-here");
-      await page.getByRole("button", { name: /sign in securely/iu }).click();
+      await page.getByRole("button", { name: /^sign in$/iu }).click();
       // Filtered to an alert that actually says something. Next renders its own empty route
       // announcer with role="alert", and `.first()` matched that instead — which made this
       // step assert on an empty string and would have passed no matter what the form said.

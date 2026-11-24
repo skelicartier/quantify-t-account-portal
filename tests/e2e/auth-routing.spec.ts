@@ -16,7 +16,7 @@ test("an unauthenticated account request fails closed to the login surface", asy
   });
   await expect(page.getByRole("textbox", { name: /email address/i })).toBeEnabled();
   await expect(page.getByLabel(/^password$/i)).toBeEnabled();
-  await expect(page.getByRole("button", { name: /sign in securely/i })).toBeEnabled();
+  await expect(page.getByRole("button", { name: /^sign in$/i })).toBeEnabled();
 });
 
 test("an unauthenticated admin request keeps its safe return path", async ({ page }) => {
@@ -66,7 +66,7 @@ for (const destination of [
     await expect(page).toHaveURL(
       (url) => url.pathname === "/login" && url.searchParams.get("next") === destination,
     );
-    await expect(page.getByRole("button", { name: /sign in securely/i })).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^sign in$/i })).toBeEnabled();
   });
 }
 

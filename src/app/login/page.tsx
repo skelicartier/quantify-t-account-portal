@@ -73,10 +73,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const turnstileSiteKey = resolveTurnstileSiteKey();
 
   return (
-    <AuthShell
-      title="Sign in to Quantify Terminal"
-      description="Use the account that connects your desktop terminal."
-    >
+    <AuthShell title="Sign in">
       {notice && (
         <div className="auth-form">
           <Callout tone={notice.tone} role="status" compact>
@@ -87,8 +84,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       {returnsToDesktop && (
         <div className="auth-form">
           <Callout tone="neutral" role="status" compact>
-            Sign in to connect Quantify Terminal on this computer. You&apos;ll be returned to the
-            app automatically.
+            Sign in to connect the desktop app on this computer. You&apos;ll be returned to it
+            automatically.
           </Callout>
         </div>
       )}
@@ -101,7 +98,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       />
 
       <p className="auth__switch">
-        Need a Quantify Terminal account?{" "}
+        New here?{" "}
         <Link href={returnsToDesktop ? `/signup?next=${encodeURIComponent(nextPath)}` : "/signup"}>
           Create an account
         </Link>

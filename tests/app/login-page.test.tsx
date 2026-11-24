@@ -18,7 +18,7 @@ describe("LoginPage", () => {
   it("tells a visitor the desktop app sent that they will be returned to it", async () => {
     render(await LoginPage({ searchParams: Promise.resolve({ next: PATH }) }));
 
-    expect(screen.getByText(/returned to the app automatically/iu)).toBeVisible();
+    expect(screen.getByText(/returned to it automatically/iu)).toBeVisible();
     expect(screen.getByRole("link", { name: "Create an account" })).toHaveAttribute(
       "href",
       `/signup?next=${encodeURIComponent(PATH)}`,
@@ -29,7 +29,7 @@ describe("LoginPage", () => {
   it("keeps the plain sign-in surface for everyone else", async () => {
     render(await LoginPage({ searchParams: Promise.resolve({ next: "/account/security" }) }));
 
-    expect(screen.queryByText(/returned to the app automatically/iu)).not.toBeInTheDocument();
+    expect(screen.queryByText(/returned to it automatically/iu)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Create an account" })).toHaveAttribute(
       "href",
       "/signup",

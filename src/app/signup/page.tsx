@@ -32,15 +32,12 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   const turnstileSiteKey = resolveTurnstileSiteKey();
 
   return (
-    <AuthShell
-      title="Create your account"
-      description="One account for this console and your desktop terminal."
-    >
+    <AuthShell title="Create your account">
       {returnsToDesktop && (
         <div className="auth-form">
           <Callout tone="neutral" role="status" compact>
-            Create your account, confirm your email, then sign in. You&apos;ll be returned to
-            Quantify Terminal on this computer.
+            Create your account, confirm your email, then sign in. You&apos;ll be returned to the
+            desktop app on this computer.
           </Callout>
         </div>
       )}
