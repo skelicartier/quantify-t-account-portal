@@ -10,35 +10,33 @@ import { PageSkeleton } from "@/components/ui/skeleton";
 import { PageSpinner, Spinner } from "@/components/ui/spinner";
 
 describe("Spinner", () => {
-  it("is eight lines round a centre, hidden from assistive technology unless it is given a name", () => {
+  it("is one dot on a ring, hidden from assistive technology unless it is given a name", () => {
     const { container, rerender } = render(<Spinner />);
     const mark = container.querySelector(".spinner");
     expect(mark).not.toBeNull();
-    expect(mark?.querySelectorAll("span")).toHaveLength(8);
+    expect(mark?.querySelectorAll("span")).toHaveLength(1);
     expect(mark).toHaveAttribute("aria-hidden", "true");
 
     rerender(<Spinner size="block" label="Loading accounts" />);
     expect(screen.getByRole("img", { name: "Loading accounts" })).toHaveClass("spinner--block");
   });
 
-  it("has a place, a turn and a still form for every one of its lines", () => {
-    // The lines are placed by stylesheet rules, one per line. A ninth line with no rule
-    // would sit on top of the first; a missing rule would leave a gap in the ring.
+  it("carries the brand's dot round, in the label's colour inside a button, and holds still on request", () => {
     const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
-    for (let line = 1; line <= 8; line += 1) {
-      const rule = new RegExp(
-        `\\.spinner > span:nth-child\\(${line}\\) \\{\\s+transform: rotate\\(${(line - 1) * 45}deg\\);\\s+animation-delay: ${(line - 1) * 100 - 800}ms;`,
-        "u",
-      );
-      expect(css).toMatch(rule);
-    }
-    expect(css).not.toMatch(/\.spinner > span:nth-child\(9\)/u);
-    expect(css).toMatch(/@keyframes spinner-fade/u);
+    expect(css).toMatch(/--brand-dot: #9810fa;/u);
+    expect(css).toMatch(/\.spinner > span::after \{[^}]*background: var\(--brand-dot\);/u);
+    expect(css).toMatch(/\.btn > \.spinner > span::after \{\s+background: currentColor;/u);
+    expect(css).toMatch(/\.spinner > span \{[^}]*animation: spinner-orbit [^;]*infinite;/u);
+    // The still form keeps the dot where the logo has it.
+    expect(css).toMatch(/\.spinner > span \{\s+animation: none;\s+transform: rotate\(135deg\);/u);
   });
 
   it("is held in the middle of the content pane, not at the top of the page", () => {
     const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
-    const rule = css.slice(css.indexOf("  .page-loading {"), css.indexOf("  .page-loading--late {"));
+    const rule = css.slice(
+      css.indexOf("  .page-loading {"),
+      css.indexOf("  .page-loading--late {"),
+    );
 
     expect(rule).toMatch(/position: fixed;/u);
     expect(rule).toMatch(/top: 50%;/u);

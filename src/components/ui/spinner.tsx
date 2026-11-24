@@ -6,17 +6,15 @@ type SpinnerProps = {
   className?: string | undefined;
 };
 
-const SPOKES = 8;
-
 /**
- * The console's loading mark: short lines set around a centre, each fading in turn, so
- * the bright one travels round the ring.
+ * The console's loading mark: the logo in motion. The logo is a ring with the purple dot on
+ * it; here the dot glides round a hairline ring.
  *
  * A page that is fetching looks exactly like a page that is stuck unless something moves.
  * This moves wherever work is in flight: in the middle of a page that has not arrived
- * yet, and in a button whose action is running. It takes its colour from the text around
- * it, and holds still, as a ring of graded lines, for anyone who has asked their system
- * to reduce motion.
+ * yet, and in a button whose action is running. Inside a button the dot takes the label's
+ * colour (purple would be lost on the amber one). It holds still, with the dot where the
+ * logo has it, for anyone who has asked their system to reduce motion.
  */
 export function Spinner({ size = "inline", label, className }: SpinnerProps) {
   return (
@@ -28,9 +26,7 @@ export function Spinner({ size = "inline", label, className }: SpinnerProps) {
       aria-label={label}
       aria-hidden={label ? undefined : true}
     >
-      {Array.from({ length: SPOKES }, (_, index) => (
-        <span key={index} />
-      ))}
+      <span />
     </span>
   );
 }
